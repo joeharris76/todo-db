@@ -38,6 +38,13 @@ CONFIG_KEYS = {
     "lint.require_w0_revalidation": ("on", "off"),
     "lint.require_scope_rules": ("on", "off"),
 }
+STATUS_MAP = {
+    "not started": ("planning", None),
+    "identified": ("planning", None),
+    "in progress": ("active", None),
+    "under review": ("active", None),
+    "blocked": ("active", "imported from YAML status: Blocked"),
+}
 
 
 def utc_now() -> str:
@@ -45,7 +52,7 @@ def utc_now() -> str:
 
 
 def default_actor() -> str:
-    for variable in ("TODO_ACTOR", "CODEX_SESSION_ID", "CLAUDE_SESSION_ID", "AGENT_SESSION_ID"):
+    for variable in ("TODO_ACTOR", "CLAUDE_SESSION_ID", "CODEX_SESSION_ID", "AGENT_SESSION_ID"):
         if os.environ.get(variable):
             return os.environ[variable]
     return f"{getpass.getuser()}@{socket.gethostname()}"
@@ -57,6 +64,49 @@ def _dict(row: Any) -> dict[str, Any]:
 
 def _slug_valid(item_id: str) -> bool:
     return bool(SLUG_RE.fullmatch(item_id))
+
+
+def _slugify(raw: str) -> str:
+    slug = re.sub(r"[^a-z0-9-]+", "-", raw.lower()).strip("-")
+    return re.sub(r"-{2,}", "-", slug)
+
+
+def _parse_anti_pattern(text: str) -> tuple[str, str, str]:
+    cleaned = re.sub(r"(?i)^\s*do not\s+", "", text.strip())
+    parts = re.split(r"\s+--\s+|\s+[-—]\s+", cleaned, maxsplit=2)
+    dont = parts[0].strip()
+    why = re.sub(r"(?i)^because\s+", "", parts[1].strip()) if len(parts) > 1 else "(unstated)"
+    instead = parts[2].strip() if len(parts) > 2 else "(not specified)"
+    return dont, why, instead
+
+
+def _parse_prior_art(text: str) -> tuple[str, str, str]:
+    decision = next(
+        (value for value in ("supersede", "extend", "reuse") if re.search(rf"\b{value}\b", text, re.IGNORECASE)),
+        "reuse",
+    )
+    first = text.split()[0].rstrip(":,;") if text.split() else text
+    return first, text.strip(), decision
+
+
+def _coerce_verifications(raw: Any) -> list[dict[str, Any]]:
+    if isinstance(raw, dict) and "commands" in raw:
+        return [{"description": str(command), "command": str(command)} for command in raw.get("commands") or []]
+    if not isinstance(raw, list):
+        return []
+    result: list[dict[str, Any]] = []
+    for entry in raw:
+        if isinstance(entry, dict):
+            result.append(
+                {
+                    "description": str(entry.get("description", "")) or "(no description)",
+                    "command": entry.get("command"),
+                    "expected": entry.get("expected_output"),
+                }
+            )
+        else:
+            result.append({"description": str(entry)})
+    return result
 
 
 def _lease_expired(claimed_at: str | None, ttl_hours: float) -> bool:
@@ -293,9 +343,25 @@ class TodoTracker:
             ]
         item_id = str(kwargs.get("item_id") or kwargs.get("id") or "")
         kwargs["item_id"] = item_id
+        deferrals = list(kwargs.pop("deferrals", ()))
         with self.database.transaction():
             self._insert_item(**kwargs)
             self._event("create", item_id, {"title": kwargs["title"], "state": kwargs.get("state", "planning")})
+            for entry in deferrals:
+                cursor = self.connection.execute(
+                    "INSERT INTO deferrals (from_item, summary, reason, created_at) VALUES (?, ?, ?, ?)",
+                    (
+                        item_id,
+                        str(entry.get("summary") or "(no summary)"),
+                        str(entry.get("reason") or "(none recorded)"),
+                        utc_now(),
+                    ),
+                )
+                self._event(
+                    "defer",
+                    item_id,
+                    {"deferral_id": int(cursor.lastrowid), "summary": str(entry.get("summary") or "(no summary)")},
+                )
         return item_id
 
     def add_work_need(self, item_id: str, wid: str, needs_wid: str) -> None:
@@ -750,7 +816,14 @@ class TodoTracker:
             "imported": [],
             "skipped": [],
             "warnings": [],
-            "counts": {"open_items": 0, "done_items": 0, "deps_resolved": 0, "deps_dangling": 0},
+            "counts": {
+                "open_items": 0,
+                "done_items": 0,
+                "deps_resolved": 0,
+                "deps_dangling": 0,
+                "legacy_tasks_structure": 0,
+                "legacy_dependencies_field": 0,
+            },
         }
         payloads: list[dict[str, Any]] = []
         for root, archived in ((todo_dir, False), (done_dir, True)):
@@ -765,16 +838,33 @@ class TodoTracker:
                     report["warnings"].append(f"{path}: unparseable YAML: {exc}")
                     continue
                 if not isinstance(data, dict):
-                    report["skipped"].append(str(path))
+                    report["skipped"].append(f"{path}: not a mapping")
                     continue
-                item_id = str(data.get("id") or path.stem).lower()
-                item_id = re.sub(r"[^a-z0-9-]+", "-", item_id).strip("-")
+                raw_id = str(data.get("id") or path.stem)
+                item_id = raw_id if _slug_valid(raw_id) else _slugify(raw_id)
+                if item_id != raw_id:
+                    report["warnings"].append(f"{path}: id {raw_id!r} sanitized to {item_id!r}")
                 status = str(data.get("status") or "").strip().lower()
-                state = "done" if archived or status in ("completed", "complete", "done") else "planning"
-                if status in ("in progress", "under review", "blocked"):
-                    state = "active"
+                if archived:
+                    if status != "completed":
+                        report["warnings"].append(
+                            f"{path}: archive file has status {status!r} (tree/status drift); imported as done"
+                        )
+                    state, blocked_reason = "done", None
+                elif status == "completed":
+                    report["warnings"].append(
+                        f"{path}: status Completed inside the open tree (tree/status drift); imported as done"
+                    )
+                    state, blocked_reason = "done", None
+                else:
+                    state, blocked_reason = STATUS_MAP.get(status or "not started", ("planning", None))
+                    if status and status not in STATUS_MAP:
+                        report["warnings"].append(f"{path}: unknown status {status!r}; imported as planning")
                 work_raw = data.get("work") or data.get("tasks") or []
+                if data.get("tasks") and not data.get("work"):
+                    report["counts"]["legacy_tasks_structure"] += 1
                 work: list[dict[str, Any]] = []
+                invalid_open_work = False
                 if isinstance(work_raw, dict):
                     work_raw = list(work_raw.values())
                 for index, unit in enumerate(work_raw, start=0):
@@ -783,23 +873,47 @@ class TodoTracker:
                             {"id": f"w{index}", "summary": unit, "status": "done" if state == "done" else "pending"}
                         )
                     elif isinstance(unit, dict):
+                        wid = str(unit.get("id") or unit.get("wid") or f"w{index}")
+                        summary = str(unit.get("summary") or unit.get("title") or unit.get("description") or "")
+                        summary = summary.strip() or "(no summary recorded)"
+                        if len(summary) < 5:
+                            summary = f"(w) {summary}"
+                        unit_status = unit.get("status", "done" if state == "done" else "pending")
+                        duplicate = any(existing["id"] == wid for existing in work)
+                        if not WID_RE.fullmatch(wid) or unit_status not in UNIT_STATUSES or duplicate:
+                            if state != "done":
+                                report["warnings"].append(f"{path}: invalid work unit {wid!r}; item skipped")
+                                invalid_open_work = True
+                                break
+                            report["warnings"].append(f"{path}: invalid archive work unit {wid!r} dropped")
+                            continue
                         work.append(
                             {
-                                "id": str(unit.get("id") or unit.get("wid") or f"w{index}"),
-                                "summary": str(
-                                    unit.get("summary")
-                                    or unit.get("title")
-                                    or unit.get("description")
-                                    or f"Imported unit {index}"
-                                ),
+                                "id": wid,
+                                "summary": summary[:200],
                                 "needs": list(unit.get("needs") or []),
-                                "status": unit.get("status", "done" if state == "done" else "pending"),
+                                "status": unit_status,
                                 "evidence": unit.get("evidence"),
+                                "notes": unit.get("notes"),
                             }
                         )
-                description = str(data.get("description") or data.get("title") or item_id)
-                if len(description) < 10:
-                    description = f"Imported legacy TODO item: {description}"
+                if state == "done":
+                    surviving = {unit["id"] for unit in work}
+                    for unit in work:
+                        unit["needs"] = [need for need in unit.get("needs", []) if need in surviving]
+                if invalid_open_work:
+                    report["skipped"].append(str(path))
+                    continue
+                if archived:
+                    title = str(data.get("title") or "").strip() or f"Archived item {path.stem}"
+                    if len(title) < 5:
+                        title = f"Archived: {title}"
+                    description = str(data.get("description") or "").strip()
+                    if len(description) < 10:
+                        description = (description + "\n(no description recorded in archive)").strip()
+                else:
+                    title = str(data.get("title", ""))
+                    description = str(data.get("description", ""))
                 scope_data = data.get("scope_limit") or data.get("scope") or {}
                 scope = (
                     [
@@ -810,37 +924,44 @@ class TodoTracker:
                     if isinstance(scope_data, dict)
                     else []
                 )
-                verification_data = data.get("verification") or []
-                if isinstance(verification_data, dict) and "commands" in verification_data:
-                    verification_data = [
-                        {"description": str(command), "command": str(command)}
-                        for command in verification_data["commands"]
-                    ]
-                elif not isinstance(verification_data, list):
-                    verification_data = []
+                priority = str(data.get("priority") or "medium").strip().lower()
+                if priority not in PRIORITIES:
+                    report["warnings"].append(f"{path}: unknown priority {priority!r}; using medium")
+                    priority = "medium"
+                created = str((data.get("metadata") or {}).get("created_date") or "") or None
+                created_at = f"{created}T00:00:00Z" if created and "T" not in created else created
+                completed = str(data.get("completed_date") or "") or None
+                completed_at = f"{completed}T00:00:00Z" if completed and "T" not in completed else completed
+                deps = list((data.get("deps") or {}).get("needs", [])) if isinstance(data.get("deps"), dict) else []
+                legacy_dependencies = data.get("dependencies")
+                if legacy_dependencies:
+                    report["counts"]["legacy_dependencies_field"] += 1
+                    if isinstance(legacy_dependencies, dict):
+                        deps.extend(Path(str(entry)).stem for entry in legacy_dependencies.get("blocked_by") or [])
                 payloads.append(
                     {
                         "item_id": item_id,
-                        "title": str(data.get("title") or item_id)[:200],
-                        "worktree": str(data.get("worktree") or Path(root).parent.name),
-                        "priority": str(data.get("priority") or "medium").lower().replace(" ", "-"),
+                        "title": title[:200],
+                        "worktree": str(data.get("worktree") or path.parent.parent.name),
+                        "priority": priority,
                         "description": description,
                         "category": data.get("category"),
                         "approach": data.get("approach"),
                         "state": state,
-                        "blocked_reason": "imported from YAML status: Blocked" if status == "blocked" else None,
+                        "blocked_reason": blocked_reason,
+                        "created_at": created_at,
+                        "completed_at": completed_at if state == "done" else None,
                         "work": work,
-                        "deps": [
-                            str(dep)
-                            for dep in (
-                                (data.get("deps") or {}).get("needs", [])
-                                if isinstance(data.get("deps"), dict)
-                                else data.get("dependencies", []) or []
-                            )
-                        ],
+                        "deps": [str(dep) for dep in deps],
                         "scope": scope,
-                        "verifications": verification_data,
+                        "verifications": _coerce_verifications(data.get("verification")),
                         "preserves": [str(value) for value in data.get("must_preserve", []) or []],
+                        "anti_patterns": [
+                            _parse_anti_pattern(str(value)) for value in data.get("anti_patterns", []) or []
+                        ],
+                        "prior_art": [_parse_prior_art(str(value)) for value in data.get("prior_art", []) or []],
+                        "deferrals": [entry for entry in data.get("deferred", []) or [] if isinstance(entry, dict)],
+                        "_archive": archived,
                         "_path": str(path),
                     }
                 )
@@ -850,7 +971,7 @@ class TodoTracker:
             candidate = base
             suffix = 2
             while candidate in seen:
-                candidate = f"{base}-{suffix}"
+                candidate = f"{base}-archived" if payload["_archive"] and suffix == 2 else f"{base}-{suffix}"
                 suffix += 1
             if candidate != base:
                 report["warnings"].append(f"{payload['_path']}: duplicate id stored as {candidate}")
@@ -858,20 +979,33 @@ class TodoTracker:
             seen.add(candidate)
         known = set(seen)
         if not dry_run:
+            deferred_deps: list[tuple[str, str, str]] = []
             for payload in payloads:
                 raw_deps = payload.pop("deps")
-                deps = [dep for dep in raw_deps if dep in known]
-                for dep in raw_deps:
-                    if dep not in known:
-                        report["counts"]["deps_dangling"] += 1
-                payload["deps"] = deps
                 try:
                     self.create_item(**{key: value for key, value in payload.items() if not key.startswith("_")})
                 except Exception as exc:
                     report["skipped"].append(f"{payload['_path']}: {exc}")
                     continue
                 report["imported"].append(payload["item_id"])
-                report["counts"]["done_items" if payload["state"] == "done" else "open_items"] += 1
+                report["counts"]["done_items" if payload["_archive"] else "open_items"] += 1
+                deferred_deps.extend((payload["item_id"], str(dep), payload["_path"]) for dep in raw_deps)
+            seen_deps: set[tuple[str, str]] = set()
+            for item_id, dep, path in deferred_deps:
+                if (item_id, dep) in seen_deps:
+                    continue
+                seen_deps.add((item_id, dep))
+                if dep not in known:
+                    report["counts"]["deps_dangling"] += 1
+                    report["warnings"].append(f"{path}: dependency {dep!r} not in import set (dangling); skipped")
+                    continue
+                try:
+                    self.add_item_dep(item_id, dep)
+                    report["counts"]["deps_resolved"] += 1
+                except TodoError as exc:
+                    report["warnings"].append(f"{path}: dependency {dep!r} rejected: {exc}")
         else:
             report["imported"] = [payload["item_id"] for payload in payloads]
+            report["counts"]["open_items"] = sum(not payload["_archive"] for payload in payloads)
+            report["counts"]["done_items"] = sum(payload["_archive"] for payload in payloads)
         return report

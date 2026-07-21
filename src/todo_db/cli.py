@@ -13,6 +13,7 @@ from typing import Any
 
 from .audit import canonical_json
 from .database import TodoDatabase
+from .database import TOOL_VERSION
 from .errors import TodoDBError, TodoError
 from .models import CredentialMode, DatabaseConfig, ProjectIdentity
 from .tracker import PRIORITIES, TodoTracker
@@ -20,8 +21,8 @@ from .tracker import PRIORITIES, TodoTracker
 
 def _default_db() -> str:
     return (
-        os.environ.get("TODO_DB_URL")
-        or os.environ.get("TODO_DB_PATH")
+        os.environ.get("TODO_DB_PATH")
+        or os.environ.get("TODO_DB_URL")
         or str(Path.cwd() / ".todo-db" / "standalone.sqlite")
     )
 
@@ -33,6 +34,7 @@ def _identity_args(parser: argparse.ArgumentParser, *, required: bool = False) -
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="todo-db", description="Project-isolated database-backed TODO tracker")
+    parser.add_argument("--version", action="version", version=f"todo-db {TOOL_VERSION}")
     parser.add_argument("--db", default=_default_db(), help="local SQLite path or secure libsql/https URL")
     parser.add_argument("--replica", type=Path, help="local embedded-replica path for hosted read-write mode")
     parser.add_argument("--actor", help="audit actor identity")
@@ -248,7 +250,30 @@ def _load_payload(args: argparse.Namespace) -> dict[str, Any]:
             raise TodoError(f"--from payload is not valid JSON: {exc}") from exc
         if args.id and not payload.get("id"):
             payload["id"] = args.id
-        return payload
+        allowed = {
+            "id",
+            "item_id",
+            "title",
+            "worktree",
+            "priority",
+            "description",
+            "category",
+            "approach",
+            "state",
+            "blocked_reason",
+            "created_at",
+            "completed_at",
+            "completed_pr",
+            "work",
+            "deps",
+            "scope",
+            "verifications",
+            "preserves",
+            "anti_patterns",
+            "prior_art",
+            "deferrals",
+        }
+        return {key: value for key, value in payload.items() if key in allowed}
     required = ("id", "title", "worktree", "priority", "description")
     missing = [field for field in required if not getattr(args, field)]
     if missing:
@@ -300,7 +325,7 @@ def _changed_files(base: str | None) -> list[str]:
     return sorted(file for file in files if file)
 
 
-def main(argv: list[str] | None = None) -> int:
+def _main(argv: list[str] | None = None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
     try:
@@ -323,6 +348,8 @@ def main(argv: list[str] | None = None) -> int:
                 print(json.dumps(database.verify_audit(), sort_keys=True))
             elif command == "import-yaml":
                 if args.replace:
+                    if not _config(args, mode).is_hosted or args.dry_run:
+                        raise TodoError("--replace only applies to a live import into the hosted backend")
                     tracker.clear_items()
                 report = tracker.import_yaml_tree(
                     args.todo_dir, None if args.skip_done else args.done_dir, dry_run=args.dry_run
@@ -401,23 +428,35 @@ def main(argv: list[str] | None = None) -> int:
             elif command == "stats":
                 print(json.dumps(tracker.stats(), indent=2, sort_keys=True))
             elif command == "check-scope":
-                violations = tracker.check_scope(args.id, args.files or _changed_files(args.base))
+                files = args.files or _changed_files(args.base)
+                violations = tracker.check_scope(args.id, files)
                 for violation in violations:
-                    print(violation, file=sys.stderr)
-                return 2 if violations else 0
+                    print(violation)
+                if violations:
+                    return 1
+                print(f"scope OK ({len(files)} changed file(s))")
+                return 0
             elif command == "verify":
                 if args.run is None:
                     print(json.dumps(tracker.get_item(args.id)["verifications"], indent=2, sort_keys=True))
                 else:
                     result, output = tracker.run_verification(args.id, args.run)
-                    print(output, end="" if output.endswith("\n") else "\n")
-                    return 0 if result == "pass" else 2
+                    print(f"seq {args.run}: {result}")
+                    tail = "\n".join(output.splitlines()[-10:])
+                    if tail:
+                        print(tail)
+                    return 0 if result == "pass" else 1
             elif command == "lint":
+                if args.id is None and not args.all:
+                    raise TodoError("lint requires an item id or --all")
                 ids = [item["id"] for item in tracker.list_items()] if args.all else [args.id]
                 findings = {item_id: tracker.lint(item_id) for item_id in ids}
-                findings = {item_id: values for item_id, values in findings.items() if values}
-                print(json.dumps(findings, indent=2, sort_keys=True))
-                return 2 if findings else 0
+                total = sum(len(values) for values in findings.values())
+                for item_id, values in findings.items():
+                    for finding in values:
+                        print(f"{item_id}: {finding}")
+                print(f"{total} finding(s) across {len(ids)} item(s)")
+                return 1 if total else 0
             elif command == "sweep-stale":
                 print("\n".join(tracker.sweep_stale(args.ttl_hours)))
             elif command == "config":
@@ -442,6 +481,13 @@ def main(argv: list[str] | None = None) -> int:
     except (TodoDBError, TodoError, OSError, ValueError, sqlite3.Error) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
+
+
+def main(argv: list[str] | None = None) -> int:
+    try:
+        return _main(argv)
+    except BrokenPipeError:
+        return 0
 
 
 if __name__ == "__main__":

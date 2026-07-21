@@ -56,8 +56,18 @@ uv run todo-db --db .todo-db/standalone.sqlite import-yaml \
   --done-dir /path/to/project/_project/DONE
 ```
 
-Use `--dry-run` to inspect the import report first. `--replace` is an explicit
-destructive tracker-table replacement and should only be used after an export.
+Use `--dry-run` to inspect the import report first. `--replace` is refused for
+local databases and dry runs; it exists only for an explicitly selected live
+hosted import after an export and restore plan has been approved.
+
+Legacy event rows are not copied byte-for-byte during YAML import because the
+standalone schema requires a hash-chained event envelope. The versioned mapping
+is: each imported item emits a standalone `create` event with `item_id` in the
+canonical detail object; each imported deferral emits `defer`; each accepted
+dependency emits `dependency`. Original item timestamps and lifecycle fields
+remain row data, while new event timestamps record the import operation. Shadow
+comparison normalizes this documented action/item/detail mapping and must not
+discard actor or action provenance to manufacture parity.
 
 Restore is equally explicit and verifies the project identity, schema version,
 and audit chain before replacing state:
