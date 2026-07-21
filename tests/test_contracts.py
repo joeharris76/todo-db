@@ -1,0 +1,278 @@
+from __future__ import annotations
+
+import sqlite3
+import tomllib
+import json
+from pathlib import Path
+
+import pytest
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_project_metadata_and_console_contract() -> None:
+    manifest = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    project = manifest["project"]
+
+    assert project["name"] == "todo-db"
+    assert project["requires-python"] == ">=3.10"
+    assert project["scripts"] == {
+        "todo-db": "todo_db.cli:main",
+        "todo": "todo_db.cli:main",
+    }
+    assert manifest["tool"]["hatch"]["build"]["targets"]["wheel"]["packages"] == ["src/todo_db"]
+
+
+def test_database_config_accepts_hosted_targets_without_coercing_them_to_paths() -> None:
+    from todo_db import DatabaseConfig, ProjectIdentity
+
+    config = DatabaseConfig(
+        path="libsql://project.aws-us-east-1.turso.io",
+        identity=ProjectIdentity(project_id="project-test", repository="https://example.test/project"),
+    )
+
+    assert config.path == "libsql://project.aws-us-east-1.turso.io"
+    assert config.is_hosted is True
+
+
+def test_public_import_surface() -> None:
+    from todo_db import CredentialMode, DatabaseConfig, ProjectIdentity, TodoDatabase
+    from todo_db.errors import ProjectIdentityMismatchError, SchemaMismatchError
+
+    assert CredentialMode.READ_WRITE.value == "read-write"
+    assert CredentialMode.READ_ONLY.value == "read-only"
+    assert DatabaseConfig and ProjectIdentity and TodoDatabase and ProjectIdentityMismatchError and SchemaMismatchError
+
+
+def test_cli_accepts_global_db_before_subcommand(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    from todo_db.cli import main
+
+    db_path = tmp_path / "todo.sqlite"
+    assert (
+        main(
+            [
+                "--db",
+                str(db_path),
+                "init",
+                "--project-id",
+                "project-test",
+                "--repository",
+                "https://example.test/project",
+            ]
+        )
+        == 0
+    )
+    assert "schema" in capsys.readouterr().out.lower()
+
+
+def test_sqlite_bootstrap_binds_project_identity(tmp_path: Path) -> None:
+    from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase
+
+    identity = ProjectIdentity(project_id="project-test", repository="https://example.test/project")
+    db = TodoDatabase.open(DatabaseConfig(path=tmp_path / "todo.sqlite", identity=identity))
+
+    assert db.project_identity == identity
+    assert db.schema_version == 3
+    db.close()
+
+
+def test_project_identity_mismatch_is_rejected_before_access(tmp_path: Path) -> None:
+    from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase
+    from todo_db.errors import ProjectIdentityMismatchError
+
+    path = tmp_path / "todo.sqlite"
+    TodoDatabase.open(
+        DatabaseConfig(
+            path=path,
+            identity=ProjectIdentity(project_id="project-a", repository="https://example.test/a"),
+        )
+    ).close()
+
+    with pytest.raises(ProjectIdentityMismatchError, match="project identity mismatch"):
+        TodoDatabase.open(
+            DatabaseConfig(
+                path=path,
+                identity=ProjectIdentity(project_id="project-b", repository="https://example.test/b"),
+            )
+        )
+
+
+def test_cli_reports_identity_mismatch_as_a_failed_command(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    from todo_db.cli import main
+
+    db_path = tmp_path / "todo.sqlite"
+    assert (
+        main(
+            [
+                "--db",
+                str(db_path),
+                "init",
+                "--project-id",
+                "project-a",
+                "--repository",
+                "https://example.test/a",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+
+    assert (
+        main(
+            [
+                "--db",
+                str(db_path),
+                "init",
+                "--project-id",
+                "project-b",
+                "--repository",
+                "https://example.test/b",
+            ]
+        )
+        == 2
+    )
+    assert "project identity mismatch" in capsys.readouterr().err
+
+
+def test_cli_exports_and_verifies_the_audit_chain(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase
+    from todo_db.cli import main
+
+    db_path = tmp_path / "todo.sqlite"
+    identity = ProjectIdentity(project_id="project-test", repository="https://example.test/project")
+    db = TodoDatabase.open(DatabaseConfig(path=db_path, identity=identity))
+    db.record_event(actor="test", action="probe", detail={"value": 7})
+    db.close()
+
+    export_path = tmp_path / "export.json"
+    assert (
+        main(
+            [
+                "--db",
+                str(db_path),
+                "export",
+                "--project-id",
+                identity.project_id,
+                "--repository",
+                identity.repository,
+                "--output",
+                str(export_path),
+            ]
+        )
+        == 0
+    )
+    assert json.loads(export_path.read_text(encoding="utf-8"))["integrity"]["event_count"] == 1
+    capsys.readouterr()
+
+    assert (
+        main(
+            [
+                "--db",
+                str(db_path),
+                "audit",
+                "verify",
+                "--project-id",
+                identity.project_id,
+                "--repository",
+                identity.repository,
+            ]
+        )
+        == 0
+    )
+    assert '"head_seq": 1' in capsys.readouterr().out
+
+
+def test_local_read_only_mode_rejects_writes(tmp_path: Path) -> None:
+    from todo_db import CredentialMode, DatabaseConfig, ProjectIdentity, TodoDatabase
+
+    path = tmp_path / "todo.sqlite"
+    identity = ProjectIdentity(project_id="project-test", repository="https://example.test/project")
+    writable = TodoDatabase.open(DatabaseConfig(path=path, identity=identity))
+    writable.set_metadata("example", "value")
+    writable.close()
+
+    readonly = TodoDatabase.open(DatabaseConfig(path=path, identity=identity, credential_mode=CredentialMode.READ_ONLY))
+    assert readonly.get_metadata("example") == "value"
+    with pytest.raises(sqlite3.OperationalError, match="readonly"):
+        readonly.set_metadata("example", "changed")
+    readonly.close()
+
+
+def test_export_envelope_preserves_metadata_and_audit_events(tmp_path: Path) -> None:
+    from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase
+
+    identity = ProjectIdentity(project_id="project-test", repository="https://example.test/project")
+    db = TodoDatabase.open(DatabaseConfig(path=tmp_path / "todo.sqlite", identity=identity))
+    db.set_metadata("lint.require_scope_rules", "on")
+    db.record_event(actor="test", action="probe", detail={"value": 7})
+
+    exported = db.export()
+
+    assert exported["format_version"] == 2
+    assert exported["project"] == {
+        "project_id": "project-test",
+        "repository": "https://example.test/project",
+    }
+    assert exported["schema"]["version"] == 3
+    assert exported["metadata"]["lint.require_scope_rules"] == "on"
+    assert exported["events"][-1]["action"] == "probe"
+    assert exported["events"][-1]["detail"] == {"value": 7}
+    assert "tables" in exported
+    db.close()
+
+
+def test_migration_checksum_is_recorded_and_tampering_is_rejected(tmp_path: Path) -> None:
+    from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase
+    from todo_db.errors import SchemaMismatchError
+
+    path = tmp_path / "todo.sqlite"
+    identity = ProjectIdentity(project_id="project-test", repository="https://example.test/project")
+    TodoDatabase.open(DatabaseConfig(path=path, identity=identity)).close()
+
+    raw = sqlite3.connect(path)
+    migration = raw.execute("SELECT version, checksum FROM schema_migrations").fetchone()
+    assert migration[0] == 1
+    assert len(migration[1]) == 64
+    raw.execute("UPDATE schema_migrations SET checksum = 'tampered'")
+    raw.commit()
+    raw.close()
+
+    with pytest.raises(SchemaMismatchError, match="schema migration mismatch"):
+        TodoDatabase.open(DatabaseConfig(path=path, identity=identity))
+
+
+def test_export_is_deterministic_for_unchanged_state(tmp_path: Path) -> None:
+    from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase
+
+    identity = ProjectIdentity(project_id="project-test", repository="https://example.test/project")
+    db = TodoDatabase.open(DatabaseConfig(path=tmp_path / "todo.sqlite", identity=identity))
+    db.record_event(actor="test", action="probe", detail={"value": 7})
+
+    assert json.dumps(db.export(), sort_keys=True) == json.dumps(db.export(), sort_keys=True)
+    db.close()
+
+
+def test_export_can_be_restored_with_a_verified_audit_chain(tmp_path: Path) -> None:
+    from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase, TodoTracker
+
+    identity = ProjectIdentity(project_id="restore-test", repository="todo-db")
+    source = TodoDatabase.open(DatabaseConfig(path=tmp_path / "source.sqlite", identity=identity))
+    tracker = TodoTracker(source, actor="restore-test")
+    tracker.create_item(
+        item_id="restore-item",
+        title="Restore item",
+        worktree="todo-db",
+        priority="medium",
+        description="An item used to validate lossless restore.",
+    )
+    source.set_metadata("backup", "included")
+    exported = source.export()
+    source.close()
+
+    restored = TodoDatabase.open(DatabaseConfig(path=tmp_path / "restored.sqlite", identity=identity))
+    restored.restore(exported)
+    assert restored.export()["events"] == exported["events"]
+    assert restored.get_metadata("backup") == "included"
+    assert restored.export()["tables"]["items"] == exported["tables"]["items"]
+    restored.close()
