@@ -139,6 +139,11 @@ def _token(config: DatabaseConfig) -> str:
     return token
 
 
+def _redacted_error(exc: BaseException, *, url: str, token: str) -> str:
+    message = str(exc).replace(url, "[REDACTED]")
+    return message.replace(token, "[REDACTED]") if token else message
+
+
 @contextmanager
 def _replica_lock(path: Path):
     try:
@@ -166,17 +171,27 @@ def _connect_hosted(config: DatabaseConfig) -> HostedConnection:
         raise TodoDBError("hosted backend requires the `todo-db[hosted]` extra") from exc
 
     if config.credential_mode is CredentialMode.READ_ONLY:
-        return HostedConnection(libsql.connect(url, auth_token=token))
+        try:
+            return HostedConnection(libsql.connect(url, auth_token=token))
+        except Exception as exc:
+            raise TodoDBError(
+                f"hosted backend connection failed: {_redacted_error(exc, url=url, token=token)}"
+            ) from None
 
     replica = config.replica_path or Path.cwd() / ".todo-db" / "replica.db"
     replica.parent.mkdir(parents=True, exist_ok=True)
     with _replica_lock(replica):
-        raw = libsql.connect(str(replica), sync_url=url, auth_token=token, isolation_level=None)
+        try:
+            raw = libsql.connect(str(replica), sync_url=url, auth_token=token, isolation_level=None)
+        except Exception as exc:
+            raise TodoDBError(
+                f"hosted backend connection failed: {_redacted_error(exc, url=url, token=token)}"
+            ) from None
         connection = HostedConnection(raw)
         try:
             connection.sync()
         except Exception as exc:
             connection.close()
-            raise TodoDBError(f"hosted backend sync failed: {exc}") from exc
+            raise TodoDBError(f"hosted backend sync failed: {_redacted_error(exc, url=url, token=token)}") from None
     connection.execute("PRAGMA foreign_keys = ON")
     return connection

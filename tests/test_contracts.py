@@ -242,6 +242,25 @@ def test_migration_checksum_is_recorded_and_tampering_is_rejected(tmp_path: Path
         TodoDatabase.open(DatabaseConfig(path=path, identity=identity))
 
 
+def test_prior_package_refuses_a_database_with_a_newer_schema(tmp_path: Path) -> None:
+    from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase
+    from todo_db.errors import SchemaMismatchError
+
+    path = tmp_path / "future.sqlite"
+    identity = ProjectIdentity(project_id="project-test", repository="https://example.test/project")
+    TodoDatabase.open(DatabaseConfig(path=path, identity=identity)).close()
+    raw = sqlite3.connect(path)
+    raw.execute(
+        "INSERT INTO schema_migrations(version, name, checksum, applied_at, tool_version) "
+        "VALUES (4, 'future', 'future-checksum', '2026-01-01T00:00:00Z', '0.2.0')"
+    )
+    raw.commit()
+    raw.close()
+
+    with pytest.raises(SchemaMismatchError, match="schema migration mismatch"):
+        TodoDatabase.open(DatabaseConfig(path=path, identity=identity))
+
+
 def test_export_is_deterministic_for_unchanged_state(tmp_path: Path) -> None:
     from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase
 
@@ -280,6 +299,7 @@ def test_export_can_be_restored_with_a_verified_audit_chain(tmp_path: Path) -> N
     assert restored.get_metadata("backup") == "included"
     assert restored.export()["tables"]["items"] == exported["tables"]["items"]
     assert restored.export()["tables"]["schema_migrations"] == exported["tables"]["schema_migrations"]
+    assert restored.export() == exported
     restored.close()
 
 

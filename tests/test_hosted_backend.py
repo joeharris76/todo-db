@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 import sys
+import traceback
 import types
 from pathlib import Path
 
@@ -132,6 +133,81 @@ def test_turso_backend_rejects_plaintext_urls(monkeypatch: pytest.MonkeyPatch, t
                 auth_token="rw-token",
             )
         )
+
+
+def test_hosted_sync_outage_fails_closed_and_redacts_url_and_token(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase
+    from todo_db.errors import TodoDBError
+
+    url = "libsql://sensitive-project.example.test"
+    token = "sensitive-write-token"
+    fake = FakeLibsql(tmp_path / "primary.sqlite")
+    original_connect = fake.connect
+
+    def connect_with_failed_sync(database, **kwargs):
+        connection = original_connect(database, **kwargs)
+
+        def failed_sync():
+            raise RuntimeError(f"cannot reach {url} using {token}")
+
+        connection.sync = failed_sync
+        return connection
+
+    fake.connect = connect_with_failed_sync
+    monkeypatch.setitem(sys.modules, "libsql", fake)
+    with pytest.raises(TodoDBError) as raised:
+        TodoDatabase.open(
+            DatabaseConfig(
+                path=url,
+                identity=ProjectIdentity(project_id="outage-test", repository="todo-db"),
+                auth_token=token,
+                replica_path=tmp_path / "replica.sqlite",
+            )
+        )
+    message = str(raised.value)
+    assert "hosted backend sync failed" in message
+    assert url not in message
+    assert token not in message
+    assert "[REDACTED]" in message
+    rendered = "".join(traceback.format_exception(raised.type, raised.value, raised.tb))
+    assert url not in rendered
+    assert token not in rendered
+    with pytest.raises(sqlite3.ProgrammingError, match="closed database"):
+        fake.connections[0].execute("SELECT 1")
+
+
+def test_hosted_read_only_outage_redacts_url_and_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    from todo_db import CredentialMode, DatabaseConfig, ProjectIdentity, TodoDatabase
+    from todo_db.errors import TodoDBError
+
+    url = "libsql://sensitive-readonly.example.test"
+    token = "sensitive-read-token"
+    fake = types.ModuleType("libsql")
+
+    def failed_connect(database, **kwargs):
+        raise RuntimeError(f"cannot reach {database} using {kwargs['auth_token']}")
+
+    fake.connect = failed_connect
+    monkeypatch.setitem(sys.modules, "libsql", fake)
+    with pytest.raises(TodoDBError) as raised:
+        TodoDatabase.open(
+            DatabaseConfig(
+                path=url,
+                identity=ProjectIdentity(project_id="outage-test", repository="todo-db"),
+                auth_token=token,
+                credential_mode=CredentialMode.READ_ONLY,
+            )
+        )
+    message = str(raised.value)
+    assert "hosted backend connection failed" in message
+    assert url not in message
+    assert token not in message
+    assert "[REDACTED]" in message
+    rendered = "".join(traceback.format_exception(raised.type, raised.value, raised.tb))
+    assert url not in rendered
+    assert token not in rendered
 
 
 def test_hosted_tracker_lifecycle_uses_same_transactional_service(
