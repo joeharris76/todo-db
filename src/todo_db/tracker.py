@@ -302,7 +302,7 @@ class TodoTracker:
             if kind not in ("only_modify", "do_not_modify"):
                 raise TodoError(f"invalid scope rule kind: {kind}")
             self.connection.execute(
-                "INSERT INTO scope_rules (item_id, kind, path_glob) VALUES (?, ?, ?)",
+                "INSERT OR IGNORE INTO scope_rules (item_id, kind, path_glob) VALUES (?, ?, ?)",
                 (item_id, kind, path_glob),
             )
         for seq, verification in enumerate(verifications, start=1):
@@ -860,7 +860,7 @@ class TodoTracker:
                     state, blocked_reason = STATUS_MAP.get(status or "not started", ("planning", None))
                     if status and status not in STATUS_MAP:
                         report["warnings"].append(f"{path}: unknown status {status!r}; imported as planning")
-                work_raw = data.get("work") or data.get("tasks") or []
+                work_raw = data.get("work") or []
                 if data.get("tasks") and not data.get("work"):
                     report["counts"]["legacy_tasks_structure"] += 1
                 work: list[dict[str, Any]] = []

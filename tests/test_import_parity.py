@@ -182,3 +182,48 @@ description: Nested item with legacy worktree fallback.
     tracker.import_yaml_tree(todo_dir)
     assert tracker.get_item("nested-item")["worktree"] == "TODO"
     database.close()
+
+
+def test_legacy_tasks_are_counted_but_not_materialized(tmp_path: Path) -> None:
+    """BenchBox todo_db.py:1959-1963 records deprecated tasks without importing them."""
+    done_dir = tmp_path / "DONE"
+    done_dir.mkdir()
+    (done_dir / "legacy-tasks.yaml").write_text(
+        """id: legacy-tasks
+status: Completed
+tasks:
+  phase3_orchestration:
+    title: Historical task details
+    status: completed
+""",
+        encoding="utf-8",
+    )
+    database, tracker = _tracker(tmp_path)
+    report = tracker.import_yaml_tree(tmp_path / "TODO", done_dir)
+    assert report["counts"]["legacy_tasks_structure"] == 1
+    assert report["warnings"] == []
+    assert tracker.get_item("legacy-tasks")["work"] == []
+    database.close()
+
+
+def test_duplicate_scope_rules_match_legacy_deduplication(tmp_path: Path) -> None:
+    """BenchBox todo_db.py:1071 ignores duplicate scope rules in historical YAML."""
+    done_dir = tmp_path / "DONE"
+    done_dir.mkdir()
+    (done_dir / "duplicate-scope.yaml").write_text(
+        """id: duplicate-scope
+status: Completed
+scope_limit:
+  only_modify:
+    - benchbox/adapter.py
+    - benchbox/adapter.py
+""",
+        encoding="utf-8",
+    )
+    database, tracker = _tracker(tmp_path)
+    report = tracker.import_yaml_tree(tmp_path / "TODO", done_dir)
+    assert report["skipped"] == []
+    assert tracker.get_item("duplicate-scope")["scope"] == [
+        {"kind": "only_modify", "path_glob": "benchbox/adapter.py"}
+    ]
+    database.close()
