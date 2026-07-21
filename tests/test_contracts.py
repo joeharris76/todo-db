@@ -268,6 +268,10 @@ def test_export_can_be_restored_with_a_verified_audit_chain(tmp_path: Path) -> N
     )
     source.set_metadata("backup", "included")
     exported = source.export()
+    for row in exported["schema"]["migrations"]:
+        row["applied_at"] = "2026-01-01T00:00:00Z"
+    for row in exported["tables"]["schema_migrations"]:
+        row["applied_at"] = "2026-01-01T00:00:00Z"
     source.close()
 
     restored = TodoDatabase.open(DatabaseConfig(path=tmp_path / "restored.sqlite", identity=identity))
@@ -275,4 +279,91 @@ def test_export_can_be_restored_with_a_verified_audit_chain(tmp_path: Path) -> N
     assert restored.export()["events"] == exported["events"]
     assert restored.get_metadata("backup") == "included"
     assert restored.export()["tables"]["items"] == exported["tables"]["items"]
+    assert restored.export()["tables"]["schema_migrations"] == exported["tables"]["schema_migrations"]
     restored.close()
+
+
+def test_legacy_snapshot_restore_preserves_tables_and_rehashes_events(tmp_path: Path) -> None:
+    from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase
+    from todo_db.errors import SchemaMismatchError
+
+    identity = ProjectIdentity(project_id="benchbox", repository="https://github.com/joeharris76/BenchBox")
+    database = TodoDatabase.open(DatabaseConfig(path=tmp_path / "restored.sqlite", identity=identity))
+    database.set_metadata("stale-target-value", "must be replaced")
+    snapshot = {
+        "items": [
+            {
+                "id": "legacy-item",
+                "title": "Legacy item",
+                "worktree": "main",
+                "priority": "medium",
+                "state": "planning",
+                "blocked_reason": None,
+                "category": None,
+                "description": "A legacy item restored into standalone storage.",
+                "approach": None,
+                "claimed_by": None,
+                "claimed_at": None,
+                "created_at": "2026-01-01T00:00:00Z",
+                "completed_at": None,
+                "completed_pr": None,
+                "work": [],
+                "deps": [],
+                "scope": [],
+                "verifications": [],
+                "preserves": [],
+                "anti_patterns": [],
+                "prior_art": [],
+                "deferrals": [],
+            }
+        ],
+        "events": [
+            {
+                "seq": 1,
+                "at": "2026-01-01T00:00:01Z",
+                "actor": "legacy",
+                "item_id": "legacy-item",
+                "action": "create",
+                "detail": '{"state":"planning","title":"Legacy item"}',
+            }
+        ],
+        "meta": [{"key": "schema_version", "value": "2"}],
+    }
+    for table in (
+        "work_units",
+        "work_needs",
+        "item_deps",
+        "scope_rules",
+        "verifications",
+        "preserves",
+        "anti_patterns",
+        "prior_art",
+        "deferrals",
+    ):
+        snapshot[table] = []
+
+    database.restore_legacy(snapshot)
+    exported = database.export()
+
+    assert exported["tables"]["items"][0]["id"] == "legacy-item"
+    assert exported["tables"]["meta"] == [{"key": "schema_version", "value": "2"}]
+    assert exported["metadata"] == {}
+    assert exported["events"][0]["detail"] == {
+        "item_id": "legacy-item",
+        "state": "planning",
+        "title": "Legacy item",
+    }
+    assert database.verify_audit()["event_count"] == 1
+    assert len(exported["tables"]["schema_migrations"]) == 3
+
+    before_failed_restore = database.export()
+    missing_table = {key: value for key, value in snapshot.items() if key != "deferrals"}
+    with pytest.raises(SchemaMismatchError, match="missing required tables: deferrals"):
+        database.restore_legacy(missing_table)
+    assert database.export() == before_failed_restore
+
+    malformed = {**snapshot, "items": [snapshot["items"][0], snapshot["items"][0]]}
+    with pytest.raises(sqlite3.IntegrityError, match="UNIQUE constraint failed"):
+        database.restore_legacy(malformed)
+    assert database.export() == before_failed_restore
+    database.close()

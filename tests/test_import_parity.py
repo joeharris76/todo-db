@@ -223,7 +223,5 @@ scope_limit:
     database, tracker = _tracker(tmp_path)
     report = tracker.import_yaml_tree(tmp_path / "TODO", done_dir)
     assert report["skipped"] == []
-    assert tracker.get_item("duplicate-scope")["scope"] == [
-        {"kind": "only_modify", "path_glob": "benchbox/adapter.py"}
-    ]
+    assert tracker.get_item("duplicate-scope")["scope"] == [{"kind": "only_modify", "path_glob": "benchbox/adapter.py"}]
     database.close()

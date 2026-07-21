@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from importlib import resources
 from typing import Any
 
-from .audit import AUDIT_HASH_VERSION, canonical_json, event_hash, verify_event_chain
+from .audit import AUDIT_HASH_ALGORITHM, AUDIT_HASH_VERSION, canonical_json, event_hash, verify_event_chain
 from .backends import connect
 from .errors import AuditIntegrityError, ProjectIdentityMismatchError, SchemaMismatchError
 from .models import CredentialMode, DatabaseConfig, ProjectIdentity
@@ -217,6 +217,21 @@ class TodoDatabase:
             raise SchemaMismatchError("unsupported export format version")
         if exported.get("schema", {}).get("version") != self.schema_version:
             raise SchemaMismatchError("export schema version does not match the installed schema")
+        exported_migrations = [dict(row) for row in exported.get("schema", {}).get("migrations", [])]
+        installed_migrations = [
+            dict(row)
+            for row in self._connection.execute(
+                "SELECT version, name, checksum, applied_at, tool_version FROM schema_migrations ORDER BY version"
+            )
+        ]
+
+        def migration_identity(row: dict[str, Any]) -> tuple[int, str, str]:
+            return (int(row["version"]), str(row["name"]), str(row["checksum"]))
+
+        if [migration_identity(row) for row in exported_migrations] != [
+            migration_identity(row) for row in installed_migrations
+        ]:
+            raise SchemaMismatchError("export migration history does not match the installed schema")
         project = exported.get("project") or {}
         if project != {
             "project_id": self.project_identity.project_id,
@@ -232,6 +247,8 @@ class TodoDatabase:
             head_hash=integrity.get("head_hash"),
         )
         tables = exported.get("tables") or {}
+        if [dict(row) for row in tables.get("schema_migrations", [])] != exported_migrations:
+            raise SchemaMismatchError("export schema migration records disagree with the table payload")
         table_columns = {
             "items": (
                 "id",
@@ -306,6 +323,11 @@ class TodoDatabase:
             "meta",
         )
         with self.transaction():
+            for row in exported_migrations:
+                self._connection.execute(
+                    "UPDATE schema_migrations SET applied_at = ?, tool_version = ? WHERE version = ?",
+                    (row["applied_at"], row["tool_version"], row["version"]),
+                )
             for table in delete_order:
                 self._connection.execute(f"DELETE FROM {table}")
             self._connection.execute("DELETE FROM metadata")
@@ -344,6 +366,101 @@ class TodoDatabase:
                 (head[0]["head_seq"], head[0]["head_hash"]),
             )
         self.verify_audit()
+
+    def restore_legacy(self, snapshot: dict[str, Any]) -> None:
+        """Replace tracker state from a BenchBox legacy-schema snapshot.
+
+        Tracker rows and legacy event provenance are preserved. Legacy events
+        are deterministically re-hashed under the standalone audit contract;
+        the destination's packaged migration history remains authoritative.
+        """
+
+        self._assert_writable()
+        base = self.export()
+        nested_fields = {
+            "work",
+            "deps",
+            "scope",
+            "verifications",
+            "preserves",
+            "anti_patterns",
+            "prior_art",
+            "deferrals",
+        }
+        tracker_tables = (
+            "work_units",
+            "work_needs",
+            "item_deps",
+            "scope_rules",
+            "verifications",
+            "preserves",
+            "anti_patterns",
+            "prior_art",
+            "deferrals",
+            "meta",
+        )
+        required_tables = {"items", "events", *tracker_tables}
+        missing_tables = sorted(required_tables - snapshot.keys())
+        if missing_tables:
+            raise SchemaMismatchError(f"legacy snapshot is missing required tables: {', '.join(missing_tables)}")
+        tables = dict(base["tables"])
+        tables["metadata"] = []
+        tables["items"] = [
+            {key: value for key, value in dict(item).items() if key not in nested_fields}
+            for item in snapshot.get("items", [])
+        ]
+        for table in tracker_tables:
+            tables[table] = [dict(row) for row in snapshot.get(table, [])]
+
+        events: list[dict[str, Any]] = []
+        previous_hash: str | None = None
+        for expected_seq, legacy_event in enumerate(snapshot.get("events", []), start=1):
+            row = dict(legacy_event)
+            seq = int(row["seq"])
+            if seq != expected_seq:
+                raise AuditIntegrityError(f"legacy audit provenance: expected sequence {expected_seq}, got {seq}")
+            raw_detail = row.get("detail")
+            detail = json.loads(raw_detail) if isinstance(raw_detail, str) else dict(raw_detail or {})
+            if row.get("item_id") is not None:
+                detail["item_id"] = row["item_id"]
+            digest = event_hash(
+                identity=self.project_identity,
+                seq=seq,
+                at=str(row["at"]),
+                actor=str(row["actor"]),
+                action=str(row["action"]),
+                detail=detail,
+                prev_hash=previous_hash,
+            )
+            events.append(
+                {
+                    "seq": seq,
+                    "at": row["at"],
+                    "actor": row["actor"],
+                    "action": row["action"],
+                    "detail": detail,
+                    "prev_hash": previous_hash,
+                    "event_hash": digest,
+                    "hash_version": AUDIT_HASH_VERSION,
+                }
+            )
+            previous_hash = digest
+
+        integrity = {
+            "algorithm": AUDIT_HASH_ALGORITHM,
+            "event_count": len(events),
+            "head_seq": len(events),
+            "head_hash": previous_hash,
+        }
+        tables["events"] = events
+        tables["audit_head"] = [{"singleton": 1, "head_seq": len(events), "head_hash": previous_hash}]
+        converted = {
+            **base,
+            "integrity": integrity,
+            "events": events,
+            "tables": tables,
+        }
+        self.restore(converted)
 
     def verify_audit(self) -> dict[str, Any]:
         rows = [

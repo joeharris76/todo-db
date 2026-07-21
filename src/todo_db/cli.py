@@ -54,6 +54,13 @@ def _parser() -> argparse.ArgumentParser:
     restore.add_argument("--input", type=Path, required=True)
     restore.add_argument("--replace", action="store_true", help="confirm replacement of current tracker state")
 
+    restore_legacy = sub.add_parser(
+        "restore-legacy", help="replace tracker state from a BenchBox legacy-schema snapshot"
+    )
+    _identity_args(restore_legacy)
+    restore_legacy.add_argument("--input", type=Path, required=True)
+    restore_legacy.add_argument("--replace", action="store_true", help="confirm replacement of current tracker state")
+
     audit = sub.add_parser("audit", help="audit integrity operations")
     audit_sub = audit.add_subparsers(dest="audit_command", required=True)
     verify_audit = audit_sub.add_parser("verify", help="verify the database event hash chain")
@@ -194,6 +201,7 @@ def _mode_for(args: argparse.Namespace) -> CredentialMode:
             "init",
             "import-yaml",
             "restore",
+            "restore-legacy",
             "create",
             "claim",
             "release",
@@ -344,6 +352,11 @@ def _main(argv: list[str] | None = None) -> int:
                     raise TodoError("restore replaces current state; pass --replace to confirm")
                 database.restore(json.loads(args.input.read_text(encoding="utf-8")))
                 print(f"restored export from {args.input}")
+            elif command == "restore-legacy":
+                if not args.replace:
+                    raise TodoError("restore-legacy replaces current state; pass --replace to confirm")
+                database.restore_legacy(json.loads(args.input.read_text(encoding="utf-8")))
+                print(f"restored legacy snapshot from {args.input}")
             elif command == "audit":
                 print(json.dumps(database.verify_audit(), sort_keys=True))
             elif command == "import-yaml":
