@@ -8,9 +8,11 @@
 # deliberately, never from CI-by-default.
 #
 # Usage:
-#   scripts/turso_acceptance.sh [--db-name NAME] [--keep]
+#   scripts/turso_acceptance.sh [--db-name NAME] [--group NAME] [--keep]
 #
 #   --db-name NAME  use NAME instead of a random todo-db-accept-* name
+#   --group NAME    Turso group for the throwaway DB (default: sole group,
+#                   else the group literally named "default")
 #   --keep          skip destroying the database (and keep the temp workdir)
 #
 # Requirements: an authenticated `turso` CLI (turso auth login), uv, and this
@@ -21,6 +23,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 DB_NAME="todo-db-accept-${RANDOM}${RANDOM}"
+DB_GROUP=""
 KEEP=0
 CREATED=0
 WORK_DIR=""
@@ -38,6 +41,11 @@ while [ $# -gt 0 ]; do
     --db-name)
       [ $# -ge 2 ] || { echo "error: --db-name requires a value" >&2; exit 2; }
       DB_NAME="$2"
+      shift 2
+      ;;
+    --group)
+      [ $# -ge 2 ] || { echo "error: --group requires a value" >&2; exit 2; }
+      DB_GROUP="$2"
       shift 2
       ;;
     --keep)
@@ -86,8 +94,20 @@ REPLICA="$WORK_DIR/replica.db"
 DRAFTS_DIR="$WORK_DIR/drafts"
 EXPORT_JSON="$WORK_DIR/export.json"
 
-echo "==> creating throwaway database ${DB_NAME}"
-turso db create "$DB_NAME" >/dev/null || fail "turso db create ${DB_NAME} failed"
+if [ -z "$DB_GROUP" ]; then
+  GROUPS_FOUND="$(turso group list 2>/dev/null | awk 'NR > 1 && NF { print $1 }')"
+  GROUP_COUNT="$(printf '%s\n' "$GROUPS_FOUND" | grep -c . || true)"
+  if [ "$GROUP_COUNT" -eq 1 ]; then
+    DB_GROUP="$GROUPS_FOUND"
+  elif printf '%s\n' "$GROUPS_FOUND" | grep -qx "default"; then
+    DB_GROUP="default"
+  else
+    fail "multiple Turso groups and none named 'default'; pass --group NAME"
+  fi
+fi
+
+echo "==> creating throwaway database ${DB_NAME} (group ${DB_GROUP})"
+turso db create "$DB_NAME" --group "$DB_GROUP" >/dev/null || fail "turso db create ${DB_NAME} failed"
 CREATED=1
 
 DB_URL="$(turso db show --url "$DB_NAME")"
