@@ -8,6 +8,22 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `todo-db update <id>`: a safe, fully audited amendment verb for
+  create-time-only fields. `--title`/`--description`/`--priority`/
+  `--worktree` edit item metadata with `create`-identical validation;
+  `--add-work` extends the breakdown (new units start `pending`);
+  `--edit-work WID:SUMMARY` rewrites a summary only while the unit is
+  pending (a done unit's evidence attaches to its summary, so it is
+  immutable); `--add-verify`/`--drop-verify SEQ` amend verification steps.
+  `--reason` is required for any edit to a done/dropped item and always for
+  `--drop-verify`. Item id, state, created timestamps, and project identity
+  stay immutable, and `update` never transitions state. Each call commits
+  atomically with one hash-chained `update` event carrying exact from/to
+  diffs, and verification amendments log the full command text (they are
+  security-relevant history because `verify --run` executes stored
+  commands). Calls with no change flags or equal-value edits exit 2 instead
+  of logging empty diffs.
+
 - Auth-failure classification for the hosted backend: connect/sync failures
   that are auth-shaped (HTTP 401/403, `unauthorized`/`forbidden`, token/JWT
   complaints in the underlying libsql error, matched conservatively against

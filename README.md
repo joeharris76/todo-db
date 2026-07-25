@@ -39,10 +39,35 @@ The default standalone path is `.todo-db/standalone.sqlite`. This is
 deliberate: an existing `.todo-db/todo.sqlite` from another tracker schema is
 detected and rejected rather than silently combined with this database.
 
-The CLI also provides `show`, `list`, `ready`, `stats`, `start`, `release`,
-`defer`, `promote`, `dismiss`, `block`, `unblock`, `drop`, `lint`,
+The CLI also provides `show`, `update`, `list`, `ready`, `stats`, `start`,
+`release`, `defer`, `promote`, `dismiss`, `block`, `unblock`, `drop`, `lint`,
 `check-scope`, `verify`, `sweep-stale`, `config`, and `finding` commands.
 `todo` is a compatibility alias for `todo-db`.
+
+## Updating items
+
+`update` amends an item after creation without touching its lifecycle:
+
+```sh
+uv run todo-db --db .todo-db/standalone.sqlite update example-item \
+  --title "Corrected title" --edit-work "w0:Corrected summary" \
+  --add-work "w1:Newly discovered unit" \
+  --add-verify "Lint::uv run ruff check ." \
+  --drop-verify 1 --reason "superseded by the lint step"
+```
+
+Metadata edits (`--title`, `--description`, `--priority`, `--worktree`) are
+validated exactly as `create` validates them. The item id, state, created
+timestamps, and project identity are immutable, and `update` never
+transitions state — the lifecycle verbs own that. `--edit-work` applies only
+while a work unit is pending; a done unit's evidence attaches to its
+summary, so it is immutable. `--reason` is required for any edit to a
+done/dropped item and always for `--drop-verify`. Every call commits
+atomically with one hash-chained `update` audit event carrying exact
+from/to diffs; verification adds and drops log the full command text,
+because `verify --run` executes stored commands and amendments to them are
+security-relevant history. A call with no change flags, or an edit equal to
+the current value, is rejected (exit 2) rather than logged as an empty diff.
 
 ## Adopting todo-db in a new project
 

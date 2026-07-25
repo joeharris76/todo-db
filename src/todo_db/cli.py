@@ -236,6 +236,19 @@ def _parser() -> argparse.ArgumentParser:
     create.add_argument("--verify", action="append", default=[], metavar="DESC[::COMMAND[::EXPECTED]]")
     _identity_args(create)
 
+    update = sub.add_parser("update", help="amend item metadata, work breakdown, or verifications (fully audited)")
+    update.add_argument("id")
+    update.add_argument("--title")
+    update.add_argument("--description")
+    update.add_argument("--priority", choices=PRIORITIES)
+    update.add_argument("--worktree")
+    update.add_argument("--add-work", action="append", default=[], metavar="WID:SUMMARY[:needs=w1,w2]")
+    update.add_argument("--edit-work", action="append", default=[], metavar="WID:NEW-SUMMARY")
+    update.add_argument("--add-verify", action="append", default=[], metavar="DESC[::COMMAND[::EXPECTED]]")
+    update.add_argument("--drop-verify", action="append", default=[], type=int, metavar="SEQ")
+    update.add_argument("--reason", help="required for any edit to a done/dropped item and for --drop-verify")
+    _identity_args(update)
+
     for name, help_text in (
         ("show", "show one item"),
         ("claim", "claim an item"),
@@ -422,6 +435,7 @@ def _mode_for(args: argparse.Namespace) -> CredentialMode:
             "restore",
             "restore-legacy",
             "create",
+            "update",
             "claim",
             "release",
             "start",
@@ -452,6 +466,18 @@ def _parse_work(specs: list[str]) -> list[dict[str, Any]]:
         if len(fields) == 3 and fields[2].startswith("needs="):
             needs = [value for value in fields[2][len("needs=") :].split(",") if value]
         result.append({"id": fields[0], "summary": fields[1], "needs": needs})
+    return result
+
+
+def _parse_work_edits(specs: list[str]) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for spec in specs:
+        wid, sep, summary = spec.partition(":")
+        if not sep or not wid or not summary:
+            raise TodoError(f"--edit-work expects WID:NEW-SUMMARY, got {spec!r}")
+        if wid in result:
+            raise TodoError(f"--edit-work names {wid!r} more than once")
+        result[wid] = summary
     return result
 
 
@@ -1098,6 +1124,20 @@ def _main(argv: list[str] | None = None) -> int:
                 payload = _load_payload(args)
                 item_id = tracker.create_item(**payload)
                 print(f"created {item_id}")
+            elif command == "update":
+                detail = tracker.update_item(
+                    args.id,
+                    title=args.title,
+                    description=args.description,
+                    priority=args.priority,
+                    worktree=args.worktree,
+                    add_work=_parse_work(args.add_work),
+                    edit_work=_parse_work_edits(args.edit_work),
+                    add_verify=_parse_verify(args.add_verify),
+                    drop_verify=args.drop_verify,
+                    reason=args.reason,
+                )
+                print(f"updated {args.id} ({', '.join(sorted(key for key in detail if key != 'reason'))})")
             elif command == "show":
                 item = tracker.get_item(args.id)
                 if args.json:

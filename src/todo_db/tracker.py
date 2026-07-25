@@ -364,6 +364,136 @@ class TodoTracker:
                 )
         return item_id
 
+    def update_item(
+        self,
+        item_id: str,
+        *,
+        title: str | None = None,
+        description: str | None = None,
+        priority: str | None = None,
+        worktree: str | None = None,
+        add_work: Iterable[dict[str, Any]] = (),
+        edit_work: dict[str, str] | None = None,
+        add_verify: Iterable[dict[str, str]] = (),
+        drop_verify: Iterable[int] = (),
+        reason: str | None = None,
+    ) -> dict[str, Any]:
+        """Amend an item without touching its lifecycle; one chained `update` event carries every diff."""
+
+        fields = {"title": title, "description": description, "priority": priority, "worktree": worktree}
+        adds = [dict(unit) for unit in add_work]
+        edits = dict(edit_work or {})
+        verify_adds = [dict(entry) for entry in add_verify]
+        verify_drops = [int(seq) for seq in drop_verify]
+        reason = reason.strip() if reason and reason.strip() else None
+        if all(value is None for value in fields.values()) and not (adds or edits or verify_adds or verify_drops):
+            raise TodoError("update requires at least one change flag")
+        if verify_drops and reason is None:
+            raise TodoError("--drop-verify removes recorded verification steps; --reason is required")
+        with self.database.transaction():
+            item = self._require_item(item_id)
+            if item["state"] in ("done", "dropped") and reason is None:
+                raise TodoError(f"{item_id!r} is {item['state']}; editing a terminal item requires --reason")
+            changes: dict[str, dict[str, Any]] = {}
+            for field, value in fields.items():
+                if value is None:
+                    continue
+                if value == item[field]:
+                    raise TodoError(f"--{field} equals the current value on {item_id!r}; nothing to update")
+                changes[field] = {"from": item[field], "to": value}
+            merged = {field: changes[field]["to"] if field in changes else item[field] for field in fields}
+            self._validate_item(item_id, merged["title"], merged["worktree"], merged["priority"], merged["description"])
+            if changes:
+                assignments = ", ".join(f"{field} = ?" for field in changes)
+                values = [change["to"] for change in changes.values()]
+                self.connection.execute(f"UPDATE items SET {assignments} WHERE id = ?", (*values, item_id))
+            work_edited: dict[str, dict[str, str]] = {}
+            for wid, summary in edits.items():
+                unit = self._require_unit(item_id, wid)
+                if unit["status"] != "pending":
+                    raise TodoError(
+                        f"cannot edit {item_id}:{wid}: unit is {unit['status']}; only pending units are"
+                        " editable (a done unit's evidence attaches to its summary)"
+                    )
+                if summary == unit["summary"]:
+                    raise TodoError(f"--edit-work {wid} equals the current summary; nothing to update")
+                if not 5 <= len(summary) <= 200:
+                    raise TodoError(f"work-unit summary must be between 5 and 200 characters: {item_id}:{wid}")
+                self.connection.execute(
+                    "UPDATE work_units SET summary = ? WHERE item_id = ? AND wid = ?", (summary, item_id, wid)
+                )
+                work_edited[wid] = {"from": unit["summary"], "to": summary}
+            wid_rows = self.connection.execute("SELECT wid FROM work_units WHERE item_id = ?", (item_id,))
+            wids = {row["wid"] for row in wid_rows}
+            work_added: list[dict[str, Any]] = []
+            for unit in adds:
+                wid = str(unit.get("id") or unit.get("wid") or "")
+                summary = str(unit.get("summary") or "")
+                if not WID_RE.fullmatch(wid):
+                    raise TodoError(f"invalid work-unit id {wid!r} on {item_id!r}")
+                if wid in wids:
+                    raise TodoError(f"duplicate work-unit id {item_id}:{wid}")
+                if not 5 <= len(summary) <= 200:
+                    raise TodoError(f"work-unit summary must be between 5 and 200 characters: {item_id}:{wid}")
+                wids.add(wid)
+                self.connection.execute(
+                    "INSERT INTO work_units (item_id, wid, summary, status) VALUES (?, ?, ?, 'pending')",
+                    (item_id, wid, summary),
+                )
+                work_added.append({"id": wid, "summary": summary})
+            for unit, added in zip(adds, work_added):
+                needs = [str(needs_wid) for needs_wid in unit.get("needs", ()) or ()]
+                for needs_wid in needs:
+                    if needs_wid not in wids:
+                        raise TodoError(f"work need {item_id}:{added['id']} -> {needs_wid} references a missing unit")
+                    if _would_cycle(self._work_edges(item_id), added["id"], needs_wid):
+                        raise TodoError(f"work-unit dependency cycle: {item_id}:{added['id']} -> {needs_wid}")
+                    self.connection.execute(
+                        "INSERT INTO work_needs (item_id, wid, needs_wid) VALUES (?, ?, ?)",
+                        (item_id, added["id"], needs_wid),
+                    )
+                if needs:
+                    added["needs"] = needs
+            next_seq = self.connection.execute(
+                "SELECT COALESCE(max(seq), 0) AS seq FROM verifications WHERE item_id = ?", (item_id,)
+            ).fetchone()["seq"]
+            verify_added: list[dict[str, Any]] = []
+            for entry in verify_adds:
+                next_seq += 1
+                name = str(entry.get("description") or "(no description)")
+                self.connection.execute(
+                    "INSERT INTO verifications (item_id, seq, description, command, expected) VALUES (?, ?, ?, ?, ?)",
+                    (item_id, next_seq, name, entry.get("command"), entry.get("expected")),
+                )
+                added_verify: dict[str, Any] = {"seq": next_seq, "name": name, "command": entry.get("command")}
+                if entry.get("expected") is not None:
+                    added_verify["expected"] = entry["expected"]
+                verify_added.append(added_verify)
+            verify_dropped: list[dict[str, Any]] = []
+            for seq in verify_drops:
+                row = self.connection.execute(
+                    "SELECT description, command FROM verifications WHERE item_id = ? AND seq = ?", (item_id, seq)
+                ).fetchone()
+                if row is None:
+                    raise TodoError(f"no verification seq={seq} on {item_id!r}")
+                self.connection.execute("DELETE FROM verifications WHERE item_id = ? AND seq = ?", (item_id, seq))
+                verify_dropped.append({"seq": seq, "name": row["description"], "command": row["command"]})
+            detail: dict[str, Any] = {}
+            if changes:
+                detail["changes"] = changes
+            if work_added:
+                detail["work_added"] = work_added
+            if work_edited:
+                detail["work_edited"] = work_edited
+            if verify_added:
+                detail["verify_added"] = verify_added
+            if verify_dropped:
+                detail["verify_dropped"] = verify_dropped
+            if reason is not None:
+                detail["reason"] = reason
+            self._event("update", item_id, detail)
+        return detail
+
     def add_work_need(self, item_id: str, wid: str, needs_wid: str) -> None:
         with self.database.transaction():
             self._require_item(item_id)
