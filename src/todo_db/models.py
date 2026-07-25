@@ -34,10 +34,15 @@ class ProjectIdentity:
 
 @dataclass(frozen=True, slots=True)
 class DatabaseConfig:
-    """Connection configuration for one project's physical database."""
+    """Connection configuration for one project's physical database.
+
+    ``identity`` may be ``None`` for callers that supply no identity at all;
+    the binding check then defers to the identity already bound in the
+    database, and binding a fresh database is refused.
+    """
 
     path: DatabaseTarget
-    identity: ProjectIdentity
+    identity: ProjectIdentity | None = None
     credential_mode: CredentialMode = CredentialMode.READ_WRITE
     timeout: float = 5.0
     replica_path: Path | None = None

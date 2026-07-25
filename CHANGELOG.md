@@ -8,6 +8,30 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- New-project bootstrap: a discovered repo-local `.todo-db/config.json`
+  (found by walking up from the current directory like git discovery, or via
+  `TODO_DB_CONFIG`) supplies the project identity and database target, with
+  precedence explicit flags > `TODO_DB_*` environment variables > discovered
+  config. A new `init-project` command runs `init` and scaffolds the repo:
+  it writes the committed config file, a `.todo-db/.gitignore` that ignores
+  the databases but keeps `config.json` tracked, and (with `--wrapper
+  [PATH]`) an executable wrapper script that prefers an installed `todo-db`
+  on PATH, falls back to a sibling `../todo-db` checkout, and relies on the
+  config file instead of hardcoded identity flags. `--db` records a local
+  path (default `.todo-db/standalone.sqlite`) or `libsql://` URL in the
+  config; existing scaffolding is never overwritten without `--force`.
+- Hosted `verify --run` gate: against a hosted (libsql/https) database,
+  `verify --run` refuses to execute the DB-stored command (exit 2) unless
+  `TODO_DB_ALLOW_HOSTED_VERIFY_RUN=1` is set, because commands in a shared
+  database are written by other actors and executing them locally is a
+  lateral code-execution channel. Local databases are unchanged.
+- `scripts/turso_acceptance.sh`: a live hosted acceptance script that
+  provisions a throwaway Turso database with the `turso` CLI, exercises
+  init/create/claim/done/complete, the finding draft→sync→show flow, audit
+  verify, and export against the real backend, asserts schema v4, and always
+  destroys the database on exit (`--keep` to retain it). Tokens stay in the
+  environment and are never echoed.
+
 - Findings domain ported from the BenchBox tracker (schema v4, packaged
   migration `004_findings.sql`): credential-free draft capture under
   `~/.todo-db/finding-drafts/<project-id>/` (`TODO_DB_FINDING_DRAFTS_DIR`
@@ -32,6 +56,18 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Breaking:** the implicit default project identity
+  (`todo-db-standalone`/`todo-db`) is removed. `init` with no identity from
+  flags, environment, or a discovered config is now a hard error, so a
+  database can no longer silently bind to the placeholder identity that made
+  the mismatch guard useless. Commands other than `init` may still run
+  without supplying an identity: they proceed under the identity already
+  bound in the database, and the binding check enforces only when the caller
+  asserts one. Anyone relying on the old implicit default must now pass
+  `--project-id`/`--repository`, set
+  `TODO_DB_PROJECT_ID`/`TODO_DB_REPOSITORY`, or adopt `.todo-db/config.json`
+  (BenchBox's compat shim always passes explicit identity flags and is
+  unaffected).
 - `TOOL_VERSION` is now derived from package metadata instead of a duplicated
   constant, so `pyproject.toml` is the single version source.
 - The `dev` dependency group now includes `pyyaml` and `libsql`, so a fresh

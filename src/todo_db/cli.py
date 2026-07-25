@@ -33,13 +33,92 @@ from .tracker import PRIORITIES, TodoTracker
 FINDING_OFFLINE_SUBCOMMANDS = frozenset({"create", "candidates"})
 FINDING_MUTATING_SUBCOMMANDS = frozenset({"sync", "dismiss", "triage", "link", "promote"})
 
+CONFIG_DIRNAME = ".todo-db"
+CONFIG_FILENAME = "config.json"
+DEFAULT_DB_RELATIVE = f"{CONFIG_DIRNAME}/standalone.sqlite"
+DEFAULT_WRAPPER_RELATIVE = "_project/scripts/todo"
+SCAFFOLD_GITIGNORE = "*.sqlite*\nreplica.db*\n*.lock\n!config.json\n"
 
-def _default_db() -> str:
-    return (
-        os.environ.get("TODO_DB_PATH")
-        or os.environ.get("TODO_DB_URL")
-        or str(Path.cwd() / ".todo-db" / "standalone.sqlite")
+IDENTITY_SOURCES_HINT = (
+    "supply --project-id/--repository, set TODO_DB_PROJECT_ID/TODO_DB_REPOSITORY, "
+    f"or run from a repo with a discovered {CONFIG_DIRNAME}/{CONFIG_FILENAME} "
+    "(scaffold one with `todo-db init-project`)"
+)
+
+
+def _load_repo_config(path: Path) -> dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise TodoError(f"invalid repo config {path}: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise TodoError(f"invalid repo config {path}: expected a JSON object")
+    for key in ("project_id", "repository", "db"):
+        if key in payload and (not isinstance(payload[key], str) or not payload[key].strip()):
+            raise TodoError(f"invalid repo config {path}: {key!r} must be a non-empty string")
+    return payload
+
+
+def _discover_repo_config() -> tuple[Path, dict[str, Any]] | None:
+    """Find `.todo-db/config.json` like git discovery: TODO_DB_CONFIG, else walk up from cwd."""
+
+    override = os.environ.get("TODO_DB_CONFIG")
+    if override:
+        path = Path(override).expanduser()
+        if not path.is_file():
+            raise TodoError(f"TODO_DB_CONFIG points to a missing file: {path}")
+        return path, _load_repo_config(path)
+    current = Path.cwd()
+    for candidate in (current, *current.parents):
+        path = candidate / CONFIG_DIRNAME / CONFIG_FILENAME
+        if path.is_file():
+            return path, _load_repo_config(path)
+    return None
+
+
+def _config_root(config_path: Path) -> Path:
+    """The repo root a discovered config belongs to (config lives in `<root>/.todo-db/`)."""
+
+    return config_path.parent.parent
+
+
+def _resolve_identity(
+    args: argparse.Namespace, discovered: tuple[Path, dict[str, Any]] | None
+) -> ProjectIdentity | None:
+    """Resolve identity per field: explicit flag > env > discovered config > nothing."""
+
+    payload = discovered[1] if discovered else {}
+    project_id = (
+        getattr(args, "project_id", None) or os.environ.get("TODO_DB_PROJECT_ID") or payload.get("project_id")
     )
+    repository = (
+        getattr(args, "repository", None) or os.environ.get("TODO_DB_REPOSITORY") or payload.get("repository")
+    )
+    if project_id and repository:
+        return ProjectIdentity(project_id=project_id, repository=repository)
+    if project_id or repository:
+        missing = "--repository" if project_id else "--project-id"
+        raise TodoError(f"partial project identity: {missing} is also required ({IDENTITY_SOURCES_HINT})")
+    return None
+
+
+def _resolve_db(explicit: str | None, discovered: tuple[Path, dict[str, Any]] | None) -> str:
+    """Resolve the database target: explicit flag > env > discovered config > local default."""
+
+    if explicit:
+        return explicit
+    from_env = os.environ.get("TODO_DB_PATH") or os.environ.get("TODO_DB_URL")
+    if from_env:
+        return from_env
+    if discovered is not None:
+        config_path, payload = discovered
+        target = payload.get("db")
+        if target is None:
+            return str(_config_root(config_path) / DEFAULT_DB_RELATIVE)
+        if "://" in target or Path(target).is_absolute():
+            return target
+        return str(_config_root(config_path) / target)
+    return str(Path.cwd() / DEFAULT_DB_RELATIVE)
 
 
 def _identity_args(parser: argparse.ArgumentParser, *, required: bool = False) -> None:
@@ -50,15 +129,43 @@ def _identity_args(parser: argparse.ArgumentParser, *, required: bool = False) -
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="todo-db", description="Project-isolated database-backed TODO tracker")
     parser.add_argument("--version", action="version", version=f"todo-db {TOOL_VERSION}")
-    parser.add_argument("--db", default=_default_db(), help="local SQLite path or secure libsql/https URL")
+    parser.add_argument(
+        "--db",
+        default=None,
+        help="local SQLite path or secure libsql/https URL "
+        f"(default: TODO_DB_PATH/TODO_DB_URL, then a discovered {CONFIG_DIRNAME}/{CONFIG_FILENAME},"
+        f" then ./{DEFAULT_DB_RELATIVE})",
+    )
     parser.add_argument("--replica", type=Path, help="local embedded-replica path for hosted read-write mode")
     parser.add_argument("--actor", help="audit actor identity")
-    parser.add_argument("--project-id", default=os.environ.get("TODO_DB_PROJECT_ID", "todo-db-standalone"))
-    parser.add_argument("--repository", default=os.environ.get("TODO_DB_REPOSITORY", "todo-db"))
+    parser.add_argument("--project-id", default=argparse.SUPPRESS)
+    parser.add_argument("--repository", default=argparse.SUPPRESS)
     sub = parser.add_subparsers(dest="command", required=True)
 
     init = sub.add_parser("init", help="create or validate the schema")
     _identity_args(init)
+
+    init_project = sub.add_parser(
+        "init-project",
+        help=f"init the database and scaffold {CONFIG_DIRNAME}/{CONFIG_FILENAME}, a scoped .gitignore,"
+        " and optionally a wrapper script",
+    )
+    _identity_args(init_project)
+    init_project.add_argument(
+        "--db",
+        dest="db",
+        default=argparse.SUPPRESS,
+        help=f"local path (default {DEFAULT_DB_RELATIVE}) or libsql:// URL, recorded in the config file",
+    )
+    init_project.add_argument(
+        "--wrapper",
+        nargs="?",
+        const=DEFAULT_WRAPPER_RELATIVE,
+        default=None,
+        metavar="PATH",
+        help=f"also write an executable wrapper script (default location {DEFAULT_WRAPPER_RELATIVE})",
+    )
+    init_project.add_argument("--force", action="store_true", help="overwrite an existing config/wrapper")
 
     export = sub.add_parser("export", help="write a lossless JSON export")
     _identity_args(export)
@@ -267,10 +374,10 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _config(args: argparse.Namespace, mode: CredentialMode) -> DatabaseConfig:
+def _config(args: argparse.Namespace, mode: CredentialMode, identity: ProjectIdentity | None) -> DatabaseConfig:
     return DatabaseConfig(
         path=args.db,
-        identity=ProjectIdentity(project_id=args.project_id, repository=args.repository),
+        identity=identity,
         credential_mode=mode,
         replica_path=args.replica,
     )
@@ -288,6 +395,7 @@ def _mode_for(args: argparse.Namespace) -> CredentialMode:
         if args.command
         in {
             "init",
+            "init-project",
             "import-yaml",
             "restore",
             "restore-legacy",
@@ -408,15 +516,19 @@ def _print_work_order(order: dict[str, Any]) -> None:
             print(f"open deferral #{definition['id']}: {definition['summary']}")
 
 
-def _drafts_dir(args: argparse.Namespace) -> Path:
+def _drafts_dir(args: argparse.Namespace, project_id: str | None) -> Path:
     supplied = getattr(args, "drafts_dir", None)
-    return Path(supplied).expanduser() if supplied else default_drafts_dir(args.project_id)
+    if supplied:
+        return Path(supplied).expanduser()
+    if project_id is None and not os.environ.get("TODO_DB_FINDING_DRAFTS_DIR"):
+        raise TodoError(f"the default drafts dir is project-scoped; pass --drafts-dir or {IDENTITY_SOURCES_HINT}")
+    return default_drafts_dir(project_id or "")
 
 
-def _finding_offline(args: argparse.Namespace) -> int:
+def _finding_offline(args: argparse.Namespace, project_id: str | None) -> int:
     """Zero-credential capture: never opens a database connection."""
 
-    drafts_dir = _drafts_dir(args)
+    drafts_dir = _drafts_dir(args, project_id)
     if args.finding_command == "create":
         print(GATE_TEXT, file=sys.stderr)
         path = create_draft(
@@ -468,7 +580,99 @@ def _print_finding(finding: dict[str, Any]) -> None:
         print(f"link: {link['kind']} -> {target}")
 
 
-def _run_finding(database: TodoDatabase, args: argparse.Namespace) -> int:
+def _wrapper_script(project_id: str) -> str:
+    return f"""#!/usr/bin/env bash
+#
+# {project_id} TODO tracker entry point. Routes every subcommand to the
+# canonical `todo-db` CLI. Project identity and database location come from
+# the committed .todo-db/config.json discovered by the CLI; explicit flags and
+# TODO_DB_* environment variables still take precedence over the config file.
+#
+# Tool resolution order:
+#   1. TODO_DB_TOOL       explicit path to a todo-db checkout (uv run --project)
+#   2. `todo-db` on PATH  an installed todo-db package
+#   3. sibling checkout   <repo>/../todo-db
+#
+set -euo pipefail
+
+REPO_ROOT="$(cd -- "$(dirname -- "${{BASH_SOURCE[0]}}")/../.." && pwd)"
+export TODO_DB_CONFIG="${{TODO_DB_CONFIG:-$REPO_ROOT/.todo-db/config.json}}"
+
+if [ -n "${{TODO_DB_TOOL:-}}" ]; then
+  exec uv run --project "$TODO_DB_TOOL" todo-db "$@"
+fi
+if command -v todo-db >/dev/null 2>&1; then
+  exec todo-db "$@"
+fi
+TODO_DB_TOOL="$REPO_ROOT/../todo-db"
+if [ -d "$TODO_DB_TOOL" ]; then
+  exec uv run --project "$TODO_DB_TOOL" todo-db "$@"
+fi
+echo "todo: todo-db not found; install it or set TODO_DB_TOOL to a checkout (tried PATH and '$TODO_DB_TOOL')" >&2
+exit 2
+"""
+
+
+def _warn_if_git_ignored(path: Path, root: Path) -> None:
+    result = subprocess.run(
+        ["git", "check-ignore", "-q", str(path)], cwd=root, capture_output=True, text=True, check=False
+    )
+    if result.returncode == 0:
+        print(
+            f"warning: {path} is ignored by git; {CONFIG_FILENAME} is meant to be committed"
+            f" -- adjust the repository .gitignore (a bare `{CONFIG_DIRNAME}/` rule hides it)",
+            file=sys.stderr,
+        )
+
+
+def _init_project(args: argparse.Namespace, identity: ProjectIdentity, raw_db: str | None) -> int:
+    """Run `init` and scaffold the repo: committed config, scoped .gitignore, optional wrapper."""
+
+    root = Path.cwd()
+    config_dir = root / CONFIG_DIRNAME
+    config_path = config_dir / CONFIG_FILENAME
+    gitignore_path = config_dir / ".gitignore"
+    wrapper_path = (root / args.wrapper) if args.wrapper else None
+    collisions = [path for path in (config_path, wrapper_path) if path is not None and path.exists()]
+    if gitignore_path.exists() and gitignore_path.read_text(encoding="utf-8") != SCAFFOLD_GITIGNORE:
+        collisions.append(gitignore_path)
+    if collisions and not args.force:
+        raise TodoError(
+            "refusing to overwrite existing scaffolding: "
+            + ", ".join(str(path) for path in sorted(set(collisions)))
+            + "; pass --force to overwrite"
+        )
+
+    db_value = raw_db or DEFAULT_DB_RELATIVE
+    if "://" in db_value or Path(db_value).is_absolute():
+        db_target = db_value
+    else:
+        db_target = str(root / db_value)
+    database_config = DatabaseConfig(
+        path=db_target,
+        identity=identity,
+        credential_mode=CredentialMode.READ_WRITE,
+        replica_path=args.replica,
+    )
+    with TodoDatabase.open(database_config) as database:
+        print(f"schema v{database.schema_version} ready for {database.project_identity.project_id}")
+
+    config_dir.mkdir(parents=True, exist_ok=True)
+    payload = {"project_id": identity.project_id, "repository": identity.repository, "db": db_value}
+    config_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(f"wrote {config_path}")
+    gitignore_path.write_text(SCAFFOLD_GITIGNORE, encoding="utf-8")
+    print(f"wrote {gitignore_path}")
+    if wrapper_path is not None:
+        wrapper_path.parent.mkdir(parents=True, exist_ok=True)
+        wrapper_path.write_text(_wrapper_script(identity.project_id), encoding="utf-8")
+        wrapper_path.chmod(wrapper_path.stat().st_mode | 0o111)
+        print(f"wrote {wrapper_path} (executable)")
+    _warn_if_git_ignored(config_path, root)
+    return 0
+
+
+def _run_finding(database: TodoDatabase, args: argparse.Namespace, project_id: str) -> int:
     service = FindingsTracker(database, actor=args.actor)
     command = args.finding_command
     if command == "list":
@@ -485,7 +689,7 @@ def _run_finding(database: TodoDatabase, args: argparse.Namespace) -> int:
         else:
             _print_finding(finding)
     elif command == "sync":
-        result = service.sync_drafts(_drafts_dir(args))
+        result = service.sync_drafts(_drafts_dir(args, project_id))
         print(
             f"synced {len(result['synced'])}, skipped {len(result['skipped'])} (already landed),"
             f" pruned {result['pruned']} old .synced draft(s)"
@@ -538,10 +742,29 @@ def _main(argv: list[str] | None = None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
     try:
+        raw_db = getattr(args, "db", None)
+        if args.command == "init-project":
+            # init-project writes the config file, so it deliberately resolves
+            # identity from flags/env only and never from a discovered config.
+            identity = _resolve_identity(args, None)
+            if identity is None:
+                raise TodoError(
+                    "init-project requires an explicit project identity: "
+                    "pass --project-id/--repository or set TODO_DB_PROJECT_ID/TODO_DB_REPOSITORY"
+                )
+            return _init_project(args, identity, raw_db)
+        discovered = _discover_repo_config()
+        identity = _resolve_identity(args, discovered)
+        args.db = _resolve_db(raw_db, discovered)
+        if args.command == "init" and identity is None:
+            raise TodoError(f"init requires a project identity and no longer assumes one: {IDENTITY_SOURCES_HINT}")
+        project_id = identity.project_id if identity is not None else None
         if args.command == "finding" and args.finding_command in FINDING_OFFLINE_SUBCOMMANDS:
-            return _finding_offline(args)
+            return _finding_offline(args, project_id)
         mode = _mode_for(args)
-        with TodoDatabase.open(_config(args, mode)) as database:
+        with TodoDatabase.open(_config(args, mode, identity)) as database:
+            if project_id is None:
+                project_id = database.project_identity.project_id
             tracker = TodoTracker(database, actor=args.actor)
             command = args.command
             if command in {"init", "migrate"}:
@@ -564,7 +787,7 @@ def _main(argv: list[str] | None = None) -> int:
                 print(json.dumps(database.verify_audit(), sort_keys=True))
             elif command == "import-yaml":
                 if args.replace:
-                    if not _config(args, mode).is_hosted or args.dry_run:
+                    if not _config(args, mode, identity).is_hosted or args.dry_run:
                         raise TodoError("--replace only applies to a live import into the hosted backend")
                     tracker.clear_items()
                 report = tracker.import_yaml_tree(
@@ -641,7 +864,7 @@ def _main(argv: list[str] | None = None) -> int:
                 else:
                     print("\n".join(f"{item['id']} {item['priority']} {item['worktree']}" for item in items))
                     open_findings = FindingsTracker(database, actor=args.actor).open_count()
-                    drafts = count_unsynced_drafts(_drafts_dir(args))
+                    drafts = count_unsynced_drafts(_drafts_dir(args, project_id))
                     if open_findings or drafts:
                         print(
                             f"{open_findings} open finding(s), {drafts} unsynced draft(s)"
@@ -651,7 +874,7 @@ def _main(argv: list[str] | None = None) -> int:
                 stats = {
                     **tracker.stats(),
                     **FindingsTracker(database, actor=args.actor).stats(),
-                    "unsynced_drafts": count_unsynced_drafts(_drafts_dir(args)),
+                    "unsynced_drafts": count_unsynced_drafts(_drafts_dir(args, project_id)),
                 }
                 print(json.dumps(stats, indent=2, sort_keys=True))
             elif command == "check-scope":
@@ -703,7 +926,7 @@ def _main(argv: list[str] | None = None) -> int:
                     tracker.set_config(args.key, args.value)
                     print(f"{args.key}={args.value}")
             elif command == "finding":
-                return _run_finding(database, args)
+                return _run_finding(database, args, project_id)
             else:  # pragma: no cover - argparse constrains command values
                 parser.error(f"unsupported command: {command}")
         return 0

@@ -778,6 +778,14 @@ class TodoTracker:
         return findings
 
     def run_verification(self, item_id: str, seq: int) -> tuple[str, str]:
+        if self.database.is_hosted and os.environ.get("TODO_DB_ALLOW_HOSTED_VERIFY_RUN") != "1":
+            raise TodoError(
+                "refusing to execute a stored verification command from a hosted database: "
+                "commands in a shared database are written by other actors, so running them "
+                "locally is a lateral code-execution channel across the trust boundary. "
+                f"Inspect the command first (`todo-db verify {item_id}`), then set "
+                "TODO_DB_ALLOW_HOSTED_VERIFY_RUN=1 to run it deliberately."
+            )
         row = self.connection.execute(
             "SELECT * FROM verifications WHERE item_id = ? AND seq = ?", (item_id, seq)
         ).fetchone()

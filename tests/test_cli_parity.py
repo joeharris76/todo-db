@@ -10,11 +10,12 @@ import pytest
 
 def test_default_db_prefers_local_path_over_hosted_url(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """BenchBox todo_db.py:303-320 pins TODO_DB_PATH above TODO_DB_URL."""
-    from todo_db.cli import _default_db
+    from todo_db.cli import _resolve_db
 
     monkeypatch.setenv("TODO_DB_PATH", str(tmp_path / "local.sqlite"))
     monkeypatch.setenv("TODO_DB_URL", "libsql://production.example")
-    assert _default_db() == str(tmp_path / "local.sqlite")
+    assert _resolve_db(None, None) == str(tmp_path / "local.sqlite")
+    assert _resolve_db("explicit.sqlite", None) == "explicit.sqlite"
 
 
 def test_default_actor_matches_legacy_harness_order(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -119,4 +120,5 @@ def test_broken_pipe_returns_success(monkeypatch: pytest.MonkeyPatch, tmp_path: 
     from todo_db.cli import main
 
     monkeypatch.setattr("builtins.print", lambda *args, **kwargs: (_ for _ in ()).throw(BrokenPipeError()))
-    assert main(["--db", str(tmp_path / "todo.sqlite"), "init"]) == 0
+    common = ["--db", str(tmp_path / "todo.sqlite"), "--project-id", "cli-parity", "--repository", "todo-db"]
+    assert main([*common, "init"]) == 0

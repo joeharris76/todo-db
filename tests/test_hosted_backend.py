@@ -210,6 +210,79 @@ def test_hosted_read_only_outage_redacts_url_and_token(monkeypatch: pytest.Monke
     assert token not in rendered
 
 
+def _open_hosted_tracker(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase, TodoTracker
+
+    fake = FakeLibsql(tmp_path / "primary.sqlite")
+    monkeypatch.setitem(sys.modules, "libsql", fake)
+    database = TodoDatabase.open(
+        DatabaseConfig(
+            path="libsql://project.aws-us-east-1.turso.io",
+            identity=ProjectIdentity(project_id="hosted-verify", repository="todo-db"),
+            auth_token="rw-token",
+            replica_path=tmp_path / "replica.sqlite",
+        )
+    )
+    tracker = TodoTracker(database, actor="hosted-actor")
+    tracker.create_item(
+        item_id="verify-item",
+        title="Verify item",
+        worktree="todo-db",
+        priority="medium",
+        description="Carries a stored verification command.",
+        verifications=[{"description": "smoke", "command": "printf PASS", "expected": "PASS"}],
+    )
+    return database, tracker
+
+
+def test_hosted_verify_run_refuses_stored_commands_without_explicit_override(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from todo_db.errors import TodoError
+
+    monkeypatch.delenv("TODO_DB_ALLOW_HOSTED_VERIFY_RUN", raising=False)
+    database, tracker = _open_hosted_tracker(monkeypatch, tmp_path)
+    with pytest.raises(TodoError, match="lateral code-execution") as raised:
+        tracker.run_verification("verify-item", 1)
+    assert "TODO_DB_ALLOW_HOSTED_VERIFY_RUN" in str(raised.value)
+    database.close()
+
+
+def test_hosted_verify_run_executes_when_explicitly_allowed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("TODO_DB_ALLOW_HOSTED_VERIFY_RUN", "1")
+    database, tracker = _open_hosted_tracker(monkeypatch, tmp_path)
+    result, output = tracker.run_verification("verify-item", 1)
+    assert result == "pass"
+    assert "PASS" in output
+    database.close()
+
+
+def test_local_verify_run_is_ungated(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase, TodoTracker
+
+    monkeypatch.delenv("TODO_DB_ALLOW_HOSTED_VERIFY_RUN", raising=False)
+    database = TodoDatabase.open(
+        DatabaseConfig(
+            path=tmp_path / "local.sqlite",
+            identity=ProjectIdentity(project_id="local-verify", repository="todo-db"),
+        )
+    )
+    tracker = TodoTracker(database, actor="local-actor")
+    tracker.create_item(
+        item_id="verify-item",
+        title="Verify item",
+        worktree="todo-db",
+        priority="medium",
+        description="A local database runs stored verifications unchanged.",
+        verifications=[{"description": "smoke", "command": "printf PASS", "expected": "PASS"}],
+    )
+    result, _ = tracker.run_verification("verify-item", 1)
+    assert result == "pass"
+    database.close()
+
+
 def test_hosted_tracker_lifecycle_uses_same_transactional_service(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

@@ -150,6 +150,12 @@ class TodoDatabase:
         return self._connection
 
     @property
+    def is_hosted(self) -> bool:
+        """True when this database is a shared hosted (libsql/https) backend."""
+
+        return self._config.is_hosted
+
+    @property
     def schema_version(self) -> int:
         row = self._connection.execute("SELECT max(version) AS version FROM schema_migrations").fetchone()
         return int(row["version"] or 0)
@@ -653,6 +659,12 @@ class TodoDatabase:
             "SELECT project_id, repository FROM project_identity WHERE singleton = 1"
         ).fetchone()
         if row is None:
+            if self._config.identity is None:
+                raise ProjectIdentityMismatchError(
+                    "database has no bound project identity and none was supplied; "
+                    "bind one first with `todo-db init --project-id <id> --repository <url>` "
+                    "(or scaffold the repo with `todo-db init-project`)"
+                )
             with self._write_transaction():
                 self._connection.execute(
                     "INSERT INTO project_identity(singleton, project_id, repository) VALUES (1, ?, ?)",
@@ -705,6 +717,11 @@ class TodoDatabase:
         )
 
     def _check_identity(self) -> None:
+        if self._config.identity is None:
+            # No caller-supplied identity: reads and writes proceed under the
+            # identity already bound in the database.  The mismatch guard only
+            # enforces when the caller asserts an identity.
+            return
         stored = self.project_identity
         if stored != self._config.identity:
             raise ProjectIdentityMismatchError(

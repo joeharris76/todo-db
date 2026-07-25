@@ -44,6 +44,67 @@ The CLI also provides `show`, `list`, `ready`, `stats`, `start`, `release`,
 `check-scope`, `verify`, `sweep-stale`, `config`, and `finding` commands.
 `todo` is a compatibility alias for `todo-db`.
 
+## Adopting todo-db in a new project
+
+`init-project` initializes the database and scaffolds the repo in one step:
+
+```sh
+uv run todo-db init-project \
+  --project-id example-project \
+  --repository https://example.test/example-project \
+  --wrapper
+```
+
+It writes three things into the adopting repository:
+
+- `.todo-db/config.json` — the committed source of the project identity (and
+  optionally the database target as a repo-relative path or `libsql://` URL).
+  Commit this file; it is the whole point of the scaffold.
+- `.todo-db/.gitignore` — ignores the databases (`*.sqlite*`, `replica.db*`,
+  `*.lock`) while keeping `config.json` tracked. Do not add a bare
+  `.todo-db/` rule to the repository root `.gitignore`; that would hide the
+  config file (init-project warns when git ignores it).
+- with `--wrapper [PATH]` (default `_project/scripts/todo`), an executable
+  wrapper that resolves the tool as `TODO_DB_TOOL` checkout, then `todo-db`
+  on PATH, then a sibling `../todo-db` checkout, and points `TODO_DB_CONFIG`
+  at the repo's config so it works from any working directory. The wrapper
+  hardcodes no identity flags.
+
+Every `todo-db` invocation discovers `.todo-db/config.json` by walking up
+from the current directory (like git discovery; `TODO_DB_CONFIG` overrides
+the search). Resolution precedence, per field:
+
+1. explicit flags (`--db`, `--project-id`, `--repository`)
+2. environment (`TODO_DB_PATH`/`TODO_DB_URL`, `TODO_DB_PROJECT_ID`/`TODO_DB_REPOSITORY`)
+3. the discovered `.todo-db/config.json`
+4. for the database, `./.todo-db/standalone.sqlite`; for identity, nothing
+
+There is no default identity. `init` (and `init-project`) without an
+identity from one of those sources is a hard error, so a database can never
+silently bind to a placeholder project. Commands other than `init` may run
+without supplying any identity: they proceed under the identity already
+bound in the database, and the mismatch guard enforces only when the caller
+asserts one. `init-project` refuses to overwrite an existing config or
+wrapper unless `--force` is passed.
+
+For a hosted project, provision first, then point `init-project` at the URL
+(the CLI never provisions; a first-use connection to a missing database
+fails):
+
+```sh
+turso db create example-project
+turso db tokens create example-project   # export as TODO_DB_AUTH_TOKEN
+TODO_DB_AUTH_TOKEN=... uv run todo-db --replica .todo-db/replica.db \
+  init-project --db libsql://example-project.aws-us-east-1.turso.io \
+  --project-id example-project \
+  --repository https://example.test/example-project \
+  --wrapper
+```
+
+`scripts/turso_acceptance.sh` exercises the full hosted lifecycle against a
+throwaway Turso database and destroys it afterwards; it requires an
+authenticated `turso` CLI and costs real resources.
+
 ## Findings
 
 The `finding` group tracks blind-spot findings (review classes, not single
@@ -132,6 +193,14 @@ TODO_DB_RO_AUTH_TOKEN=... uv run todo-db \
 Read-write hosted connections use a per-worktree embedded replica and
 `TODO_DB_AUTH_TOKEN`; read-only exports connect with
 `TODO_DB_RO_AUTH_TOKEN`. Plaintext `http://` URLs are refused.
+
+`verify --run` executes a command stored in the database. On a shared hosted
+database those commands are written by other actors, so running one locally
+is a lateral code-execution channel across the trust boundary between
+writers. Against a hosted backend `verify --run` therefore refuses (exit 2)
+unless `TODO_DB_ALLOW_HOSTED_VERIFY_RUN=1` is set; inspect the command first
+with `todo-db verify <id>`, then opt in per invocation. Local databases are
+unaffected.
 
 Signed export manifests are available through `todo_db.sign_export()` and
 `todo_db.verify_signed_export()`. Keep the signing key outside the database;
