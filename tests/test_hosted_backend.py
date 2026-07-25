@@ -210,6 +210,130 @@ def test_hosted_read_only_outage_redacts_url_and_token(monkeypatch: pytest.Monke
     assert token not in rendered
 
 
+def test_auth_shaped_connect_failure_raises_hosted_auth_error_with_remediation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase
+    from todo_db.errors import HostedAuthError
+
+    url = "libsql://auth-project.example.test"
+    token = "expired-write-token"
+    fake = types.ModuleType("libsql")
+
+    def unauthorized_connect(database, **kwargs):
+        raise ValueError(f"Hrana: api error: status=401, `The JWT is expired` for {database} ({kwargs['auth_token']})")
+
+    fake.connect = unauthorized_connect
+    monkeypatch.setitem(sys.modules, "libsql", fake)
+    with pytest.raises(HostedAuthError) as raised:
+        TodoDatabase.open(
+            DatabaseConfig(
+                path=url,
+                identity=ProjectIdentity(project_id="auth-test", repository="todo-db"),
+                auth_token=token,
+                replica_path=tmp_path / "replica.sqlite",
+            )
+        )
+    message = str(raised.value)
+    assert "hosted backend connection failed" in message
+    assert "token invalid or expired: refresh TODO_DB_AUTH_TOKEN" in message
+    assert "turso db tokens create" in message and "turso auth login" in message
+    assert url not in message and token not in message
+    assert "[REDACTED]" in message
+
+
+def test_auth_shaped_sync_failure_raises_hosted_auth_error_and_fails_closed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase
+    from todo_db.errors import HostedAuthError
+
+    fake = FakeLibsql(tmp_path / "primary.sqlite")
+    original_connect = fake.connect
+
+    def connect_with_expired_sync(database, **kwargs):
+        connection = original_connect(database, **kwargs)
+
+        def unauthorized_sync():
+            raise ValueError("Hrana: api error: status=401, Unauthorized")
+
+        connection.sync = unauthorized_sync
+        return connection
+
+    fake.connect = connect_with_expired_sync
+    monkeypatch.setitem(sys.modules, "libsql", fake)
+    with pytest.raises(HostedAuthError, match="hosted backend sync failed"):
+        TodoDatabase.open(
+            DatabaseConfig(
+                path="libsql://auth-sync.example.test",
+                identity=ProjectIdentity(project_id="auth-sync-test", repository="todo-db"),
+                auth_token="stale-token",
+                replica_path=tmp_path / "replica.sqlite",
+            )
+        )
+    with pytest.raises(sqlite3.ProgrammingError, match="closed database"):
+        fake.connections[0].execute("SELECT 1")
+
+
+def _scrub_cli_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    for variable in (
+        "TODO_DB_PROJECT_ID",
+        "TODO_DB_REPOSITORY",
+        "TODO_DB_PATH",
+        "TODO_DB_URL",
+        "TODO_DB_CONFIG",
+        "TODO_DB_AUTH_TOKEN",
+        "TODO_DB_RO_AUTH_TOKEN",
+    ):
+        monkeypatch.delenv(variable, raising=False)
+    monkeypatch.chdir(tmp_path)
+
+
+def test_cli_maps_hosted_auth_error_to_exit_4_with_redacted_output(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from todo_db.cli import main
+
+    _scrub_cli_env(monkeypatch, tmp_path)
+    url = "libsql://auth-cli.example.test"
+    monkeypatch.setenv("TODO_DB_RO_AUTH_TOKEN", "expired-ro-token")
+    fake = types.ModuleType("libsql")
+
+    def unauthorized_connect(database, **kwargs):
+        raise ValueError(f"Hrana: api error: status=401, Unauthorized for {database} ({kwargs['auth_token']})")
+
+    fake.connect = unauthorized_connect
+    monkeypatch.setitem(sys.modules, "libsql", fake)
+
+    assert main(["--db", url, "list"]) == 4
+    err = capsys.readouterr().err
+    assert "refresh TODO_DB_RO_AUTH_TOKEN" in err
+    assert "turso auth login" in err
+    assert url not in err and "expired-ro-token" not in err
+    assert "[REDACTED]" in err
+
+
+def test_cli_keeps_non_auth_hosted_errors_generic_with_exit_2(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from todo_db.cli import main
+
+    _scrub_cli_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("TODO_DB_RO_AUTH_TOKEN", "ro-token")
+    fake = types.ModuleType("libsql")
+
+    def unreachable_connect(database, **kwargs):
+        raise RuntimeError("connection reset by peer")
+
+    fake.connect = unreachable_connect
+    monkeypatch.setitem(sys.modules, "libsql", fake)
+
+    assert main(["--db", "libsql://outage-cli.example.test", "list"]) == 2
+    err = capsys.readouterr().err
+    assert "hosted backend connection failed" in err
+    assert "turso auth login" not in err
+
+
 def _open_hosted_tracker(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase, TodoTracker
 

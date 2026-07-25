@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import os
+import re
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from .errors import TodoDBError
+from .errors import HostedAuthError, TodoDBError
 from .models import CredentialMode, DatabaseConfig
 
 
@@ -144,6 +145,34 @@ def _redacted_error(exc: BaseException, *, url: str, token: str) -> str:
     return message.replace(token, "[REDACTED]") if token else message
 
 
+_AUTH_MARKERS = re.compile(r"\b(?:401|403|unauthorized|forbidden|auth\w*|token\w*|jwt)\b", re.IGNORECASE)
+
+
+def is_auth_shaped(detail: str) -> bool:
+    """Conservative auth classification over an already-redacted error message."""
+
+    return _AUTH_MARKERS.search(detail) is not None
+
+
+def auth_remediation(token_variable: str = "TODO_DB_AUTH_TOKEN") -> str:
+    return (
+        f"token invalid or expired: refresh {token_variable}, "
+        "e.g. export TODO_DB_AUTH_TOKEN=$(turso db tokens create <db>); "
+        "if the turso CLI itself is logged out, run 'turso auth login'"
+    )
+
+
+def hosted_error(
+    exc: BaseException, *, url: str, token: str, context: str, token_variable: str = "TODO_DB_AUTH_TOKEN"
+) -> TodoDBError:
+    """Redact and classify a hosted failure: HostedAuthError when auth-shaped, TodoDBError otherwise."""
+
+    detail = _redacted_error(exc, url=url, token=token)
+    if is_auth_shaped(detail):
+        return HostedAuthError(f"hosted backend {context} failed: {detail}; {auth_remediation(token_variable)}")
+    return TodoDBError(f"hosted backend {context} failed: {detail}")
+
+
 @contextmanager
 def _replica_lock(path: Path):
     try:
@@ -170,13 +199,12 @@ def _connect_hosted(config: DatabaseConfig) -> HostedConnection:
     except ImportError as exc:
         raise TodoDBError("hosted backend requires the `todo-db[hosted]` extra") from exc
 
+    variable = "TODO_DB_RO_AUTH_TOKEN" if config.credential_mode is CredentialMode.READ_ONLY else "TODO_DB_AUTH_TOKEN"
     if config.credential_mode is CredentialMode.READ_ONLY:
         try:
             return HostedConnection(libsql.connect(url, auth_token=token))
         except Exception as exc:
-            raise TodoDBError(
-                f"hosted backend connection failed: {_redacted_error(exc, url=url, token=token)}"
-            ) from None
+            raise hosted_error(exc, url=url, token=token, context="connection", token_variable=variable) from None
 
     replica = config.replica_path or Path.cwd() / ".todo-db" / "replica.db"
     replica.parent.mkdir(parents=True, exist_ok=True)
@@ -184,14 +212,12 @@ def _connect_hosted(config: DatabaseConfig) -> HostedConnection:
         try:
             raw = libsql.connect(str(replica), sync_url=url, auth_token=token, isolation_level=None)
         except Exception as exc:
-            raise TodoDBError(
-                f"hosted backend connection failed: {_redacted_error(exc, url=url, token=token)}"
-            ) from None
+            raise hosted_error(exc, url=url, token=token, context="connection", token_variable=variable) from None
         connection = HostedConnection(raw)
         try:
             connection.sync()
         except Exception as exc:
             connection.close()
-            raise TodoDBError(f"hosted backend sync failed: {_redacted_error(exc, url=url, token=token)}") from None
+            raise hosted_error(exc, url=url, token=token, context="sync", token_variable=variable) from None
     connection.execute("PRAGMA foreign_keys = ON")
     return connection

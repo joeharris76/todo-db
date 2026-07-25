@@ -2,7 +2,14 @@
 
 from .audit import sign_export, verify_signed_export
 from .database import TodoDatabase
-from .errors import AuditIntegrityError, ProjectIdentityMismatchError, SchemaMismatchError, TodoDBError, TodoError
+from .errors import (
+    AuditIntegrityError,
+    HostedAuthError,
+    ProjectIdentityMismatchError,
+    SchemaMismatchError,
+    TodoDBError,
+    TodoError,
+)
 from .findings import FindingsTracker
 from .models import CredentialMode, DatabaseConfig, ProjectIdentity
 from .tracker import TodoTracker
@@ -12,6 +19,7 @@ __all__ = [
     "CredentialMode",
     "DatabaseConfig",
     "FindingsTracker",
+    "HostedAuthError",
     "ProjectIdentity",
     "ProjectIdentityMismatchError",
     "SchemaMismatchError",

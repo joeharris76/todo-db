@@ -4,6 +4,39 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- Auth-failure classification for the hosted backend: connect/sync failures
+  that are auth-shaped (HTTP 401/403, `unauthorized`/`forbidden`, token/JWT
+  complaints in the underlying libsql error, matched conservatively against
+  the already-redacted message) raise the new `HostedAuthError` whose message
+  names the concrete remediation (refresh `TODO_DB_AUTH_TOKEN` /
+  `TODO_DB_RO_AUTH_TOKEN` via `turso db tokens create`, or `turso auth
+  login`). The CLI maps `HostedAuthError` to a new exit code 4; exit 2 stays
+  the generic fix-the-cause error, and the exit-code contract is documented
+  in `--help` and the README. URL/token redaction guarantees are unchanged.
+- `todo-db doctor`: a read-only preflight that checks config discovery,
+  identity resolution (with source tier; FAIL only when unresolvable and the
+  database is unbound), the database target (local file/parent and schema
+  version with a `behind -- run init to migrate` warning; hosted URL scheme
+  plus a read-only `SELECT` probe against the primary with auth failures
+  classified), turso CLI availability and `turso auth whoami` for hosted
+  targets (WARN means automatic token re-mint is unavailable), and
+  finding-drafts dir writability. Exit 0 healthy (warnings allowed), 4 on
+  any auth-classified failure, 2 on other failures; `--json` emits
+  structured check records with an exit hint; `--rw` opts into a hosted
+  replica open+sync probe (off by default so doctor stays side-effect-free).
+- Wrapper auto-remediation: the `init-project --wrapper` script now retries
+  once on exit 4 against a `libsql://` target after minting a fresh token
+  with the turso CLI (name resolved from `turso db list`, token exported and
+  never echoed). When remediation is impossible it prints a delimited
+  `TODO-DB AUTH ALERT` block to stderr — tracker writes are blocked, the two
+  remediation commands, do not continue batch work — and exits 4. The
+  wrapper stays shellcheck-clean and keeps the existing tool-resolution and
+  `TODO_DB_CONFIG` behavior.
+
 ## [0.2.0] - 2026-07-25
 
 ### Added

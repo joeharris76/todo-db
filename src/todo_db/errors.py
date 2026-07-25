@@ -9,6 +9,10 @@ class TodoError(TodoDBError):
     """Raised when a TODO lifecycle or validation rule is violated."""
 
 
+class HostedAuthError(TodoDBError):
+    """Raised when a hosted backend rejects a connection or sync for authentication reasons."""
+
+
 class ProjectIdentityMismatchError(TodoDBError):
     """Raised before access when a database belongs to another project."""
 

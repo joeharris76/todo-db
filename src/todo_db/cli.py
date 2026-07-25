@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -12,9 +13,10 @@ from pathlib import Path
 from typing import Any
 
 from .audit import canonical_json
-from .database import TodoDatabase
+from .backends import auth_remediation, connect, hosted_error
+from .database import SCHEMA_VERSION, TodoDatabase
 from .database import TOOL_VERSION
-from .errors import TodoDBError, TodoError
+from .errors import HostedAuthError, TodoDBError, TodoError
 from .findings import (
     DISPOSITIONS,
     FINDING_KINDS,
@@ -44,6 +46,14 @@ IDENTITY_SOURCES_HINT = (
     f"or run from a repo with a discovered {CONFIG_DIRNAME}/{CONFIG_FILENAME} "
     "(scaffold one with `todo-db init-project`)"
 )
+
+EXIT_CODES_EPILOG = """\
+exit codes:
+  0  success (doctor: every check passed; warnings allowed)
+  1  findings reported (check-scope violations, lint findings, verify --run failures)
+  2  generic error: fix the reported cause and retry
+  4  hosted authentication failure: refresh the auth token, e.g.
+     export TODO_DB_AUTH_TOKEN=$(turso db tokens create <db>), or run 'turso auth login'"""
 
 
 def _load_repo_config(path: Path) -> dict[str, Any]:
@@ -127,7 +137,12 @@ def _identity_args(parser: argparse.ArgumentParser, *, required: bool = False) -
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="todo-db", description="Project-isolated database-backed TODO tracker")
+    parser = argparse.ArgumentParser(
+        prog="todo-db",
+        description="Project-isolated database-backed TODO tracker",
+        epilog=EXIT_CODES_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument("--version", action="version", version=f"todo-db {TOOL_VERSION}")
     parser.add_argument(
         "--db",
@@ -166,6 +181,13 @@ def _parser() -> argparse.ArgumentParser:
         help=f"also write an executable wrapper script (default location {DEFAULT_WRAPPER_RELATIVE})",
     )
     init_project.add_argument("--force", action="store_true", help="overwrite an existing config/wrapper")
+
+    doctor = sub.add_parser("doctor", help="read-only preflight: config, identity, database, auth, drafts dir")
+    doctor.add_argument("--json", action="store_true")
+    doctor.add_argument(
+        "--rw", action="store_true", help="also probe hosted replica open+sync (writes local replica files)"
+    )
+    _identity_args(doctor)
 
     export = sub.add_parser("export", help="write a lossless JSON export")
     _identity_args(export)
@@ -593,23 +615,93 @@ def _wrapper_script(project_id: str) -> str:
 #   2. `todo-db` on PATH  an installed todo-db package
 #   3. sibling checkout   <repo>/../todo-db
 #
+# On exit 4 (hosted auth failure) against a libsql:// database, a fresh token
+# is minted with the turso CLI and the command retried once. The token is
+# exported, never echoed. When remediation is impossible an ALERT block is
+# printed to stderr and exit 4 propagates.
+#
 set -euo pipefail
 
 REPO_ROOT="$(cd -- "$(dirname -- "${{BASH_SOURCE[0]}}")/../.." && pwd)"
 export TODO_DB_CONFIG="${{TODO_DB_CONFIG:-$REPO_ROOT/.todo-db/config.json}}"
 
-if [ -n "${{TODO_DB_TOOL:-}}" ]; then
-  exec uv run --project "$TODO_DB_TOOL" todo-db "$@"
+run_todo_db() {{
+  if [ -n "${{TODO_DB_TOOL:-}}" ]; then
+    uv run --project "$TODO_DB_TOOL" todo-db "$@"
+    return
+  fi
+  if command -v todo-db >/dev/null 2>&1; then
+    todo-db "$@"
+    return
+  fi
+  TODO_DB_TOOL="$REPO_ROOT/../todo-db"
+  if [ -d "$TODO_DB_TOOL" ]; then
+    uv run --project "$TODO_DB_TOOL" todo-db "$@"
+    return
+  fi
+  echo "todo: todo-db not found; install it or set TODO_DB_TOOL to a checkout (tried PATH and '$TODO_DB_TOOL')" >&2
+  return 2
+}}
+
+print_auth_alert() {{
+  cat >&2 <<'ALERT'
+==================== TODO-DB AUTH ALERT ====================
+Tracker writes are BLOCKED: hosted database authentication
+failed and automatic token re-mint did not succeed.
+Fix it now, one of:
+  1. turso auth login
+  2. export TODO_DB_AUTH_TOKEN="$(turso db tokens create <database-name>)"
+Do not continue batch work until resolved: tracker items are
+not being updated.
+============================================================
+ALERT
+}}
+
+status=0
+run_todo_db "$@" || status=$?
+if [ "$status" -ne 4 ]; then
+  exit "$status"
 fi
-if command -v todo-db >/dev/null 2>&1; then
-  exec todo-db "$@"
+
+target="${{TODO_DB_URL:-}}"
+if [ -z "$target" ] && [ -f "$TODO_DB_CONFIG" ]; then
+  target="$(sed -n 's/.*"db"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p' "$TODO_DB_CONFIG" | head -n 1)" || target=""
 fi
-TODO_DB_TOOL="$REPO_ROOT/../todo-db"
-if [ -d "$TODO_DB_TOOL" ]; then
-  exec uv run --project "$TODO_DB_TOOL" todo-db "$@"
+case "$target" in
+  libsql://*) ;;
+  *)
+    print_auth_alert
+    exit 4
+    ;;
+esac
+if ! command -v turso >/dev/null 2>&1 || ! turso auth whoami >/dev/null 2>&1; then
+  print_auth_alert
+  exit 4
 fi
-echo "todo: todo-db not found; install it or set TODO_DB_TOOL to a checkout (tried PATH and '$TODO_DB_TOOL')" >&2
-exit 2
+
+host="${{target#libsql://}}"
+host="${{host%%/*}}"
+host="${{host%%\\?*}}"
+db_name="$(turso db list 2>/dev/null | awk -v host="$host" 'index($0, host) {{print $1; exit}}')" || db_name=""
+if [ -z "$db_name" ]; then
+  print_auth_alert
+  exit 4
+fi
+fresh_token="$(turso db tokens create "$db_name" 2>/dev/null)" || fresh_token=""
+if [ -z "$fresh_token" ]; then
+  print_auth_alert
+  exit 4
+fi
+export TODO_DB_AUTH_TOKEN="$fresh_token"
+echo "todo: hosted auth failure; minted a fresh token for '$db_name', retrying once" >&2
+
+status=0
+run_todo_db "$@" || status=$?
+if [ "$status" -eq 4 ]; then
+  print_auth_alert
+  exit 4
+fi
+exit "$status"
 """
 
 
@@ -670,6 +762,209 @@ def _init_project(args: argparse.Namespace, identity: ProjectIdentity, raw_db: s
         print(f"wrote {wrapper_path} (executable)")
     _warn_if_git_ignored(config_path, root)
     return 0
+
+
+_FOREIGN_TRACKER_TABLES = frozenset({"items", "work_units", "item_deps", "meta"})
+
+
+def _nearest_existing(path: Path) -> Path:
+    probe = path
+    while not probe.exists() and probe != probe.parent:
+        probe = probe.parent
+    return probe
+
+
+DoctorCheck = tuple[str, str, str | None]
+
+
+def _doctor_local_probe(path: Path) -> tuple[DoctorCheck, tuple[str, str] | None]:
+    if not path.exists():
+        ancestor = _nearest_existing(path.parent)
+        if os.access(ancestor, os.W_OK):
+            return ("PASS", f"{path} does not exist yet; parent is creatable", "run `todo-db init` to create it"), None
+        return ("FAIL", f"{path} does not exist and {ancestor} is not writable", "choose a writable --db path"), None
+    try:
+        connection = sqlite3.connect(f"file:{path.resolve()}?mode=ro", uri=True)
+    except sqlite3.Error as exc:
+        return ("FAIL", f"cannot open {path} read-only: {exc}", "check file permissions"), None
+    try:
+        tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if "schema_migrations" not in tables:
+            if tables & _FOREIGN_TRACKER_TABLES:
+                return ("FAIL", f"{path} contains a different tracker schema", "use a dedicated todo-db path"), None
+            return ("WARN", f"{path} exists but has no todo-db schema", "run `todo-db init` to initialize it"), None
+        version = int(connection.execute("SELECT max(version) FROM schema_migrations").fetchone()[0] or 0)
+        bound = None
+        if "project_identity" in tables:
+            row = connection.execute("SELECT project_id, repository FROM project_identity WHERE singleton = 1").fetchone()
+            bound = (row[0], row[1]) if row else None
+        if version < SCHEMA_VERSION:
+            detail = f"{path} schema v{version} behind packaged v{SCHEMA_VERSION}"
+            return ("WARN", detail, "behind -- run init to migrate"), bound
+        if version > SCHEMA_VERSION:
+            return ("FAIL", f"{path} schema v{version} is ahead of packaged v{SCHEMA_VERSION}", "upgrade todo-db"), bound
+        return ("PASS", f"{path} schema v{version}", None), bound
+    except sqlite3.Error as exc:
+        return ("FAIL", f"cannot inspect {path}: {exc}", None), None
+    finally:
+        connection.close()
+
+
+def _doctor_hosted_probe(target: str) -> tuple[DoctorCheck, tuple[str, str] | None, bool]:
+    """Read-only SELECT probe against the primary. Returns (check, bound identity, auth-classified)."""
+
+    if target.lower().startswith("http://"):
+        return ("FAIL", "plaintext http:// is refused for the hosted backend", "use https:// or libsql://"), None, False
+    ro_token = os.environ.get("TODO_DB_RO_AUTH_TOKEN", "")
+    token = ro_token or os.environ.get("TODO_DB_AUTH_TOKEN", "")
+    variable = "TODO_DB_RO_AUTH_TOKEN" if ro_token else "TODO_DB_AUTH_TOKEN"
+    if not token:
+        detail = "no TODO_DB_RO_AUTH_TOKEN or TODO_DB_AUTH_TOKEN in the environment"
+        return ("FAIL", detail, auth_remediation()), None, True
+    config = DatabaseConfig(path=target, credential_mode=CredentialMode.READ_ONLY, auth_token=token)
+    try:
+        connection = connect(config)
+    except HostedAuthError as exc:
+        return ("FAIL", str(exc), None), None, True
+    except (TodoDBError, OSError, ValueError) as exc:
+        return ("FAIL", str(exc), None), None, False
+    try:
+        tables = {
+            row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        }
+        if "schema_migrations" not in tables:
+            return ("WARN", f"{target} reachable but has no todo-db schema", "run `todo-db init`"), None, False
+        version = int(connection.execute("SELECT max(version) AS v FROM schema_migrations").fetchone()["v"] or 0)
+        bound = None
+        if "project_identity" in tables:
+            row = connection.execute("SELECT project_id, repository FROM project_identity WHERE singleton = 1").fetchone()
+            bound = (row["project_id"], row["repository"]) if row else None
+        if version < SCHEMA_VERSION:
+            detail = f"{target} schema v{version} behind packaged v{SCHEMA_VERSION}"
+            return ("WARN", detail, "behind -- run init to migrate"), bound, False
+        return ("PASS", f"read-only probe ok: {target} schema v{version}", None), bound, False
+    except (sqlite3.Error, ValueError) as exc:
+        classified = hosted_error(exc, url=target, token=token, context="read-only probe", token_variable=variable)
+        return ("FAIL", str(classified), None), None, isinstance(classified, HostedAuthError)
+    finally:
+        connection.close()
+
+
+def _doctor(args: argparse.Namespace) -> int:
+    checks: list[dict[str, str]] = []
+    auth_failure = False
+
+    def add(name: str, status: str, detail: str, remediation: str | None = None) -> None:
+        check = {"name": name, "status": status, "detail": detail}
+        if remediation:
+            check["remediation"] = remediation
+        checks.append(check)
+
+    discovered = None
+    config_error: str | None = None
+    try:
+        discovered = _discover_repo_config()
+    except TodoError as exc:
+        config_error = str(exc)
+    if config_error is not None:
+        add("config", "FAIL", config_error, "fix or remove the config; scaffold a fresh one with `todo-db init-project`")
+    elif discovered is not None:
+        add("config", "PASS", f"discovered {discovered[0]}")
+    else:
+        add("config", "PASS", f"no {CONFIG_DIRNAME}/{CONFIG_FILENAME} discovered; flags/env/defaults apply")
+
+    identity = None
+    identity_error: str | None = None
+    try:
+        identity = _resolve_identity(args, discovered)
+    except TodoError as exc:
+        identity_error = str(exc)
+    if getattr(args, "project_id", None):
+        source = "flags"
+    elif os.environ.get("TODO_DB_PROJECT_ID"):
+        source = "environment"
+    else:
+        source = "discovered config"
+
+    target = _resolve_db(getattr(args, "db", None), discovered)
+    hosted = DatabaseConfig(path=target).is_hosted
+    if hosted:
+        db_check, bound, db_auth = _doctor_hosted_probe(target)
+    else:
+        (db_check, bound), db_auth = _doctor_local_probe(Path(target)), False
+    auth_failure = auth_failure or db_auth
+
+    if identity_error is not None:
+        add("identity", "FAIL", identity_error, IDENTITY_SOURCES_HINT)
+    elif identity is not None:
+        add("identity", "PASS", f"{identity.project_id} @ {identity.repository} (source: {source})")
+    elif bound is not None:
+        add("identity", "PASS", f"no caller-supplied identity; database is bound to {bound[0]} @ {bound[1]}")
+    elif db_check[0] == "FAIL":
+        add("identity", "WARN", "no identity from flags/env/config and the database probe failed to read a bound one")
+    else:
+        add("identity", "FAIL", "no identity from flags/env/config and the database is not bound to one", IDENTITY_SOURCES_HINT)
+    add("database", *db_check)
+
+    if hosted:
+        if shutil.which("turso") is None:
+            add("turso-cli", "WARN", "turso CLI not found", "automatic token re-mint unavailable; install the turso CLI")
+        else:
+            whoami = subprocess.run(["turso", "auth", "whoami"], capture_output=True, text=True, check=False)
+            if whoami.returncode != 0:
+                add(
+                    "turso-cli",
+                    "WARN",
+                    "turso CLI is logged out",
+                    "automatic token re-mint unavailable: run 'turso auth login'",
+                )
+            else:
+                add("turso-cli", "PASS", f"turso auth whoami: {whoami.stdout.strip() or 'ok'}")
+        if args.rw:
+            rw_config = DatabaseConfig(
+                path=target, identity=identity, credential_mode=CredentialMode.READ_WRITE, replica_path=args.replica
+            )
+            try:
+                connect(rw_config).close()
+                add("replica-rw", "PASS", "replica open+sync succeeded")
+            except HostedAuthError as exc:
+                auth_failure = True
+                add("replica-rw", "FAIL", str(exc))
+            except (TodoDBError, OSError, ValueError, sqlite3.Error) as exc:
+                add("replica-rw", "FAIL", str(exc))
+
+    project_hint = identity.project_id if identity is not None else (bound[0] if bound else None)
+    if os.environ.get("TODO_DB_FINDING_DRAFTS_DIR") or project_hint:
+        drafts = default_drafts_dir(project_hint or "")
+        ancestor = _nearest_existing(drafts)
+        if os.access(ancestor, os.W_OK):
+            detail = f"{drafts} writable" if drafts.exists() else f"{drafts} creatable (nearest parent {ancestor})"
+            add("finding-drafts", "PASS", detail)
+        else:
+            add(
+                "finding-drafts",
+                "FAIL",
+                f"{drafts}: nearest existing parent {ancestor} is not writable",
+                "fix permissions or set TODO_DB_FINDING_DRAFTS_DIR",
+            )
+    else:
+        add(
+            "finding-drafts",
+            "WARN",
+            "project identity unresolved; the default drafts dir is project-scoped",
+            "resolve the identity or set TODO_DB_FINDING_DRAFTS_DIR",
+        )
+
+    statuses = {check["status"] for check in checks}
+    exit_code = 4 if auth_failure else (2 if "FAIL" in statuses else 0)
+    if args.json:
+        print(json.dumps({"checks": checks, "exit": exit_code}, indent=2, sort_keys=True))
+    else:
+        for check in checks:
+            print(f"{check['status']:4s} {check['name']}: {check['detail']}")
+            if check.get("remediation"):
+                print(f"     remediation: {check['remediation']}")
+    return exit_code
 
 
 def _run_finding(database: TodoDatabase, args: argparse.Namespace, project_id: str) -> int:
@@ -753,6 +1048,8 @@ def _main(argv: list[str] | None = None) -> int:
                     "pass --project-id/--repository or set TODO_DB_PROJECT_ID/TODO_DB_REPOSITORY"
                 )
             return _init_project(args, identity, raw_db)
+        if args.command == "doctor":
+            return _doctor(args)
         discovered = _discover_repo_config()
         identity = _resolve_identity(args, discovered)
         args.db = _resolve_db(raw_db, discovered)
@@ -930,6 +1227,9 @@ def _main(argv: list[str] | None = None) -> int:
             else:  # pragma: no cover - argparse constrains command values
                 parser.error(f"unsupported command: {command}")
         return 0
+    except HostedAuthError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 4
     except (TodoDBError, TodoError, OSError, ValueError, sqlite3.Error) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2

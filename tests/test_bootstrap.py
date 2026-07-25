@@ -309,6 +309,103 @@ def test_init_project_records_a_custom_db_target_in_the_config(tmp_path: Path) -
     assert main(["list"]) == 0
 
 
+WRAPPER_URL = "libsql://wrapper-test.aws-us-east-1.turso.io"
+WRAPPER_MARKER_TOKEN = "wrapper-marker-token"
+
+FAKE_TURSO_AUTHENTICATED = f"""#!/usr/bin/env bash
+case "$1 ${{2:-}}" in
+  "auth whoami") echo "fake-user"; exit 0 ;;
+  "db list")
+    printf 'NAME            GROUP    URL\\n'
+    printf 'other-db        default  libsql://other-db.aws-us-east-1.turso.io\\n'
+    printf 'wrapper-test    default  {WRAPPER_URL}\\n'
+    exit 0 ;;
+  "db tokens")
+    if [ "${{3:-}}" = "create" ] && [ "${{4:-}}" = "wrapper-test" ]; then
+      echo "{WRAPPER_MARKER_TOKEN}"
+      exit 0
+    fi
+    exit 1 ;;
+esac
+exit 1
+"""
+
+FAKE_TURSO_LOGGED_OUT = """#!/usr/bin/env bash
+if [ "$1 ${2:-}" = "auth whoami" ]; then
+  echo "You are not logged in." >&2
+  exit 1
+fi
+exit 1
+"""
+
+FAKE_TODO_DB_RETRY_AWARE = f"""#!/usr/bin/env bash
+if [ ! -f "$STATE_FILE" ]; then
+  : > "$STATE_FILE"
+  echo "error: hosted backend sync failed: [REDACTED] 401" >&2
+  exit 4
+fi
+if [ "${{TODO_DB_AUTH_TOKEN:-}}" = "{WRAPPER_MARKER_TOKEN}" ]; then
+  echo "retried ok"
+  exit 0
+fi
+echo "retry ran without the minted token" >&2
+exit 88
+"""
+
+FAKE_TODO_DB_ALWAYS_AUTH_FAILS = """#!/usr/bin/env bash
+echo "error: hosted backend sync failed: [REDACTED] 401" >&2
+exit 4
+"""
+
+
+def _scaffold_wrapper_repo(tmp_path: Path, fake_turso: str, fake_todo_db: str) -> tuple[Path, dict[str, str]]:
+    from todo_db.cli import main
+
+    subprocess.run(["git", "init", "--quiet"], cwd=tmp_path, check=True)
+    assert main(["init-project", "--project-id", "wrapper-test", "--repository", "todo-db", "--wrapper"]) == 0
+    config_path = tmp_path / ".todo-db" / "config.json"
+    payload = json.loads(config_path.read_text(encoding="utf-8"))
+    payload["db"] = WRAPPER_URL
+    config_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    fakebin = tmp_path / "fakebin"
+    fakebin.mkdir()
+    for name, content in (("turso", fake_turso), ("todo-db", fake_todo_db)):
+        script = fakebin / name
+        script.write_text(content, encoding="utf-8")
+        script.chmod(0o755)
+    env = {key: value for key, value in os.environ.items() if not key.startswith("TODO_DB_")}
+    env["PATH"] = f"{fakebin}:{env['PATH']}"
+    env["STATE_FILE"] = str(tmp_path / "todo-db-call-state")
+    return tmp_path / "_project" / "scripts" / "todo", env
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="the wrapper scaffold test uses a git repo")
+def test_wrapper_remints_a_token_and_retries_once_on_auth_exit_4(tmp_path: Path) -> None:
+    wrapper, env = _scaffold_wrapper_repo(tmp_path, FAKE_TURSO_AUTHENTICATED, FAKE_TODO_DB_RETRY_AWARE)
+    result = subprocess.run(
+        [str(wrapper), "list"], cwd=tmp_path, env=env, capture_output=True, text=True, check=False
+    )
+    assert result.returncode == 0, result.stderr
+    assert "retried ok" in result.stdout
+    assert "retrying once" in result.stderr
+    assert WRAPPER_MARKER_TOKEN not in result.stdout + result.stderr, "the minted token must never be echoed"
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="the wrapper scaffold test uses a git repo")
+def test_wrapper_prints_the_alert_block_and_exits_4_when_the_turso_cli_is_logged_out(tmp_path: Path) -> None:
+    wrapper, env = _scaffold_wrapper_repo(tmp_path, FAKE_TURSO_LOGGED_OUT, FAKE_TODO_DB_ALWAYS_AUTH_FAILS)
+    result = subprocess.run(
+        [str(wrapper), "list"], cwd=tmp_path, env=env, capture_output=True, text=True, check=False
+    )
+    assert result.returncode == 4
+    assert "TODO-DB AUTH ALERT" in result.stderr
+    assert "Tracker writes are BLOCKED" in result.stderr
+    assert "turso auth login" in result.stderr
+    assert "turso db tokens create" in result.stderr
+    assert "Do not continue batch work until resolved" in result.stderr
+
+
 @pytest.mark.skipif(shutil.which("git") is None, reason="git is required to verify ignore semantics")
 def test_scaffolded_gitignore_ignores_databases_but_keeps_config_tracked(tmp_path: Path) -> None:
     from todo_db.cli import main

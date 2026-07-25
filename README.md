@@ -206,3 +206,45 @@ Signed export manifests are available through `todo_db.sign_export()` and
 `todo_db.verify_signed_export()`. Keep the signing key outside the database;
 the signed manifest contains the public key and export digest, while
 verification can be pinned to an independently trusted public key.
+
+## Failure detection and remediation
+
+Exit codes are a contract (also printed in `todo-db --help`):
+
+| Code | Meaning |
+| ---- | ------- |
+| 0    | success (`doctor`: every check passed; warnings allowed) |
+| 1    | findings reported (`check-scope` violations, `lint` findings, `verify --run` failures) |
+| 2    | generic error: fix the reported cause and retry |
+| 4    | hosted authentication failure |
+
+Hosted connect/sync failures that are auth-shaped (HTTP 401/403,
+`unauthorized`/`forbidden`, token/JWT complaints in the underlying libsql
+error) raise `HostedAuthError` and exit 4; the message keeps the URL and
+token redacted and states the remediation: refresh the token, e.g. `export
+TODO_DB_AUTH_TOKEN=$(turso db tokens create <db>)`, or `turso auth login` if
+the turso CLI itself is logged out. Non-auth hosted failures stay exit 2.
+
+`todo-db doctor` is a read-only preflight (no writes, no replica sync unless
+`--rw` is passed) intended before batch work. It checks config discovery,
+identity resolution (with its source tier; failing only when no source
+resolves and the database is unbound), the database target (local: file or
+creatable parent plus schema version, warning `behind -- run init to
+migrate`; hosted: URL scheme and a read-only `SELECT` probe against the
+primary using `TODO_DB_RO_AUTH_TOKEN`, else `TODO_DB_AUTH_TOKEN`), turso CLI
+availability and `turso auth whoami` when the target is hosted (warning
+means automatic token re-mint is unavailable), and finding-drafts dir
+writability. Exit 0 when healthy (warnings allowed), 4 on any
+auth-classified failure, 2 otherwise. `--json` emits
+`{"checks": [{name, status, detail, remediation?}], "exit": N}`.
+
+The wrapper scaffolded by `init-project --wrapper` auto-remediates: when the
+wrapped command exits 4 against a `libsql://` target and the turso CLI is
+authenticated, it resolves the database name from `turso db list`, mints a
+fresh token with `turso db tokens create`, exports `TODO_DB_AUTH_TOKEN`
+(never echoing it), and retries the command exactly once. When remediation
+is impossible (turso CLI missing or logged out, database name unresolvable,
+or the retry still exits 4) it prints a delimited `TODO-DB AUTH ALERT` block
+to stderr stating that tracker writes are blocked, the two remediation
+commands, and that batch work must not continue until resolved, then exits
+4. Batch drivers should treat exit 4 from the wrapper as a hard stop.
