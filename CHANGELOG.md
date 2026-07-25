@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.2.0] - 2026-07-25
 
 ### Added
 
@@ -30,8 +30,8 @@ adheres to [Semantic Versioning](https://semver.org/).
   init/create/claim/done/complete, the finding draft→sync→show flow, audit
   verify, and export against the real backend, asserts schema v4, and always
   destroys the database on exit (`--keep` to retain it). Tokens stay in the
-  environment and are never echoed.
-
+  environment and are never echoed. Passed against a real Turso database on
+  2026-07-25 — the first live end-to-end validation of the hosted path.
 - Findings domain ported from the BenchBox tracker (schema v4, packaged
   migration `004_findings.sql`): credential-free draft capture under
   `~/.todo-db/finding-drafts/<project-id>/` (`TODO_DB_FINDING_DRAFTS_DIR`
