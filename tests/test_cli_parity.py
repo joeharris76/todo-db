@@ -27,12 +27,14 @@ def test_default_actor_matches_legacy_harness_order(monkeypatch: pytest.MonkeyPa
 
 
 def test_version_handshake(capsys: pytest.CaptureFixture[str]) -> None:
+    from importlib import metadata
+
     from todo_db.cli import main
 
     with pytest.raises(SystemExit) as raised:
         main(["--version"])
     assert raised.value.code == 0
-    assert capsys.readouterr().out == "todo-db 0.1.0\n"
+    assert capsys.readouterr().out == f"todo-db {metadata.version('todo-db')}\n"
 
 
 def test_policy_findings_return_one_with_legacy_output(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

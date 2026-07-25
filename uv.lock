@@ -388,7 +388,9 @@ legacy = [
 [package.dev-dependencies]
 dev = [
     { name = "cryptography" },
+    { name = "libsql" },
     { name = "pytest" },
+    { name = "pyyaml" },
     { name = "ruff" },
 ]
 
@@ -403,7 +405,9 @@ provides-extras = ["hosted", "audit", "legacy"]
 [package.metadata.requires-dev]
 dev = [
     { name = "cryptography", specifier = ">=49.0.0" },
+    { name = "libsql", specifier = ">=0.1.11" },
     { name = "pytest", specifier = ">=9.1.1" },
+    { name = "pyyaml", specifier = ">=6" },
     { name = "ruff", specifier = ">=0.15.22" },
 ]
 

@@ -7,7 +7,7 @@ import json
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from importlib import resources
+from importlib import metadata, resources
 from typing import Any
 
 from .audit import AUDIT_HASH_ALGORITHM, AUDIT_HASH_VERSION, canonical_json, event_hash, verify_event_chain
@@ -17,7 +17,10 @@ from .models import CredentialMode, DatabaseConfig, ProjectIdentity
 
 
 SCHEMA_VERSION = 3
-TOOL_VERSION = "0.1.0"
+try:
+    TOOL_VERSION = metadata.version("todo-db")
+except metadata.PackageNotFoundError:  # running from an unbuilt source tree
+    TOOL_VERSION = "0+unknown"
 EXPORT_FORMAT_VERSION = 2
 
 
