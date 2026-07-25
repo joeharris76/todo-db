@@ -15,8 +15,23 @@ from .audit import canonical_json
 from .database import TodoDatabase
 from .database import TOOL_VERSION
 from .errors import TodoDBError, TodoError
+from .findings import (
+    DISPOSITIONS,
+    FINDING_KINDS,
+    GATE_TEXT,
+    LINK_KINDS,
+    FindingsTracker,
+    count_unsynced_drafts,
+    create_draft,
+    default_drafts_dir,
+    unsynced_drafts,
+)
 from .models import CredentialMode, DatabaseConfig, ProjectIdentity
 from .tracker import PRIORITIES, TodoTracker
+
+
+FINDING_OFFLINE_SUBCOMMANDS = frozenset({"create", "candidates"})
+FINDING_MUTATING_SUBCOMMANDS = frozenset({"sync", "dismiss", "triage", "link", "promote"})
 
 
 def _default_db() -> str:
@@ -181,6 +196,74 @@ def _parser() -> argparse.ArgumentParser:
     config.add_argument("key", nargs="?")
     config.add_argument("value", nargs="?")
     _identity_args(config)
+
+    finding = sub.add_parser("finding", help="findings domain: capture, sync, triage, promote")
+    finding_sub = finding.add_subparsers(dest="finding_command", required=True)
+
+    fcreate = finding_sub.add_parser("create", help="write a draft finding (draft file only, never the DB)")
+    fcreate.add_argument("--title", required=True)
+    fcreate.add_argument("--finding-kind", required=True, choices=sorted(FINDING_KINDS))
+    fcreate.add_argument("--review-context", required=True)
+    fcreate.add_argument("--gate", help="class-not-instance attestation; must be 'class-not-instance'")
+    fcreate.add_argument("--fixed-by", help="landed fix ref (required when --finding-kind bug-class)")
+    fcreate.add_argument("--slug", help="kebab-slug override (default: derived from --title)")
+    fcreate.add_argument("--finding", help="## Finding body text")
+    fcreate.add_argument("--why", help="## Why this matters body text")
+    fcreate.add_argument("--next-steps", dest="next_steps", help="## Suggested next steps body text")
+    fcreate.add_argument("--observed-sha", help="provenance SHA (not a lookup key)")
+    fcreate.add_argument("--drafts-dir", type=Path)
+    _identity_args(fcreate)
+
+    fcandidates = finding_sub.add_parser("candidates", help="list unsynced drafts (local glob, zero-credential)")
+    fcandidates.add_argument("--drafts-dir", type=Path)
+    _identity_args(fcandidates)
+
+    flist = finding_sub.add_parser("list", help="list findings")
+    flist.add_argument("--disposition", choices=DISPOSITIONS)
+    flist.add_argument("--rank", choices=("urgency", "breadth", "confidence"), help="opt-in post-triage ranking")
+    flist.add_argument("--json", action="store_true")
+    _identity_args(flist)
+
+    fshow = finding_sub.add_parser("show", help="show one finding")
+    fshow.add_argument("id")
+    fshow.add_argument("--json", action="store_true")
+    _identity_args(fshow)
+
+    fsync = finding_sub.add_parser("sync", help="land drafts into the tracker (the credentialed landing step)")
+    fsync.add_argument("--drafts-dir", type=Path)
+    _identity_args(fsync)
+
+    fdismiss = finding_sub.add_parser("dismiss", help="dismiss a finding with a reason")
+    fdismiss.add_argument("id")
+    fdismiss.add_argument("--reason", required=True)
+    _identity_args(fdismiss)
+
+    ftriage = finding_sub.add_parser("triage", help="set judgement fields and/or move disposition")
+    ftriage.add_argument("id")
+    ftriage.add_argument("--urgency")
+    ftriage.add_argument("--breadth")
+    ftriage.add_argument("--confidence")
+    ftriage.add_argument("--reconsider-after", dest="reconsider_after")
+    ftriage.add_argument("--disposition", choices=("actionable", "actioned"))
+    ftriage.add_argument("--reason")
+    _identity_args(ftriage)
+
+    flink = finding_sub.add_parser("link", help="link a finding to an item or another finding")
+    flink.add_argument("id")
+    flink.add_argument("--kind", required=True, choices=[kind for kind in LINK_KINDS if kind != "promoted-to"])
+    flink.add_argument("--to-item", dest="to_item")
+    flink.add_argument("--to-finding", dest="to_finding")
+    flink.add_argument("--note")
+    _identity_args(flink)
+
+    fpromote = finding_sub.add_parser("promote", help="promote a finding to a planning item (atomic)")
+    fpromote.add_argument("id")
+    fpromote.add_argument("--to-item", dest="to_item", required=True)
+    fpromote.add_argument("--title")
+    fpromote.add_argument("--priority", choices=PRIORITIES, default="medium")
+    fpromote.add_argument("--worktree")
+    fpromote.add_argument("--description")
+    _identity_args(fpromote)
     return parser
 
 
@@ -194,6 +277,12 @@ def _config(args: argparse.Namespace, mode: CredentialMode) -> DatabaseConfig:
 
 
 def _mode_for(args: argparse.Namespace) -> CredentialMode:
+    if args.command == "finding":
+        return (
+            CredentialMode.READ_WRITE
+            if args.finding_command in FINDING_MUTATING_SUBCOMMANDS
+            else CredentialMode.READ_ONLY
+        )
     return (
         CredentialMode.READ_WRITE
         if args.command
@@ -319,6 +408,118 @@ def _print_work_order(order: dict[str, Any]) -> None:
             print(f"open deferral #{definition['id']}: {definition['summary']}")
 
 
+def _drafts_dir(args: argparse.Namespace) -> Path:
+    supplied = getattr(args, "drafts_dir", None)
+    return Path(supplied).expanduser() if supplied else default_drafts_dir(args.project_id)
+
+
+def _finding_offline(args: argparse.Namespace) -> int:
+    """Zero-credential capture: never opens a database connection."""
+
+    drafts_dir = _drafts_dir(args)
+    if args.finding_command == "create":
+        print(GATE_TEXT, file=sys.stderr)
+        path = create_draft(
+            title=args.title,
+            finding_kind=args.finding_kind,
+            review_context=args.review_context,
+            gate=args.gate,
+            drafts_dir=drafts_dir,
+            fixed_by=args.fixed_by,
+            slug=args.slug,
+            finding=args.finding,
+            why=args.why,
+            next_steps=args.next_steps,
+            observed_sha=args.observed_sha,
+        )
+        print(f"Recorded: {path}")
+        print("Draft only; run `todo-db finding sync` (a separate, credentialed step) to land it.")
+        return 0
+    drafts = unsynced_drafts(drafts_dir)
+    for path in drafts:
+        print(path.name)
+    print(f"{len(drafts)} unsynced draft(s) in {drafts_dir}")
+    return 0
+
+
+def _print_finding(finding: dict[str, Any]) -> None:
+    print(f"== {finding['id']} [{finding['disposition']}] {finding['title']}")
+    print(f"kind={finding['finding_kind']} date={finding['date']} review={finding['review_context']}")
+    if finding.get("disposition_reason"):
+        print(f"reason: {finding['disposition_reason']}")
+    for label in ("urgency", "breadth", "confidence", "reconsider_after", "observed_sha"):
+        if finding.get(label):
+            print(f"{label}: {finding[label]}")
+    print("-- Finding")
+    print(finding["finding_text"])
+    print("-- Why this matters")
+    print(finding["why_matters"])
+    print("-- Suggested next steps")
+    print(finding["next_steps"])
+    for evidence in finding.get("evidence", []):
+        location = ""
+        if evidence.get("line_start"):
+            location = f":{evidence['line_start']}"
+            if evidence.get("line_end"):
+                location += f"-{evidence['line_end']}"
+        print(f"evidence: {evidence['path']}{location} {evidence.get('pattern') or ''}".rstrip())
+    for link in finding.get("links", []):
+        target = link.get("target_item") or link.get("target_finding") or "(dangling)"
+        print(f"link: {link['kind']} -> {target}")
+
+
+def _run_finding(database: TodoDatabase, args: argparse.Namespace) -> int:
+    service = FindingsTracker(database, actor=args.actor)
+    command = args.finding_command
+    if command == "list":
+        listed = service.list_findings(disposition=args.disposition, rank=args.rank)
+        if args.json:
+            print(json.dumps(listed, indent=2, sort_keys=True))
+        else:
+            for row in listed:
+                print(f"{row['id']:45s} {row['disposition']:11s} {row['finding_kind']:14s} {row['title']}")
+    elif command == "show":
+        finding = service.get_finding(args.id)
+        if args.json:
+            print(json.dumps(finding, indent=2, sort_keys=True))
+        else:
+            _print_finding(finding)
+    elif command == "sync":
+        result = service.sync_drafts(_drafts_dir(args))
+        print(
+            f"synced {len(result['synced'])}, skipped {len(result['skipped'])} (already landed),"
+            f" pruned {result['pruned']} old .synced draft(s)"
+        )
+    elif command == "dismiss":
+        service.dismiss(args.id, args.reason)
+        print(f"{args.id} dismissed")
+    elif command == "triage":
+        service.triage(
+            args.id,
+            urgency=args.urgency,
+            breadth=args.breadth,
+            confidence=args.confidence,
+            reconsider_after=args.reconsider_after,
+            disposition=args.disposition,
+            reason=args.reason,
+        )
+        print(f"{args.id} triaged")
+    elif command == "link":
+        service.link(args.id, kind=args.kind, target_item=args.to_item, target_finding=args.to_finding, note=args.note)
+        print(f"linked {args.id} [{args.kind}]")
+    elif command == "promote":
+        service.promote(
+            args.id,
+            args.to_item,
+            title=args.title,
+            priority=args.priority,
+            worktree=args.worktree,
+            description=args.description,
+        )
+        print(f"finding {args.id} promoted to {args.to_item}")
+    return 0
+
+
 def _changed_files(base: str | None) -> list[str]:
     command = ["git", "diff", "--name-only", f"{base}...HEAD" if base else "HEAD"]
     result = subprocess.run(command, capture_output=True, text=True, check=False)
@@ -337,6 +538,8 @@ def _main(argv: list[str] | None = None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
     try:
+        if args.command == "finding" and args.finding_command in FINDING_OFFLINE_SUBCOMMANDS:
+            return _finding_offline(args)
         mode = _mode_for(args)
         with TodoDatabase.open(_config(args, mode)) as database:
             tracker = TodoTracker(database, actor=args.actor)
@@ -433,13 +636,24 @@ def _main(argv: list[str] | None = None) -> int:
                 )
             elif command == "ready":
                 items = tracker.ready_items()
-                print(
-                    json.dumps(items, indent=2, sort_keys=True)
-                    if args.json
-                    else "\n".join(f"{item['id']} {item['priority']} {item['worktree']}" for item in items)
-                )
+                if args.json:
+                    print(json.dumps(items, indent=2, sort_keys=True))
+                else:
+                    print("\n".join(f"{item['id']} {item['priority']} {item['worktree']}" for item in items))
+                    open_findings = FindingsTracker(database, actor=args.actor).open_count()
+                    drafts = count_unsynced_drafts(_drafts_dir(args))
+                    if open_findings or drafts:
+                        print(
+                            f"{open_findings} open finding(s), {drafts} unsynced draft(s)"
+                            " -- todo-db finding candidates"
+                        )
             elif command == "stats":
-                print(json.dumps(tracker.stats(), indent=2, sort_keys=True))
+                stats = {
+                    **tracker.stats(),
+                    **FindingsTracker(database, actor=args.actor).stats(),
+                    "unsynced_drafts": count_unsynced_drafts(_drafts_dir(args)),
+                }
+                print(json.dumps(stats, indent=2, sort_keys=True))
             elif command == "check-scope":
                 files = args.files or _changed_files(args.base)
                 violations = tracker.check_scope(args.id, files)
@@ -488,6 +702,8 @@ def _main(argv: list[str] | None = None) -> int:
                 else:
                     tracker.set_config(args.key, args.value)
                     print(f"{args.key}={args.value}")
+            elif command == "finding":
+                return _run_finding(database, args)
             else:  # pragma: no cover - argparse constrains command values
                 parser.error(f"unsupported command: {command}")
         return 0

@@ -125,7 +125,7 @@ def test_deferrals_lint_verification_and_export(tmp_path: Path) -> None:
         tracker.complete("deferred-item")
 
         export = database.export()
-        assert export["schema"]["version"] == 3
+        assert export["schema"]["version"] == 4
         assert export["tables"]["items"][0]["id"] == "deferred-item"
         json.dumps(export)
     finally:

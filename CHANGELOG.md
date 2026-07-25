@@ -8,9 +8,27 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Findings domain ported from the BenchBox tracker (schema v4, packaged
+  migration `004_findings.sql`): credential-free draft capture under
+  `~/.todo-db/finding-drafts/<project-id>/` (`TODO_DB_FINDING_DRAFTS_DIR`
+  override), a `finding` CLI group
+  (`create`/`list`/`show`/`candidates`/`dismiss`/`triage`/`link`/`promote`/
+  `sync`) with `sync` as the sole credentialed landing step, disposition
+  transitions with reason-required terminal states, atomic finding→item
+  promotion, findings tables in the lossless export/restore envelope, audit
+  hash-chain coverage of every finding mutation, and a findings banner on
+  `ready` plus finding counts in `stats`. Draft parsing requires the new
+  `findings` extra (`pyyaml`).
 - MIT `LICENSE` file (the metadata already claimed MIT; the text now ships).
 - `CHANGELOG.md` and a GitHub Actions CI workflow running lint and the full
   test suite with all extras.
+
+### Fixed
+
+- The migration runner now splits SQL on real statement boundaries (quotes,
+  comments, and `BEGIN`/`CASE`...`END` bodies) instead of every bare `;`, so
+  trigger-containing migrations and string literals with semicolons apply
+  correctly on both backends.
 
 ### Changed
 

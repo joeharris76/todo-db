@@ -41,8 +41,35 @@ detected and rejected rather than silently combined with this database.
 
 The CLI also provides `show`, `list`, `ready`, `stats`, `start`, `release`,
 `defer`, `promote`, `dismiss`, `block`, `unblock`, `drop`, `lint`,
-`check-scope`, `verify`, `sweep-stale`, and `config` commands. `todo` is a
-compatibility alias for `todo-db`.
+`check-scope`, `verify`, `sweep-stale`, `config`, and `finding` commands.
+`todo` is a compatibility alias for `todo-db`.
+
+## Findings
+
+The `finding` group tracks blind-spot findings (review classes, not single
+defects) in a two-step capture/landing flow:
+
+```sh
+uv sync --extra findings
+uv run todo-db finding create --title "Reviews skip generated files" \
+  --finding-kind framework-gap --review-context "release review" \
+  --gate class-not-instance
+uv run todo-db --db .todo-db/standalone.sqlite finding sync
+```
+
+`finding create` and `finding candidates` are credential-free: they only read
+and write Markdown drafts under `~/.todo-db/finding-drafts/<project-id>/`
+(override with `TODO_DB_FINDING_DRAFTS_DIR` or `--drafts-dir`), never the
+database. `finding sync` is the sole credentialed landing step; it validates
+each draft, inserts-if-absent by filename-stem id, and fails loudly on a
+same-id/different-content conflict instead of merging. Landed findings move
+through `list`, `show`, `triage`, `dismiss`, `link`, and `promote` (which
+atomically creates a planning item, links it, and flips the finding to
+`promoted`). Every finding mutation commits atomically with a hash-chained
+audit event plus an append-only `finding_events` provenance row, and the
+findings tables are included in the lossless export/restore envelope. Open
+findings and unsynced drafts surface as a one-line banner on `ready` and as
+counts in `stats`.
 
 ## Legacy YAML bridge
 

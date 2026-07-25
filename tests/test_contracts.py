@@ -73,7 +73,7 @@ def test_sqlite_bootstrap_binds_project_identity(tmp_path: Path) -> None:
     db = TodoDatabase.open(DatabaseConfig(path=tmp_path / "todo.sqlite", identity=identity))
 
     assert db.project_identity == identity
-    assert db.schema_version == 3
+    assert db.schema_version == 4
     db.close()
 
 
@@ -214,7 +214,7 @@ def test_export_envelope_preserves_metadata_and_audit_events(tmp_path: Path) -> 
         "project_id": "project-test",
         "repository": "https://example.test/project",
     }
-    assert exported["schema"]["version"] == 3
+    assert exported["schema"]["version"] == 4
     assert exported["metadata"]["lint.require_scope_rules"] == "on"
     assert exported["events"][-1]["action"] == "probe"
     assert exported["events"][-1]["detail"] == {"value": 7}
@@ -252,7 +252,7 @@ def test_prior_package_refuses_a_database_with_a_newer_schema(tmp_path: Path) ->
     raw = sqlite3.connect(path)
     raw.execute(
         "INSERT INTO schema_migrations(version, name, checksum, applied_at, tool_version) "
-        "VALUES (4, 'future', 'future-checksum', '2026-01-01T00:00:00Z', '0.2.0')"
+        "VALUES (5, 'future', 'future-checksum', '2026-01-01T00:00:00Z', '0.2.0')"
     )
     raw.commit()
     raw.close()
@@ -374,7 +374,7 @@ def test_legacy_snapshot_restore_preserves_tables_and_rehashes_events(tmp_path: 
         "title": "Legacy item",
     }
     assert database.verify_audit()["event_count"] == 1
-    assert len(exported["tables"]["schema_migrations"]) == 3
+    assert len(exported["tables"]["schema_migrations"]) == 4
 
     before_failed_restore = database.export()
     missing_table = {key: value for key, value in snapshot.items() if key != "deferrals"}

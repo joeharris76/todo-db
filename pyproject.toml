@@ -33,6 +33,9 @@ audit = [
 legacy = [
     "pyyaml>=6",
 ]
+findings = [
+    "pyyaml>=6",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/todo_db"]

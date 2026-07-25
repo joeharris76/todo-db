@@ -16,7 +16,7 @@ from .errors import AuditIntegrityError, ProjectIdentityMismatchError, SchemaMis
 from .models import CredentialMode, DatabaseConfig, ProjectIdentity
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 try:
     TOOL_VERSION = metadata.version("todo-db")
 except metadata.PackageNotFoundError:  # running from an unbuilt source tree
@@ -56,6 +56,56 @@ def _migration_resource(version: int):
 
 def _migration_sql(version: int) -> str:
     return _migration_resource(version).read_text(encoding="utf-8")
+
+
+def _split_statements(sql: str) -> list[str]:
+    """Split migration SQL on `;`, honoring quotes, comments, and BEGIN/CASE...END bodies."""
+
+    statements: list[str] = []
+    buffer: list[str] = []
+    depth = 0
+    index, length = 0, len(sql)
+    while index < length:
+        char = sql[index]
+        if char in ("'", '"', "`"):
+            end = index + 1
+            while end < length:
+                if sql[end] == char and not (end + 1 < length and sql[end + 1] == char):
+                    break
+                end += 2 if sql[end] == char else 1
+            buffer.append(sql[index : end + 1])
+            index = end + 1
+        elif sql.startswith("--", index):
+            end = sql.find("\n", index)
+            index = length if end == -1 else end
+        elif sql.startswith("/*", index):
+            end = sql.find("*/", index)
+            index = length if end == -1 else end + 2
+            buffer.append(" ")
+        elif char.isalpha() or char == "_":
+            end = index
+            while end < length and (sql[end].isalnum() or sql[end] == "_"):
+                end += 1
+            word = sql[index:end].upper()
+            if word in ("BEGIN", "CASE"):
+                depth += 1
+            elif word == "END":
+                depth = max(depth - 1, 0)
+            buffer.append(sql[index:end])
+            index = end
+        elif char == ";" and depth == 0:
+            statement = "".join(buffer).strip()
+            if statement:
+                statements.append(statement)
+            buffer = []
+            index += 1
+        else:
+            buffer.append(char)
+            index += 1
+    tail = "".join(buffer).strip()
+    if tail:
+        statements.append(tail)
+    return statements
 
 
 class TodoDatabase:
@@ -189,6 +239,10 @@ class TodoDatabase:
             "prior_art": "SELECT * FROM prior_art ORDER BY item_id, path, concept",
             "deferrals": "SELECT * FROM deferrals ORDER BY from_item, id",
             "meta": "SELECT * FROM meta ORDER BY key",
+            "findings": "SELECT * FROM findings ORDER BY id",
+            "finding_evidence": "SELECT * FROM finding_evidence ORDER BY id",
+            "finding_links": "SELECT * FROM finding_links ORDER BY id",
+            "finding_events": "SELECT * FROM finding_events ORDER BY seq",
         }
         tables = {
             "project_identity": [identity_row],
@@ -298,8 +352,34 @@ class TodoDatabase:
                 "created_at",
             ),
             "meta": ("key", "value"),
+            "findings": (
+                "id",
+                "date",
+                "finding_kind",
+                "review_context",
+                "observed_sha",
+                "title",
+                "finding_text",
+                "why_matters",
+                "next_steps",
+                "disposition",
+                "disposition_reason",
+                "urgency",
+                "breadth",
+                "confidence",
+                "reconsider_after",
+                "created_at",
+                "imported_from",
+            ),
+            "finding_evidence": ("id", "finding_id", "path", "pattern", "line_start", "line_end", "note"),
+            "finding_links": ("id", "finding_id", "kind", "target_item", "target_finding", "note"),
+            "finding_events": ("seq", "at", "actor", "finding_id", "action", "detail"),
         }
         delete_order = (
+            "finding_evidence",
+            "finding_links",
+            "finding_events",
+            "findings",
             "work_needs",
             "item_deps",
             "scope_rules",
@@ -324,6 +404,10 @@ class TodoDatabase:
             "prior_art",
             "deferrals",
             "meta",
+            "findings",
+            "finding_evidence",
+            "finding_links",
+            "finding_events",
         )
         with self.transaction():
             for row in exported_migrations:
@@ -540,10 +624,7 @@ class TodoDatabase:
             for version, name, checksum in expected:
                 if version <= current:
                     continue
-                statements = [
-                    statement.strip() for statement in _migration_sql(version).split(";") if statement.strip()
-                ]
-                for statement in statements:
+                for statement in _split_statements(_migration_sql(version)):
                     self._connection.execute(statement)
                 self._connection.execute(
                     "INSERT INTO schema_migrations(version, name, checksum, applied_at, tool_version) "

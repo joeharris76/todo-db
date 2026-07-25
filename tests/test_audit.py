@@ -79,7 +79,7 @@ def test_schema_v1_event_history_is_migrated_to_hash_chain_v2(tmp_path: Path) ->
             identity=ProjectIdentity(project_id="project-test", repository="https://example.test/project"),
         )
     )
-    assert db.schema_version == 3
+    assert db.schema_version == 4
     assert db.verify_audit()["event_count"] == 1
     db.close()
 

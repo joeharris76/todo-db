@@ -378,6 +378,9 @@ source = { editable = "." }
 audit = [
     { name = "cryptography" },
 ]
+findings = [
+    { name = "pyyaml" },
+]
 hosted = [
     { name = "libsql" },
 ]
@@ -398,9 +401,10 @@ dev = [
 requires-dist = [
     { name = "cryptography", marker = "extra == 'audit'", specifier = ">=42" },
     { name = "libsql", marker = "extra == 'hosted'", specifier = ">=0.1.11" },
+    { name = "pyyaml", marker = "extra == 'findings'", specifier = ">=6" },
     { name = "pyyaml", marker = "extra == 'legacy'", specifier = ">=6" },
 ]
-provides-extras = ["hosted", "audit", "legacy"]
+provides-extras = ["hosted", "audit", "legacy", "findings"]
 
 [package.metadata.requires-dev]
 dev = [
