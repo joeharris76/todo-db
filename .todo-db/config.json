@@ -1,0 +1,5 @@
+{
+  "db": ".todo-db/standalone.sqlite",
+  "project_id": "todo-db",
+  "repository": "https://github.com/joeharris76/todo-db"
+}

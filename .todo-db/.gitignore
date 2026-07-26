@@ -1,0 +1,4 @@
+*.sqlite*
+replica.db*
+*.lock
+!config.json

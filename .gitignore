@@ -1,4 +1,9 @@
-.todo-db/
+# databases stay local; .todo-db/config.json and .todo-db/.gitignore are tracked
+.todo-db/*.sqlite*
+.todo-db/*replica.db*
+.todo-db/*.lock
+.todo-db/archive/
+.todo-db/export/
 .venv/
 __pycache__/
 *.py[cod]
