@@ -572,3 +572,83 @@ def test_legacy_snapshot_without_findings_still_restores(tmp_path: Path) -> None
     assert tables["items"][0]["id"] == "legacy-item"
     assert tables["findings"] == []
     database.close()
+
+
+# Tables carried outside the per-table registries: identity, provenance and
+# migration bookkeeping are each handled explicitly by export()/restore().
+_INFRASTRUCTURE_TABLES = frozenset({"audit_head", "events", "metadata", "project_identity", "schema_migrations"})
+
+
+def _schema_tracker_tables(tmp_path: Path) -> set[str]:
+    from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase
+
+    identity = ProjectIdentity(project_id="registry-test", repository="https://example.test/registry")
+    path = tmp_path / "registry.sqlite"
+    TodoDatabase.open(DatabaseConfig(path=path, identity=identity)).close()
+    raw = sqlite3.connect(path)
+    try:
+        names = {
+            row[0]
+            for row in raw.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+        }
+    finally:
+        raw.close()
+    return names - _INFRASTRUCTURE_TABLES
+
+
+class TestTableRegistriesAgree:
+    """The four per-table registries must describe the same tables.
+
+    Adding a table means editing four separate lists, and nothing used to check
+    they matched. Adding finding_sections missed two of them: the restore
+    printed success and `audit verify` returned a valid chain while the table
+    came back empty. Both success signals were green and the data was gone.
+
+    These are the checks that would have failed immediately.
+    """
+
+    def test_all_four_registries_cover_the_same_tables(self) -> None:
+        from todo_db import database
+
+        assert set(database.EXPORT_TABLE_QUERIES) == set(database.RESTORE_TABLE_COLUMNS)
+        assert set(database.RESTORE_INSERT_ORDER) == set(database.RESTORE_TABLE_COLUMNS)
+        assert set(database.RESTORE_DELETE_ORDER) == set(database.RESTORE_TABLE_COLUMNS)
+
+    def test_orderings_are_permutations_not_merely_supersets(self) -> None:
+        from todo_db import database
+
+        # A duplicate would silently double-insert or double-delete.
+        assert len(database.RESTORE_INSERT_ORDER) == len(set(database.RESTORE_INSERT_ORDER))
+        assert len(database.RESTORE_DELETE_ORDER) == len(set(database.RESTORE_DELETE_ORDER))
+
+    def test_registries_match_the_installed_schema(self, tmp_path: Path) -> None:
+        # The check that catches the real mistake: a table exists in the schema
+        # but no registry knows about it, so it is silently never carried.
+        from todo_db import database
+
+        assert _schema_tracker_tables(tmp_path) == set(database.RESTORE_TABLE_COLUMNS)
+
+    def test_insert_and_delete_orders_respect_foreign_keys(self, tmp_path: Path) -> None:
+        """Parents before children on insert; children before parents on delete.
+
+        Derived from the live schema rather than restated, so a new foreign key
+        is covered without touching this test.
+        """
+        from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase, database
+
+        identity = ProjectIdentity(project_id="registry-test", repository="https://example.test/registry")
+        path = tmp_path / "fk.sqlite"
+        TodoDatabase.open(DatabaseConfig(path=path, identity=identity)).close()
+        raw = sqlite3.connect(path)
+        try:
+            insert_at = {name: i for i, name in enumerate(database.RESTORE_INSERT_ORDER)}
+            delete_at = {name: i for i, name in enumerate(database.RESTORE_DELETE_ORDER)}
+            for child in database.RESTORE_TABLE_COLUMNS:
+                for row in raw.execute(f"PRAGMA foreign_key_list({child})"):
+                    parent = row[2]
+                    if parent not in insert_at or parent == child:
+                        continue
+                    assert insert_at[parent] < insert_at[child], f"{child} is inserted before its parent {parent}"
+                    assert delete_at[child] < delete_at[parent], f"{child} is deleted after its parent {parent}"
+        finally:
+            raw.close()

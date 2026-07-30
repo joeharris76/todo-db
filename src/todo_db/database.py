@@ -37,6 +37,144 @@ OPTIONAL_LEGACY_TABLES = frozenset(
     }
 )
 
+# The four registries below describe the same set of tracker tables from four
+# angles: how to read each one, what columns it has, and the order to delete
+# and insert them under the foreign keys. They were method-local literals and
+# had to be kept in step by hand; adding finding_sections in PR #1 missed two
+# of them, and the restore reported success with the table empty. Hoisted here
+# so a test can assert they agree -- see tests/test_contracts.py.
+
+EXPORT_TABLE_QUERIES = {
+    "items": "SELECT * FROM items ORDER BY id",
+    "work_units": "SELECT * FROM work_units ORDER BY item_id, wid",
+    "work_needs": "SELECT * FROM work_needs ORDER BY item_id, wid, needs_wid",
+    "item_deps": "SELECT * FROM item_deps ORDER BY item_id, needs_item",
+    "scope_rules": "SELECT * FROM scope_rules ORDER BY item_id, kind, path_glob",
+    "verifications": "SELECT * FROM verifications ORDER BY item_id, seq",
+    "preserves": "SELECT * FROM preserves ORDER BY item_id, behavior",
+    "anti_patterns": "SELECT * FROM anti_patterns ORDER BY item_id, dont",
+    "prior_art": "SELECT * FROM prior_art ORDER BY item_id, path, concept",
+    "deferrals": "SELECT * FROM deferrals ORDER BY from_item, id",
+    "meta": "SELECT * FROM meta ORDER BY key",
+    "findings": "SELECT * FROM findings ORDER BY id",
+    "finding_evidence": "SELECT * FROM finding_evidence ORDER BY id",
+    "finding_links": "SELECT * FROM finding_links ORDER BY id",
+    "finding_events": "SELECT * FROM finding_events ORDER BY seq",
+    "finding_sections": "SELECT * FROM finding_sections ORDER BY finding_id, position",
+}
+
+RESTORE_TABLE_COLUMNS = {
+    "items": (
+        "id",
+        "title",
+        "worktree",
+        "priority",
+        "state",
+        "blocked_reason",
+        "category",
+        "description",
+        "approach",
+        "claimed_by",
+        "claimed_at",
+        "created_at",
+        "completed_at",
+        "completed_pr",
+    ),
+    "work_units": (
+        "item_id",
+        "wid",
+        "summary",
+        "status",
+        "evidence",
+        "notes",
+        "started_at",
+        "started_worktree",
+        "started_branch",
+    ),
+    "work_needs": ("item_id", "wid", "needs_wid"),
+    "item_deps": ("item_id", "needs_item"),
+    "scope_rules": ("item_id", "kind", "path_glob"),
+    "verifications": ("item_id", "seq", "description", "command", "expected", "last_run", "last_result"),
+    "preserves": ("item_id", "behavior"),
+    "anti_patterns": ("item_id", "dont", "why", "instead"),
+    "prior_art": ("item_id", "path", "concept", "decision"),
+    "deferrals": (
+        "id",
+        "from_item",
+        "summary",
+        "reason",
+        "resolution",
+        "resolved_item",
+        "resolved_reason",
+        "created_at",
+    ),
+    "meta": ("key", "value"),
+    "findings": (
+        "id",
+        "date",
+        "finding_kind",
+        "review_context",
+        "observed_sha",
+        "title",
+        "finding_text",
+        "why_matters",
+        "next_steps",
+        "disposition",
+        "disposition_reason",
+        "urgency",
+        "breadth",
+        "confidence",
+        "reconsider_after",
+        "created_at",
+        "imported_from",
+        "related_paths",
+        "suggested_sweep",
+    ),
+    "finding_evidence": ("id", "finding_id", "path", "pattern", "line_start", "line_end", "note"),
+    "finding_links": ("id", "finding_id", "kind", "target_item", "target_finding", "note"),
+    "finding_events": ("seq", "at", "actor", "finding_id", "action", "detail"),
+    "finding_sections": ("id", "finding_id", "position", "heading", "text"),
+}
+
+RESTORE_DELETE_ORDER = (
+    "finding_evidence",
+    "finding_links",
+    "finding_events",
+    "finding_sections",
+    "findings",
+    "work_needs",
+    "item_deps",
+    "scope_rules",
+    "verifications",
+    "preserves",
+    "anti_patterns",
+    "prior_art",
+    "deferrals",
+    "work_units",
+    "items",
+    "meta",
+)
+
+RESTORE_INSERT_ORDER = (
+    "items",
+    "work_units",
+    "work_needs",
+    "item_deps",
+    "scope_rules",
+    "verifications",
+    "preserves",
+    "anti_patterns",
+    "prior_art",
+    "deferrals",
+    "meta",
+    "findings",
+    "finding_evidence",
+    "finding_links",
+    "finding_events",
+    # After findings: sections reference findings(id).
+    "finding_sections",
+)
+
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -247,24 +385,7 @@ class TodoDatabase:
                 "SELECT singleton, head_seq, head_hash FROM audit_head WHERE singleton = 1"
             ).fetchone()
         )
-        tracker_queries = {
-            "items": "SELECT * FROM items ORDER BY id",
-            "work_units": "SELECT * FROM work_units ORDER BY item_id, wid",
-            "work_needs": "SELECT * FROM work_needs ORDER BY item_id, wid, needs_wid",
-            "item_deps": "SELECT * FROM item_deps ORDER BY item_id, needs_item",
-            "scope_rules": "SELECT * FROM scope_rules ORDER BY item_id, kind, path_glob",
-            "verifications": "SELECT * FROM verifications ORDER BY item_id, seq",
-            "preserves": "SELECT * FROM preserves ORDER BY item_id, behavior",
-            "anti_patterns": "SELECT * FROM anti_patterns ORDER BY item_id, dont",
-            "prior_art": "SELECT * FROM prior_art ORDER BY item_id, path, concept",
-            "deferrals": "SELECT * FROM deferrals ORDER BY from_item, id",
-            "meta": "SELECT * FROM meta ORDER BY key",
-            "findings": "SELECT * FROM findings ORDER BY id",
-            "finding_evidence": "SELECT * FROM finding_evidence ORDER BY id",
-            "finding_links": "SELECT * FROM finding_links ORDER BY id",
-            "finding_events": "SELECT * FROM finding_events ORDER BY seq",
-            "finding_sections": "SELECT * FROM finding_sections ORDER BY finding_id, position",
-        }
+        tracker_queries = EXPORT_TABLE_QUERIES
         tables = {
             "project_identity": [identity_row],
             "metadata": metadata_rows,
@@ -327,115 +448,9 @@ class TodoDatabase:
         tables = exported.get("tables") or {}
         if [dict(row) for row in tables.get("schema_migrations", [])] != exported_migrations:
             raise SchemaMismatchError("export schema migration records disagree with the table payload")
-        table_columns = {
-            "items": (
-                "id",
-                "title",
-                "worktree",
-                "priority",
-                "state",
-                "blocked_reason",
-                "category",
-                "description",
-                "approach",
-                "claimed_by",
-                "claimed_at",
-                "created_at",
-                "completed_at",
-                "completed_pr",
-            ),
-            "work_units": (
-                "item_id",
-                "wid",
-                "summary",
-                "status",
-                "evidence",
-                "notes",
-                "started_at",
-                "started_worktree",
-                "started_branch",
-            ),
-            "work_needs": ("item_id", "wid", "needs_wid"),
-            "item_deps": ("item_id", "needs_item"),
-            "scope_rules": ("item_id", "kind", "path_glob"),
-            "verifications": ("item_id", "seq", "description", "command", "expected", "last_run", "last_result"),
-            "preserves": ("item_id", "behavior"),
-            "anti_patterns": ("item_id", "dont", "why", "instead"),
-            "prior_art": ("item_id", "path", "concept", "decision"),
-            "deferrals": (
-                "id",
-                "from_item",
-                "summary",
-                "reason",
-                "resolution",
-                "resolved_item",
-                "resolved_reason",
-                "created_at",
-            ),
-            "meta": ("key", "value"),
-            "findings": (
-                "id",
-                "date",
-                "finding_kind",
-                "review_context",
-                "observed_sha",
-                "title",
-                "finding_text",
-                "why_matters",
-                "next_steps",
-                "disposition",
-                "disposition_reason",
-                "urgency",
-                "breadth",
-                "confidence",
-                "reconsider_after",
-                "created_at",
-                "imported_from",
-                "related_paths",
-                "suggested_sweep",
-            ),
-            "finding_evidence": ("id", "finding_id", "path", "pattern", "line_start", "line_end", "note"),
-            "finding_links": ("id", "finding_id", "kind", "target_item", "target_finding", "note"),
-            "finding_events": ("seq", "at", "actor", "finding_id", "action", "detail"),
-            "finding_sections": ("id", "finding_id", "position", "heading", "text"),
-        }
-        delete_order = (
-            "finding_evidence",
-            "finding_links",
-            "finding_events",
-            "finding_sections",
-            "findings",
-            "work_needs",
-            "item_deps",
-            "scope_rules",
-            "verifications",
-            "preserves",
-            "anti_patterns",
-            "prior_art",
-            "deferrals",
-            "work_units",
-            "items",
-            "meta",
-        )
-        insert_order = (
-            "items",
-            "work_units",
-            "work_needs",
-            "item_deps",
-            "scope_rules",
-            "verifications",
-            "preserves",
-            "anti_patterns",
-            "prior_art",
-            "deferrals",
-            "meta",
-            "findings",
-            "finding_evidence",
-            "finding_links",
-            "finding_events",
-            # After findings: sections reference findings(id).
-            "finding_sections",
-        )
+        table_columns = RESTORE_TABLE_COLUMNS
+        delete_order = RESTORE_DELETE_ORDER
+        insert_order = RESTORE_INSERT_ORDER
         with self.transaction():
             for row in exported_migrations:
                 self._connection.execute(
