@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from todo_db import DatabaseConfig, FindingsTracker, ProjectIdentity, TodoDatabase, TodoTracker
+from todo_db.database import SCHEMA_VERSION
 from todo_db.errors import TodoError
 
 
@@ -373,7 +374,7 @@ def test_pre_findings_database_upgrades_cleanly(tmp_path: Path) -> None:
     raw.close()
 
     database = open_db(tmp_path)
-    assert database.schema_version == 4
+    assert database.schema_version == SCHEMA_VERSION
     tables = {row["name"] for row in database.connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert {"findings", "finding_evidence", "finding_links", "finding_events"} <= tables
     service = FindingsTracker(database, actor="upgrade-test")
@@ -403,13 +404,20 @@ def test_migration_runner_applies_triggers_and_quoted_semicolons(
     checksum = hashlib.sha256(TRIGGER_MIGRATION.encode("utf-8")).hexdigest()
     real_files = database_module._migration_files
     real_sql = database_module._migration_sql
-    monkeypatch.setattr(database_module, "_migration_files", lambda: [*real_files(), (5, "trigger_fixture", checksum)])
+    fixture_version = SCHEMA_VERSION + 1
     monkeypatch.setattr(
-        database_module, "_migration_sql", lambda version: TRIGGER_MIGRATION if version == 5 else real_sql(version)
+        database_module,
+        "_migration_files",
+        lambda: [*real_files(), (fixture_version, "trigger_fixture", checksum)],
+    )
+    monkeypatch.setattr(
+        database_module,
+        "_migration_sql",
+        lambda version: TRIGGER_MIGRATION if version == fixture_version else real_sql(version),
     )
 
     database = open_db(tmp_path)
-    assert database.schema_version == 5
+    assert database.schema_version == fixture_version
     with database.transaction():
         database.connection.execute("INSERT INTO trigger_fixture (id) VALUES (2)")
     rows = {row["id"]: row["note"] for row in database.connection.execute("SELECT id, note FROM trigger_fixture")}
