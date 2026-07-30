@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import sqlite3
 import json
+import sqlite3
 from pathlib import Path
 
 try:
@@ -9,9 +9,9 @@ try:
 except ModuleNotFoundError:  # Python 3.10: tomllib landed in 3.11
     import tomli as tomllib
 
-
-
 import pytest
+
+from todo_db.database import SCHEMA_VERSION
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -79,7 +79,7 @@ def test_sqlite_bootstrap_binds_project_identity(tmp_path: Path) -> None:
     db = TodoDatabase.open(DatabaseConfig(path=tmp_path / "todo.sqlite", identity=identity))
 
     assert db.project_identity == identity
-    assert db.schema_version == 4
+    assert db.schema_version == SCHEMA_VERSION
     db.close()
 
 
@@ -220,7 +220,7 @@ def test_export_envelope_preserves_metadata_and_audit_events(tmp_path: Path) -> 
         "project_id": "project-test",
         "repository": "https://example.test/project",
     }
-    assert exported["schema"]["version"] == 4
+    assert exported["schema"]["version"] == SCHEMA_VERSION
     assert exported["metadata"]["lint.require_scope_rules"] == "on"
     assert exported["events"][-1]["action"] == "probe"
     assert exported["events"][-1]["detail"] == {"value": 7}
@@ -256,9 +256,12 @@ def test_prior_package_refuses_a_database_with_a_newer_schema(tmp_path: Path) ->
     identity = ProjectIdentity(project_id="project-test", repository="https://example.test/project")
     TodoDatabase.open(DatabaseConfig(path=path, identity=identity)).close()
     raw = sqlite3.connect(path)
+    # One past the real head, whatever that currently is — a literal would
+    # collide the moment a new migration lands.
     raw.execute(
         "INSERT INTO schema_migrations(version, name, checksum, applied_at, tool_version) "
-        "VALUES (5, 'future', 'future-checksum', '2026-01-01T00:00:00Z', '0.2.0')"
+        "VALUES (?, 'future', 'future-checksum', '2026-01-01T00:00:00Z', '0.2.0')",
+        (SCHEMA_VERSION + 1,),
     )
     raw.commit()
     raw.close()
@@ -380,7 +383,7 @@ def test_legacy_snapshot_restore_preserves_tables_and_rehashes_events(tmp_path: 
         "title": "Legacy item",
     }
     assert database.verify_audit()["event_count"] == 1
-    assert len(exported["tables"]["schema_migrations"]) == 4
+    assert len(exported["tables"]["schema_migrations"]) == SCHEMA_VERSION
 
     before_failed_restore = database.export()
     missing_table = {key: value for key, value in snapshot.items() if key != "deferrals"}
@@ -392,4 +395,180 @@ def test_legacy_snapshot_restore_preserves_tables_and_rehashes_events(tmp_path: 
     with pytest.raises(sqlite3.IntegrityError, match="UNIQUE constraint failed"):
         database.restore_legacy(malformed)
     assert database.export() == before_failed_restore
+    database.close()
+
+
+def _legacy_snapshot() -> dict:
+    """A minimal, valid legacy snapshot: the 12 required tables and nothing else."""
+    snapshot: dict = {
+        "items": [
+            {
+                "id": "legacy-item",
+                "title": "Legacy item",
+                "worktree": "main",
+                "priority": "medium",
+                "state": "planning",
+                "blocked_reason": None,
+                "category": None,
+                "description": "A legacy item restored into standalone storage.",
+                "approach": None,
+                "claimed_by": None,
+                "claimed_at": None,
+                "created_at": "2026-01-01T00:00:00Z",
+                "completed_at": None,
+                "completed_pr": None,
+                "work": [],
+                "deps": [],
+                "scope": [],
+                "verifications": [],
+                "preserves": [],
+                "anti_patterns": [],
+                "prior_art": [],
+                "deferrals": [],
+            }
+        ],
+        "events": [
+            {
+                "seq": 1,
+                "at": "2026-01-01T00:00:01Z",
+                "actor": "legacy",
+                "item_id": "legacy-item",
+                "action": "create",
+                "detail": '{"state":"planning","title":"Legacy item"}',
+            }
+        ],
+        "meta": [{"key": "schema_version", "value": "2"}],
+    }
+    for table in (
+        "work_units",
+        "work_needs",
+        "item_deps",
+        "scope_rules",
+        "verifications",
+        "preserves",
+        "anti_patterns",
+        "prior_art",
+        "deferrals",
+    ):
+        snapshot[table] = []
+    return snapshot
+
+
+def test_legacy_snapshot_restore_rejects_tables_it_cannot_load(tmp_path: Path) -> None:
+    """A table this importer does not understand must be an error, not a silent drop.
+
+    Ignoring it is the dangerous failure mode: the restore reports success and
+    the data is simply gone, with nothing to notice it by. That is how the
+    findings domain would have vanished in a tracker migration.
+    """
+    from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase
+    from todo_db.errors import SchemaMismatchError
+
+    identity = ProjectIdentity(project_id="benchbox", repository="https://github.com/joeharris76/BenchBox")
+    database = TodoDatabase.open(DatabaseConfig(path=tmp_path / "reject.sqlite", identity=identity))
+
+    snapshot = {**_legacy_snapshot(), "some_future_domain": [{"id": 1}]}
+    before = database.export()
+    with pytest.raises(SchemaMismatchError, match="cannot load: some_future_domain"):
+        database.restore_legacy(snapshot)
+    # And the refusal must leave the destination untouched.
+    assert database.export() == before
+    database.close()
+
+
+def test_legacy_snapshot_restore_carries_the_findings_domain(tmp_path: Path) -> None:
+    """All five findings tables survive, including the v4 lossless fields."""
+    from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase
+
+    identity = ProjectIdentity(project_id="benchbox", repository="https://github.com/joeharris76/BenchBox")
+    database = TodoDatabase.open(DatabaseConfig(path=tmp_path / "findings.sqlite", identity=identity))
+
+    finding_id = "2026-01-01-000000-example-finding"
+    snapshot = {
+        **_legacy_snapshot(),
+        "findings": [
+            {
+                "id": finding_id,
+                "date": "2026-01-01",
+                "finding_kind": "framework-gap",
+                "review_context": "context",
+                "observed_sha": None,
+                "title": "An example finding",
+                "finding_text": "body",
+                "why_matters": "because",
+                "next_steps": "next",
+                "disposition": "open",
+                "disposition_reason": None,
+                "urgency": None,
+                "breadth": None,
+                "confidence": None,
+                "reconsider_after": None,
+                "created_at": "2026-01-01T00:00:00Z",
+                "imported_from": None,
+                # v4 lossless columns: absent from the pre-005 schema entirely.
+                "related_paths": '["docs/a.md"]',
+                "suggested_sweep": "grep -r example",
+            }
+        ],
+        "finding_evidence": [
+            {
+                "id": 1,
+                "finding_id": finding_id,
+                "path": "docs/a.md",
+                "pattern": None,
+                "line_start": 3,
+                "line_end": 4,
+                "note": "here",
+            }
+        ],
+        # target_item points at an item, which is why the FK must be deferrable:
+        # the restore inserts tables one at a time.
+        "finding_links": [
+            {
+                "id": 1,
+                "finding_id": finding_id,
+                "kind": "informs",
+                "target_item": "legacy-item",
+                "target_finding": None,
+                "note": "n",
+            }
+        ],
+        "finding_events": [
+            {
+                "seq": 1,
+                "at": "2026-01-01T00:00:02Z",
+                "actor": "legacy",
+                "finding_id": finding_id,
+                "action": "sync",
+                "detail": None,
+            }
+        ],
+        "finding_sections": [
+            {"id": 1, "finding_id": finding_id, "position": 0, "heading": "Detail", "text": "section body"}
+        ],
+    }
+
+    database.restore_legacy(snapshot)
+    tables = database.export()["tables"]
+
+    for table in ("findings", "finding_evidence", "finding_links", "finding_events", "finding_sections"):
+        assert len(tables[table]) == 1, f"{table} did not survive the restore"
+    assert tables["findings"][0]["related_paths"] == '["docs/a.md"]'
+    assert tables["findings"][0]["suggested_sweep"] == "grep -r example"
+    assert tables["finding_sections"][0]["text"] == "section body"
+    # Carrying findings must not disturb the audit chain.
+    assert database.verify_audit()["event_count"] == 1
+    database.close()
+
+
+def test_legacy_snapshot_without_findings_still_restores(tmp_path: Path) -> None:
+    """Findings are optional, not newly required — 12-table snapshots still work."""
+    from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase
+
+    identity = ProjectIdentity(project_id="benchbox", repository="https://github.com/joeharris76/BenchBox")
+    database = TodoDatabase.open(DatabaseConfig(path=tmp_path / "nofindings.sqlite", identity=identity))
+    database.restore_legacy(_legacy_snapshot())
+    tables = database.export()["tables"]
+    assert tables["items"][0]["id"] == "legacy-item"
+    assert tables["findings"] == []
     database.close()

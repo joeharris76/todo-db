@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+from todo_db.database import SCHEMA_VERSION
+
 
 def _open_database(path: Path):
     from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase
@@ -79,7 +81,7 @@ def test_schema_v1_event_history_is_migrated_to_hash_chain_v2(tmp_path: Path) ->
             identity=ProjectIdentity(project_id="project-test", repository="https://example.test/project"),
         )
     )
-    assert db.schema_version == 4
+    assert db.schema_version == SCHEMA_VERSION
     assert db.verify_audit()["event_count"] == 1
     db.close()
 

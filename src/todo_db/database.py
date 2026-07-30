@@ -16,12 +16,26 @@ from .errors import AuditIntegrityError, ProjectIdentityMismatchError, SchemaMis
 from .models import CredentialMode, DatabaseConfig, ProjectIdentity
 
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 try:
     TOOL_VERSION = metadata.version("todo-db")
 except metadata.PackageNotFoundError:  # running from an unbuilt source tree
     TOOL_VERSION = "0+unknown"
 EXPORT_FORMAT_VERSION = 2
+
+# Tables a legacy snapshot MAY carry beyond restore_legacy's required set. The
+# distinction matters: anything in neither set is rejected rather than ignored,
+# because ignoring it means restoring a snapshot that carries a domain this
+# importer cannot load would report success while silently discarding it.
+OPTIONAL_LEGACY_TABLES = frozenset(
+    {
+        "findings",
+        "finding_evidence",
+        "finding_links",
+        "finding_events",
+        "finding_sections",
+    }
+)
 
 
 def _utc_now() -> str:
@@ -249,6 +263,7 @@ class TodoDatabase:
             "finding_evidence": "SELECT * FROM finding_evidence ORDER BY id",
             "finding_links": "SELECT * FROM finding_links ORDER BY id",
             "finding_events": "SELECT * FROM finding_events ORDER BY seq",
+            "finding_sections": "SELECT * FROM finding_sections ORDER BY finding_id, position",
         }
         tables = {
             "project_identity": [identity_row],
@@ -376,15 +391,19 @@ class TodoDatabase:
                 "reconsider_after",
                 "created_at",
                 "imported_from",
+                "related_paths",
+                "suggested_sweep",
             ),
             "finding_evidence": ("id", "finding_id", "path", "pattern", "line_start", "line_end", "note"),
             "finding_links": ("id", "finding_id", "kind", "target_item", "target_finding", "note"),
             "finding_events": ("seq", "at", "actor", "finding_id", "action", "detail"),
+            "finding_sections": ("id", "finding_id", "position", "heading", "text"),
         }
         delete_order = (
             "finding_evidence",
             "finding_links",
             "finding_events",
+            "finding_sections",
             "findings",
             "work_needs",
             "item_deps",
@@ -414,6 +433,8 @@ class TodoDatabase:
             "finding_evidence",
             "finding_links",
             "finding_events",
+            # After findings: sections reference findings(id).
+            "finding_sections",
         )
         with self.transaction():
             for row in exported_migrations:
@@ -496,6 +517,16 @@ class TodoDatabase:
         missing_tables = sorted(required_tables - snapshot.keys())
         if missing_tables:
             raise SchemaMismatchError(f"legacy snapshot is missing required tables: {', '.join(missing_tables)}")
+        # Reject what we cannot load, rather than ignoring it. Silently dropping
+        # an unrecognised table is the dangerous failure: the restore reports
+        # success and the data is simply gone, with nothing to notice it by.
+        unexpected_tables = sorted(snapshot.keys() - required_tables - OPTIONAL_LEGACY_TABLES)
+        if unexpected_tables:
+            raise SchemaMismatchError(
+                "legacy snapshot carries tables this importer cannot load: "
+                f"{', '.join(unexpected_tables)}. Restoring would discard them silently. "
+                "Teach restore_legacy to load them, or drop them from the snapshot deliberately."
+            )
         tables = dict(base["tables"])
         tables["metadata"] = []
         tables["items"] = [
@@ -503,6 +534,12 @@ class TodoDatabase:
             for item in snapshot.get("items", [])
         ]
         for table in tracker_tables:
+            tables[table] = [dict(row) for row in snapshot.get(table, [])]
+        # Findings are optional in a legacy snapshot, but `--replace` means
+        # replace: an absent table becomes empty rather than leaving whatever
+        # the destination held, so a restore never yields a hybrid of two
+        # trackers. Same `.get(table, [])` semantics as the required tables.
+        for table in sorted(OPTIONAL_LEGACY_TABLES):
             tables[table] = [dict(row) for row in snapshot.get(table, [])]
 
         events: list[dict[str, Any]] = []
