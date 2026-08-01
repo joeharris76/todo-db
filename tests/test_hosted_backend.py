@@ -372,9 +372,7 @@ def test_hosted_verify_run_refuses_stored_commands_without_explicit_override(
     database.close()
 
 
-def test_hosted_verify_run_executes_when_explicitly_allowed(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_hosted_verify_run_executes_when_explicitly_allowed(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("TODO_DB_ALLOW_HOSTED_VERIFY_RUN", "1")
     database, tracker = _open_hosted_tracker(monkeypatch, tmp_path)
     result, output = tracker.run_verification("verify-item", 1)

@@ -376,6 +376,8 @@ class TodoTracker:
         edit_work: dict[str, str] | None = None,
         add_verify: Iterable[dict[str, str]] = (),
         drop_verify: Iterable[int] = (),
+        add_scope: Iterable[tuple[str, str]] = (),
+        drop_scope: Iterable[tuple[str, str]] = (),
         reason: str | None = None,
     ) -> dict[str, Any]:
         """Amend an item without touching its lifecycle; one chained `update` event carries every diff."""
@@ -385,11 +387,21 @@ class TodoTracker:
         edits = dict(edit_work or {})
         verify_adds = [dict(entry) for entry in add_verify]
         verify_drops = [int(seq) for seq in drop_verify]
+        scope_adds = self._normalize_scope_updates(add_scope)
+        scope_drops = self._normalize_scope_updates(drop_scope)
         reason = reason.strip() if reason and reason.strip() else None
-        if all(value is None for value in fields.values()) and not (adds or edits or verify_adds or verify_drops):
+        if all(value is None for value in fields.values()) and not (
+            adds or edits or verify_adds or verify_drops or scope_adds or scope_drops
+        ):
             raise TodoError("update requires at least one change flag")
         if verify_drops and reason is None:
             raise TodoError("--drop-verify removes recorded verification steps; --reason is required")
+        if (scope_adds or scope_drops) and reason is None:
+            raise TodoError("scope changes require --reason because they amend the item's write boundary")
+        conflicting_scope = set(scope_adds) & set(scope_drops)
+        if conflicting_scope:
+            kind, path_glob = sorted(conflicting_scope)[0]
+            raise TodoError(f"cannot add and drop the same scope rule: {kind}:{path_glob}")
         with self.database.transaction():
             item = self._require_item(item_id)
             if item["state"] in ("done", "dropped") and reason is None:
@@ -478,6 +490,28 @@ class TodoTracker:
                     raise TodoError(f"no verification seq={seq} on {item_id!r}")
                 self.connection.execute("DELETE FROM verifications WHERE item_id = ? AND seq = ?", (item_id, seq))
                 verify_dropped.append({"seq": seq, "name": row["description"], "command": row["command"]})
+            existing_scope = {
+                (row["kind"], row["path_glob"])
+                for row in self.connection.execute(
+                    "SELECT kind, path_glob FROM scope_rules WHERE item_id = ?", (item_id,)
+                )
+            }
+            for rule in scope_adds:
+                if rule in existing_scope:
+                    raise TodoError(f"scope rule already exists on {item_id!r}: {rule[0]}:{rule[1]}")
+            for rule in scope_drops:
+                if rule not in existing_scope:
+                    raise TodoError(f"no scope rule on {item_id!r}: {rule[0]}:{rule[1]}")
+            for kind, path_glob in scope_drops:
+                self.connection.execute(
+                    "DELETE FROM scope_rules WHERE item_id = ? AND kind = ? AND path_glob = ?",
+                    (item_id, kind, path_glob),
+                )
+            for kind, path_glob in scope_adds:
+                self.connection.execute(
+                    "INSERT INTO scope_rules (item_id, kind, path_glob) VALUES (?, ?, ?)",
+                    (item_id, kind, path_glob),
+                )
             detail: dict[str, Any] = {}
             if changes:
                 detail["changes"] = changes
@@ -489,10 +523,32 @@ class TodoTracker:
                 detail["verify_added"] = verify_added
             if verify_dropped:
                 detail["verify_dropped"] = verify_dropped
+            if scope_adds:
+                detail["scope_added"] = [{"kind": kind, "path_glob": path_glob} for kind, path_glob in scope_adds]
+            if scope_drops:
+                detail["scope_dropped"] = [{"kind": kind, "path_glob": path_glob} for kind, path_glob in scope_drops]
             if reason is not None:
                 detail["reason"] = reason
             self._event("update", item_id, detail)
         return detail
+
+    @staticmethod
+    def _normalize_scope_updates(rules: Iterable[tuple[str, str]]) -> list[tuple[str, str]]:
+        normalized: list[tuple[str, str]] = []
+        seen: set[tuple[str, str]] = set()
+        for raw_kind, raw_path_glob in rules:
+            kind = str(raw_kind)
+            path_glob = str(raw_path_glob).strip()
+            if kind not in ("only_modify", "do_not_modify"):
+                raise TodoError(f"invalid scope rule kind: {kind}")
+            if not path_glob:
+                raise TodoError("scope path glob must not be empty")
+            rule = (kind, path_glob)
+            if rule in seen:
+                raise TodoError(f"scope rule named more than once: {kind}:{path_glob}")
+            seen.add(rule)
+            normalized.append(rule)
+        return normalized
 
     def add_work_need(self, item_id: str, wid: str, needs_wid: str) -> None:
         with self.database.transaction():

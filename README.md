@@ -52,8 +52,9 @@ The CLI also provides `show`, `update`, `list`, `ready`, `stats`, `start`,
 uv run todo-db --db .todo-db/standalone.sqlite update example-item \
   --title "Corrected title" --edit-work "w0:Corrected summary" \
   --add-work "w1:Newly discovered unit" \
+  --add-only-modify "tests/**" \
   --add-verify "Lint::uv run ruff check ." \
-  --drop-verify 1 --reason "superseded by the lint step"
+  --drop-verify 1 --reason "tests and lint are now the reviewed boundary"
 ```
 
 Metadata edits (`--title`, `--description`, `--priority`, `--worktree`) are
@@ -68,6 +69,15 @@ from/to diffs; verification adds and drops log the full command text,
 because `verify --run` executes stored commands and amendments to them are
 security-relevant history. A call with no change flags, or an edit equal to
 the current value, is rejected (exit 2) rather than logged as an empty diff.
+
+Scope rules are amended explicitly with `--add-only-modify`,
+`--drop-only-modify`, `--add-do-not-modify`, and `--drop-do-not-modify`.
+Every scope mutation requires `--reason`, including additions: adding an
+`only_modify` rule can broaden an existing allowlist, while removing the last
+one can remove the allowlist entirely. The event records exact `scope_added`
+and `scope_dropped` entries, and duplicate, missing, contradictory, or empty
+rules abort the whole update transaction without a partial metadata/work/
+verification change.
 
 ## Adopting todo-db in a new project
 

@@ -109,9 +109,7 @@ def test_cli_finding_create_is_credential_free(
     assert validate_draft(written[0]) == []
 
 
-def test_cli_finding_create_enforces_gate_and_bug_class_fix(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_cli_finding_create_enforces_gate_and_bug_class_fix(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     from todo_db.cli import main
 
     base = [
@@ -305,7 +303,12 @@ def test_promote_is_atomic_and_terminal(tmp_path: Path) -> None:
         finding = service.get_finding(DRAFT_STEM)
         assert finding["disposition"] == "promoted"
         assert finding["links"] == [
-            {"kind": "promoted-to", "target_item": "promoted-item", "target_finding": None, "note": "promoted by test-actor"}
+            {
+                "kind": "promoted-to",
+                "target_item": "promoted-item",
+                "target_finding": None,
+                "note": "promoted by test-actor",
+            }
         ]
         assert tracker.get_item("promoted-item")["state"] == "planning"
         with pytest.raises(TodoError, match="terminal"):

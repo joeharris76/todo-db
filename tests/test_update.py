@@ -53,15 +53,19 @@ def test_metadata_updates_carry_exact_from_to_diffs(tmp_path: Path) -> None:
         event = database.export()["events"][-1]
         assert event["action"] == "update"
         assert event["detail"]["item_id"] == "update-item"
-        assert event["detail"]["changes"] == detail["changes"] == {
-            "title": {"from": "Original title", "to": "Corrected title"},
-            "description": {
-                "from": "The original description before any update.",
-                "to": "The corrected description after review.",
-            },
-            "priority": {"from": "medium", "to": "high"},
-            "worktree": {"from": "todo-db", "to": "other-tree"},
-        }
+        assert (
+            event["detail"]["changes"]
+            == detail["changes"]
+            == {
+                "title": {"from": "Original title", "to": "Corrected title"},
+                "description": {
+                    "from": "The original description before any update.",
+                    "to": "The corrected description after review.",
+                },
+                "priority": {"from": "medium", "to": "high"},
+                "worktree": {"from": "todo-db", "to": "other-tree"},
+            }
+        )
         assert "reason" not in event["detail"]
     finally:
         database.close()
@@ -163,6 +167,86 @@ def test_verification_amendments_log_full_command_text(tmp_path: Path) -> None:
         database.close()
 
 
+def test_scope_amendments_require_reason_and_log_exact_rules(tmp_path: Path) -> None:
+    database, tracker = open_tracker(tmp_path)
+    try:
+        create_basic_item(
+            tracker,
+            scope=[("only_modify", "src/**"), ("do_not_modify", "src/generated/**")],
+        )
+        with pytest.raises(TodoError, match="scope changes require --reason"):
+            tracker.update_item("update-item", add_scope=[("only_modify", "tests/**")])
+
+        detail = tracker.update_item(
+            "update-item",
+            add_scope=[("only_modify", "tests/**")],
+            drop_scope=[("do_not_modify", "src/generated/**")],
+            reason="the verification suite and generated output are now part of the reviewed boundary",
+        )
+
+        assert detail["scope_added"] == [{"kind": "only_modify", "path_glob": "tests/**"}]
+        assert detail["scope_dropped"] == [{"kind": "do_not_modify", "path_glob": "src/generated/**"}]
+        assert tracker.get_item("update-item")["scope"] == [
+            {"kind": "only_modify", "path_glob": "src/**"},
+            {"kind": "only_modify", "path_glob": "tests/**"},
+        ]
+        event = database.export()["events"][-1]
+        assert event["action"] == "update"
+        assert event["detail"]["scope_added"] == detail["scope_added"]
+        assert event["detail"]["scope_dropped"] == detail["scope_dropped"]
+        assert event["detail"]["reason"].startswith("the verification suite")
+    finally:
+        database.close()
+
+
+def test_scope_amendments_validate_atomically(tmp_path: Path) -> None:
+    database, tracker = open_tracker(tmp_path)
+    try:
+        create_basic_item(tracker, scope=[("only_modify", "src/**")])
+        events_before = len(database.export()["events"])
+
+        with pytest.raises(TodoError, match="no scope rule"):
+            tracker.update_item(
+                "update-item",
+                add_scope=[("only_modify", "tests/**")],
+                drop_scope=[("do_not_modify", "missing/**")],
+                reason="exercise rollback",
+            )
+
+        assert tracker.get_item("update-item")["scope"] == [{"kind": "only_modify", "path_glob": "src/**"}]
+        assert len(database.export()["events"]) == events_before
+    finally:
+        database.close()
+
+
+def test_scope_amendments_reject_duplicate_conflicting_empty_and_existing_rules(tmp_path: Path) -> None:
+    database, tracker = open_tracker(tmp_path)
+    try:
+        create_basic_item(tracker, scope=[("only_modify", "src/**")])
+        events_before = len(database.export()["events"])
+
+        invalid_updates = [
+            ({"add_scope": [("only_modify", "tests/**"), ("only_modify", "tests/**")]}, "more than once"),
+            (
+                {
+                    "add_scope": [("only_modify", "tests/**")],
+                    "drop_scope": [("only_modify", "tests/**")],
+                },
+                "add and drop the same scope rule",
+            ),
+            ({"add_scope": [("only_modify", "   ")]}, "must not be empty"),
+            ({"add_scope": [("only_modify", "src/**")]}, "already exists"),
+        ]
+        for kwargs, message in invalid_updates:
+            with pytest.raises(TodoError, match=message):
+                tracker.update_item("update-item", reason="exercise validation", **kwargs)
+
+        assert tracker.get_item("update-item")["scope"] == [{"kind": "only_modify", "path_glob": "src/**"}]
+        assert len(database.export()["events"]) == events_before
+    finally:
+        database.close()
+
+
 def test_no_change_flags_and_no_op_edits_are_rejected_without_events(tmp_path: Path) -> None:
     database, tracker = open_tracker(tmp_path)
     try:
@@ -229,8 +313,28 @@ def test_cli_update_exit_codes_show_and_audit_verify(tmp_path: Path, capsys: pyt
     assert "at least one change flag" in capsys.readouterr().err
     assert main([*common, "update", "cli-item", "--title", "CLI item"]) == 2
     assert "nothing to update" in capsys.readouterr().err
-    assert main([*common, "update", "cli-item", "--title", "CLI item corrected", "--add-verify", "Smoke::printf PASS"]) == 0
+    assert (
+        main([*common, "update", "cli-item", "--title", "CLI item corrected", "--add-verify", "Smoke::printf PASS"])
+        == 0
+    )
     assert "updated cli-item (changes, verify_added)" in capsys.readouterr().out
+    assert main([*common, "update", "cli-item", "--add-only-modify", "tests/**"]) == 2
+    assert "scope changes require --reason" in capsys.readouterr().err
+    assert (
+        main(
+            [
+                *common,
+                "update",
+                "cli-item",
+                "--add-only-modify",
+                "tests/**",
+                "--reason",
+                "tests are required by the recorded verification",
+            ]
+        )
+        == 0
+    )
+    assert "updated cli-item (scope_added)" in capsys.readouterr().out
     assert main([*common, "update", "cli-item", "--drop-verify", "1"]) == 2
     assert "--reason is required" in capsys.readouterr().err
     assert main([*common, "show", "cli-item", "--json"]) == 0
