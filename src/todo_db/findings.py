@@ -233,7 +233,9 @@ def _check_body(body: str) -> list[str]:
     errors: list[str] = []
     if not any(line.startswith("# ") and line[2:].strip() for line in lines):
         errors.append("body must include a top-level '# <title>' heading")
-    errors.extend(f"body must include {heading!r} section" for heading in REQUIRED_BODY_HEADINGS if heading not in lines)
+    errors.extend(
+        f"body must include {heading!r} section" for heading in REQUIRED_BODY_HEADINGS if heading not in lines
+    )
     return errors
 
 
@@ -521,7 +523,14 @@ class FindingsTracker:
             self.connection.execute(
                 "INSERT INTO finding_evidence (finding_id, path, pattern, line_start, line_end, note) "
                 "VALUES (?, ?, ?, ?, ?, ?)",
-                (finding_id, path, entry.get("pattern"), entry.get("line_start"), entry.get("line_end"), entry.get("note")),
+                (
+                    finding_id,
+                    path,
+                    entry.get("pattern"),
+                    entry.get("line_start"),
+                    entry.get("line_end"),
+                    entry.get("note"),
+                ),
             )
 
     def sync_drafts(self, drafts_dir: str | Path) -> dict[str, Any]:
@@ -642,7 +651,10 @@ class FindingsTracker:
             raise TodoError("link needs exactly one of --to-item / --to-finding")
         with self.database.transaction():
             self._require_finding(finding_id)
-            if target_item and self.connection.execute("SELECT 1 FROM items WHERE id = ?", (target_item,)).fetchone() is None:
+            if (
+                target_item
+                and self.connection.execute("SELECT 1 FROM items WHERE id = ?", (target_item,)).fetchone() is None
+            ):
                 raise TodoError(f"link target item {target_item!r} does not exist")
             if target_finding:
                 self._require_finding(target_finding)

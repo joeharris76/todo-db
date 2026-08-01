@@ -43,9 +43,7 @@ def _bound_identity(db_path: Path) -> tuple[str, str]:
     return row[0], row[1]
 
 
-def test_init_without_any_identity_source_is_a_hard_error(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_init_without_any_identity_source_is_a_hard_error(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     from todo_db.cli import main
 
     assert main(["--db", str(tmp_path / "todo.sqlite"), "init"]) == 2
@@ -93,9 +91,7 @@ def test_discovered_config_supplies_identity_and_db_from_a_subdirectory(
     assert json.loads(capsys.readouterr().out.split("created disc-item\n")[-1])["id"] == "disc-item"
 
 
-def test_config_db_entry_resolves_relative_to_the_config_root(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_config_db_entry_resolves_relative_to_the_config_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from todo_db.cli import main
 
     _write_config(
@@ -109,9 +105,7 @@ def test_config_db_entry_resolves_relative_to_the_config_root(
     assert (tmp_path / "var" / "tracker.sqlite").exists()
 
 
-def test_identity_precedence_is_flags_then_env_then_config(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_identity_precedence_is_flags_then_env_then_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from todo_db.cli import main
 
     _write_config(tmp_path, {"project_id": "from-config", "repository": "https://example.test/config"})
@@ -383,9 +377,7 @@ def _scaffold_wrapper_repo(tmp_path: Path, fake_turso: str, fake_todo_db: str) -
 @pytest.mark.skipif(shutil.which("git") is None, reason="the wrapper scaffold test uses a git repo")
 def test_wrapper_remints_a_token_and_retries_once_on_auth_exit_4(tmp_path: Path) -> None:
     wrapper, env = _scaffold_wrapper_repo(tmp_path, FAKE_TURSO_AUTHENTICATED, FAKE_TODO_DB_RETRY_AWARE)
-    result = subprocess.run(
-        [str(wrapper), "list"], cwd=tmp_path, env=env, capture_output=True, text=True, check=False
-    )
+    result = subprocess.run([str(wrapper), "list"], cwd=tmp_path, env=env, capture_output=True, text=True, check=False)
     assert result.returncode == 0, result.stderr
     assert "retried ok" in result.stdout
     assert "retrying once" in result.stderr
@@ -395,9 +387,7 @@ def test_wrapper_remints_a_token_and_retries_once_on_auth_exit_4(tmp_path: Path)
 @pytest.mark.skipif(shutil.which("git") is None, reason="the wrapper scaffold test uses a git repo")
 def test_wrapper_prints_the_alert_block_and_exits_4_when_the_turso_cli_is_logged_out(tmp_path: Path) -> None:
     wrapper, env = _scaffold_wrapper_repo(tmp_path, FAKE_TURSO_LOGGED_OUT, FAKE_TODO_DB_ALWAYS_AUTH_FAILS)
-    result = subprocess.run(
-        [str(wrapper), "list"], cwd=tmp_path, env=env, capture_output=True, text=True, check=False
-    )
+    result = subprocess.run([str(wrapper), "list"], cwd=tmp_path, env=env, capture_output=True, text=True, check=False)
     assert result.returncode == 4
     assert "TODO-DB AUTH ALERT" in result.stderr
     assert "Tracker writes are BLOCKED" in result.stderr

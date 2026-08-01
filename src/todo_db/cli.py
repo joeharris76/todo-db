@@ -98,12 +98,8 @@ def _resolve_identity(
     """Resolve identity per field: explicit flag > env > discovered config > nothing."""
 
     payload = discovered[1] if discovered else {}
-    project_id = (
-        getattr(args, "project_id", None) or os.environ.get("TODO_DB_PROJECT_ID") or payload.get("project_id")
-    )
-    repository = (
-        getattr(args, "repository", None) or os.environ.get("TODO_DB_REPOSITORY") or payload.get("repository")
-    )
+    project_id = getattr(args, "project_id", None) or os.environ.get("TODO_DB_PROJECT_ID") or payload.get("project_id")
+    repository = getattr(args, "repository", None) or os.environ.get("TODO_DB_REPOSITORY") or payload.get("repository")
     if project_id and repository:
         return ProjectIdentity(project_id=project_id, repository=repository)
     if project_id or repository:
@@ -246,7 +242,14 @@ def _parser() -> argparse.ArgumentParser:
     update.add_argument("--edit-work", action="append", default=[], metavar="WID:NEW-SUMMARY")
     update.add_argument("--add-verify", action="append", default=[], metavar="DESC[::COMMAND[::EXPECTED]]")
     update.add_argument("--drop-verify", action="append", default=[], type=int, metavar="SEQ")
-    update.add_argument("--reason", help="required for any edit to a done/dropped item and for --drop-verify")
+    update.add_argument("--add-only-modify", action="append", default=[], metavar="GLOB")
+    update.add_argument("--drop-only-modify", action="append", default=[], metavar="GLOB")
+    update.add_argument("--add-do-not-modify", action="append", default=[], metavar="GLOB")
+    update.add_argument("--drop-do-not-modify", action="append", default=[], metavar="GLOB")
+    update.add_argument(
+        "--reason",
+        help="required for any edit to a done/dropped item, --drop-verify, or scope change",
+    )
     _identity_args(update)
 
     for name, help_text in (
@@ -822,13 +825,19 @@ def _doctor_local_probe(path: Path) -> tuple[DoctorCheck, tuple[str, str] | None
         version = int(connection.execute("SELECT max(version) FROM schema_migrations").fetchone()[0] or 0)
         bound = None
         if "project_identity" in tables:
-            row = connection.execute("SELECT project_id, repository FROM project_identity WHERE singleton = 1").fetchone()
+            row = connection.execute(
+                "SELECT project_id, repository FROM project_identity WHERE singleton = 1"
+            ).fetchone()
             bound = (row[0], row[1]) if row else None
         if version < SCHEMA_VERSION:
             detail = f"{path} schema v{version} behind packaged v{SCHEMA_VERSION}"
             return ("WARN", detail, "behind -- run init to migrate"), bound
         if version > SCHEMA_VERSION:
-            return ("FAIL", f"{path} schema v{version} is ahead of packaged v{SCHEMA_VERSION}", "upgrade todo-db"), bound
+            return (
+                "FAIL",
+                f"{path} schema v{version} is ahead of packaged v{SCHEMA_VERSION}",
+                "upgrade todo-db",
+            ), bound
         return ("PASS", f"{path} schema v{version}", None), bound
     except sqlite3.Error as exc:
         return ("FAIL", f"cannot inspect {path}: {exc}", None), None
@@ -855,15 +864,15 @@ def _doctor_hosted_probe(target: str) -> tuple[DoctorCheck, tuple[str, str] | No
     except (TodoDBError, OSError, ValueError) as exc:
         return ("FAIL", str(exc), None), None, False
     try:
-        tables = {
-            row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
-        }
+        tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
         if "schema_migrations" not in tables:
             return ("WARN", f"{target} reachable but has no todo-db schema", "run `todo-db init`"), None, False
         version = int(connection.execute("SELECT max(version) AS v FROM schema_migrations").fetchone()["v"] or 0)
         bound = None
         if "project_identity" in tables:
-            row = connection.execute("SELECT project_id, repository FROM project_identity WHERE singleton = 1").fetchone()
+            row = connection.execute(
+                "SELECT project_id, repository FROM project_identity WHERE singleton = 1"
+            ).fetchone()
             bound = (row["project_id"], row["repository"]) if row else None
         if version < SCHEMA_VERSION:
             detail = f"{target} schema v{version} behind packaged v{SCHEMA_VERSION}"
@@ -893,7 +902,9 @@ def _doctor(args: argparse.Namespace) -> int:
     except TodoError as exc:
         config_error = str(exc)
     if config_error is not None:
-        add("config", "FAIL", config_error, "fix or remove the config; scaffold a fresh one with `todo-db init-project`")
+        add(
+            "config", "FAIL", config_error, "fix or remove the config; scaffold a fresh one with `todo-db init-project`"
+        )
     elif discovered is not None:
         add("config", "PASS", f"discovered {discovered[0]}")
     else:
@@ -929,12 +940,19 @@ def _doctor(args: argparse.Namespace) -> int:
     elif db_check[0] == "FAIL":
         add("identity", "WARN", "no identity from flags/env/config and the database probe failed to read a bound one")
     else:
-        add("identity", "FAIL", "no identity from flags/env/config and the database is not bound to one", IDENTITY_SOURCES_HINT)
+        add(
+            "identity",
+            "FAIL",
+            "no identity from flags/env/config and the database is not bound to one",
+            IDENTITY_SOURCES_HINT,
+        )
     add("database", *db_check)
 
     if hosted:
         if shutil.which("turso") is None:
-            add("turso-cli", "WARN", "turso CLI not found", "automatic token re-mint unavailable; install the turso CLI")
+            add(
+                "turso-cli", "WARN", "turso CLI not found", "automatic token re-mint unavailable; install the turso CLI"
+            )
         else:
             whoami = subprocess.run(["turso", "auth", "whoami"], capture_output=True, text=True, check=False)
             if whoami.returncode != 0:
@@ -1135,6 +1153,10 @@ def _main(argv: list[str] | None = None) -> int:
                     edit_work=_parse_work_edits(args.edit_work),
                     add_verify=_parse_verify(args.add_verify),
                     drop_verify=args.drop_verify,
+                    add_scope=[("only_modify", value) for value in args.add_only_modify]
+                    + [("do_not_modify", value) for value in args.add_do_not_modify],
+                    drop_scope=[("only_modify", value) for value in args.drop_only_modify]
+                    + [("do_not_modify", value) for value in args.drop_do_not_modify],
                     reason=args.reason,
                 )
                 print(f"updated {args.id} ({', '.join(sorted(key for key in detail if key != 'reason'))})")
@@ -1204,8 +1226,7 @@ def _main(argv: list[str] | None = None) -> int:
                     drafts = count_unsynced_drafts(_drafts_dir(args, project_id))
                     if open_findings or drafts:
                         print(
-                            f"{open_findings} open finding(s), {drafts} unsynced draft(s)"
-                            " -- todo-db finding candidates"
+                            f"{open_findings} open finding(s), {drafts} unsynced draft(s) -- todo-db finding candidates"
                         )
             elif command == "stats":
                 stats = {
