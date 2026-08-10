@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.1] - 2026-08-10
+
+### Fixed
+
+- `todo-db release` is holder-only: a non-holder cannot release another
+  actor's active or stale claim, while the holder can release and an
+  unclaimed item remains an idempotent no-op. Non-holder attempts retain the
+  CLI's generic error / exit-2 contract.
+
 ## [0.3.0] - 2026-07-25
 
 ### Added

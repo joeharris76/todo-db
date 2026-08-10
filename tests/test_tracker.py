@@ -164,3 +164,64 @@ def test_promoting_a_deferral_audits_the_new_item_and_resolution(tmp_path: Path)
         assert actions[-2:] == ["create", "promote"]
     finally:
         database.close()
+
+
+def test_release_is_holder_only(tmp_path: Path) -> None:
+    """Regression: non-holder release must fail with exit-2 semantics.
+
+    Covers the lease-theft fix in TodoTracker.release(): Bob's failed
+    release preserves Alice's claim, Alice's own release succeeds,
+    unclaimed release is a no-op, and stale leases are still not
+    releasable by others (takeover is via claim / sweep-stale).
+    """
+
+    identity = ProjectIdentity(project_id="tracker-test", repository="https://example.test/tracker")
+    database = TodoDatabase.open(DatabaseConfig(path=tmp_path / "todo.sqlite", identity=identity))
+    try:
+        alice = TodoTracker(database, actor="alice")
+        bob = TodoTracker(database, actor="bob")
+
+        alice.create_item(
+            item_id="lease-item",
+            title="Lease item",
+            worktree="todo-db",
+            priority="medium",
+            description="Item used to verify holder-only release.",
+        )
+        alice.claim("lease-item")
+        assert database.connection.execute("SELECT claimed_by FROM items WHERE id='lease-item'").fetchone()[
+            "claimed_by"
+        ] == "alice"
+
+        # Bob must not be able to release Alice's active claim.
+        with pytest.raises(TodoError, match="only the holder can release"):
+            bob.release("lease-item")
+        assert database.connection.execute("SELECT claimed_by FROM items WHERE id='lease-item'").fetchone()[
+            "claimed_by"
+        ] == "alice"
+
+        # Holder can release.
+        alice.release("lease-item")
+        assert database.connection.execute("SELECT claimed_by FROM items WHERE id='lease-item'").fetchone()[
+            "claimed_by"
+        ] is None
+
+        # Unclaimed release is a no-op (idempotent).
+        bob.release("lease-item")
+        assert database.connection.execute("SELECT claimed_by FROM items WHERE id='lease-item'").fetchone()[
+            "claimed_by"
+        ] is None
+
+        # Stale lease is still not releasable by non-holder; takeover is via claim.
+        alice.claim("lease-item")
+        database.connection.execute("UPDATE items SET claimed_at='2000-01-01T00:00:00Z' WHERE id='lease-item'")
+        database.connection.commit()
+        with pytest.raises(TodoError, match="only the holder can release"):
+            bob.release("lease-item")
+        # Claim takeover of expired lease succeeds.
+        bob.claim("lease-item")
+        assert database.connection.execute("SELECT claimed_by FROM items WHERE id='lease-item'").fetchone()[
+            "claimed_by"
+        ] == "bob"
+    finally:
+        database.close()
