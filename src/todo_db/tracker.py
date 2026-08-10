@@ -629,7 +629,14 @@ class TodoTracker:
             item = self._require_item(item_id)
             if item["claimed_by"] is None:
                 return
-            self.connection.execute("UPDATE items SET claimed_by = NULL, claimed_at = NULL WHERE id = ?", (item_id,))
+            if item["claimed_by"] != self.actor:
+                raise TodoError(f"{item_id!r} is claimed by {item['claimed_by']!r}; only the holder can release")
+            self.connection.execute(
+                "UPDATE items SET claimed_by = NULL, claimed_at = NULL WHERE id = ? AND claimed_by = ?",
+                (item_id, self.actor),
+            )
+            if self.connection.execute("SELECT changes() AS n").fetchone()["n"] != 1:
+                raise TodoError(f"{item_id!r} was released or claimed concurrently")
             self._event("release", item_id, {"holder": item["claimed_by"]})
 
     def _require_unit_needs_done(self, item_id: str, wid: str) -> None:
