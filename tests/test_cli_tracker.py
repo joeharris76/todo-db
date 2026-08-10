@@ -44,6 +44,48 @@ def test_cli_create_lifecycle_and_export(tmp_path: Path, capsys) -> None:
     assert "cli-item done" in capsys.readouterr().out
 
 
+def test_cli_release_is_holder_only_via_cli(tmp_path: Path, capsys) -> None:
+    """CLI regression: non-holder release exits 2 per cli.py:1273 TodoError mapping."""
+
+    from todo_db.cli import main
+
+    db_path = tmp_path / "standalone.sqlite"
+    base = ["--db", str(db_path), "--project-id", "cli-test", "--repository", "todo-db"]
+    assert main([*base, "--actor", "alice", "init"]) == 0
+    capsys.readouterr()
+    assert (
+        main(
+            [
+                *base,
+                "--actor",
+                "alice",
+                "create",
+                "lease-item",
+                "--title",
+                "Lease item",
+                "--worktree",
+                "todo-db",
+                "--priority",
+                "medium",
+                "--description",
+                "Item used to verify holder-only release via CLI.",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+    assert main([*base, "--actor", "alice", "claim", "lease-item"]) == 0
+    capsys.readouterr()
+    # Bob's release must map TodoError -> exit 2
+    assert main([*base, "--actor", "bob", "release", "lease-item"]) == 2
+    assert "only the holder can release" in capsys.readouterr().err
+    # Holder can release (exit 0)
+    assert main([*base, "--actor", "alice", "release", "lease-item"]) == 0
+    capsys.readouterr()
+    # Unclaimed is no-op (exit 0)
+    assert main([*base, "--actor", "bob", "release", "lease-item"]) == 0
+
+
 def test_cli_yaml_import_requires_explicit_source_and_preserves_items(tmp_path: Path, capsys) -> None:
     from todo_db.cli import main
 
