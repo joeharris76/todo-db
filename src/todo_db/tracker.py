@@ -15,7 +15,7 @@ import shlex
 import socket
 import subprocess
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Iterable
 
 from .database import TodoDatabase
@@ -42,6 +42,14 @@ TRANSITIONS = {
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
 WID_RE = re.compile(r"^w[0-9]{1,3}$")
 EVIDENCE_PIN_RE = re.compile(r"verified on|@ [0-9a-f]{7,}|\bPASS\b", re.IGNORECASE)
+STATIC_SHELL_TEST_RE = re.compile(
+    r"""(?:^|(?:&&|\|\||;)\s*)
+    (?:test|\[)\s+
+    -[zn]\s+
+    (?:'[^']*'|"(?:\\.|[^"$`\\])*"|[A-Za-z0-9_./:@%+=,-]+)
+    (?=\s*(?:\]|&&|\|\||;|$))""",
+    re.VERBOSE,
+)
 DEFAULT_LEASE_TTL_HOURS = 24.0
 CONFIG_KEYS = {
     "lint.require_w0_revalidation": ("on", "off"),
@@ -96,6 +104,31 @@ def _parse_prior_art(text: str) -> tuple[str, str, str]:
     )
     first = text.split()[0].rstrip(":,;") if text.split() else text
     return first, text.strip(), decision
+
+
+def _is_absolute_scope_glob(pattern: str) -> bool:
+    return pattern.startswith("~") or PurePosixPath(pattern).is_absolute() or PureWindowsPath(pattern).is_absolute()
+
+
+def _shell_command_sources(command: str) -> list[str]:
+    sources = [command]
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return sources
+    for index, token in enumerate(tokens[:-2]):
+        if Path(token).name in {"bash", "sh", "zsh"} and tokens[index + 1] == "-c":
+            sources.append(tokens[index + 2])
+    return sources
+
+
+def _constant_shell_test_sequences(verifications: Iterable[dict[str, Any]]) -> list[int]:
+    sequences = []
+    for verification in verifications:
+        command = verification.get("command") or ""
+        if any(STATIC_SHELL_TEST_RE.search(source) for source in _shell_command_sources(command)):
+            sequences.append(verification["seq"])
+    return sequences
 
 
 def _coerce_verifications(raw: Any) -> list[dict[str, Any]]:
@@ -1197,6 +1230,22 @@ class TodoTracker:
             findings.append("description cites point-in-time evidence but has no w0 re-validation unit")
         if not item["work"] and item["state"] in ("planning", "active"):
             findings.append("no work breakdown")
+        absolute_scope = [
+            f"{rule['kind']}:{rule['path_glob']}"
+            for rule in item["scope"]
+            if _is_absolute_scope_glob(rule["path_glob"])
+        ]
+        if absolute_scope:
+            findings.append(
+                "scope rules must use repository-relative globs; absolute or home-relative rules cannot match "
+                f"repository-relative changed paths: {', '.join(absolute_scope)}"
+            )
+        constant_tests = _constant_shell_test_sequences(item["verifications"])
+        if constant_tests:
+            findings.append(
+                f"verification seq {constant_tests} applies test -z/-n to a static literal, so its result is "
+                "constant; assert on a variable, command substitution, file state, or command exit status"
+            )
         return findings
 
     def run_verification(self, item_id: str, seq: int) -> tuple[str, str]:

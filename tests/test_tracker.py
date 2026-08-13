@@ -236,6 +236,35 @@ def _uv_project_lint_findings(
         database.close()
 
 
+@pytest.mark.parametrize(
+    "scope_glob",
+    [
+        "/Users/example/project/**",
+        "C:\\Users\\example\\project\\**",
+        "~/Developer/project/**",
+    ],
+)
+def test_lint_rejects_nonportable_absolute_scope_globs(tmp_path: Path, scope_glob: str) -> None:
+    database, tracker = open_tracker(tmp_path)
+    try:
+        tracker.create_item(
+            item_id="absolute-scope",
+            title="Absolute scope item",
+            worktree="todo-db",
+            priority="medium",
+            description="This item demonstrates a nonportable scope boundary.",
+            work=[{"id": "w0", "summary": "Do the work"}],
+            scope=[("only_modify", scope_glob)],
+            verifications=[{"description": "Tests", "command": "true", "expected": "exit 0"}],
+        )
+
+        findings = tracker.lint("absolute-scope")
+
+        assert any("repository-relative globs" in finding and scope_glob in finding for finding in findings)
+    finally:
+        database.close()
+
+
 def test_uv_project_lint_flags_pytest_missing_from_selected_environment(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -334,6 +363,63 @@ def test_uv_project_lint_skips_ambiguous_shell_or_manifest(
     manifest: str,
 ) -> None:
     assert _uv_project_lint_findings(tmp_path, monkeypatch, command, manifest) == []
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "sh -c 'test -z \"?? skills/skill-sync.config.yaml\"'",
+        "test -n 'constant text'",
+        "[ -z '' ]",
+    ],
+)
+def test_lint_rejects_static_literal_shell_tests(tmp_path: Path, command: str) -> None:
+    database, tracker = open_tracker(tmp_path)
+    try:
+        tracker.create_item(
+            item_id="constant-shell-test",
+            title="Constant shell test item",
+            worktree="todo-db",
+            priority="medium",
+            description="This item demonstrates a verification whose result cannot change.",
+            work=[{"id": "w0", "summary": "Do the work"}],
+            scope=[("only_modify", "src/**")],
+            verifications=[{"description": "Constant test", "command": command, "expected": "exit 0"}],
+        )
+
+        findings = tracker.lint("constant-shell-test")
+
+        assert any("static literal" in finding and "seq [1]" in finding for finding in findings)
+    finally:
+        database.close()
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        'test -z "$CHANGED"',
+        "sh -c 'test -n \"$(git status --porcelain)\"'",
+        "test -f generated.json",
+        "uv run -- python -m pytest tests/test_tracker.py -q",
+    ],
+)
+def test_lint_accepts_dynamic_or_nonconstant_verifications(tmp_path: Path, command: str) -> None:
+    database, tracker = open_tracker(tmp_path)
+    try:
+        tracker.create_item(
+            item_id="dynamic-shell-test",
+            title="Dynamic shell test item",
+            worktree="todo-db",
+            priority="medium",
+            description="This item demonstrates a verification whose result depends on repository state.",
+            work=[{"id": "w0", "summary": "Do the work"}],
+            scope=[("only_modify", "src/**")],
+            verifications=[{"description": "Dynamic test", "command": command, "expected": "exit 0"}],
+        )
+
+        assert not any("static literal" in finding for finding in tracker.lint("dynamic-shell-test"))
+    finally:
+        database.close()
 
 
 def test_existing_non_standalone_tracker_database_is_rejected(tmp_path: Path) -> None:
