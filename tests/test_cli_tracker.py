@@ -3,6 +3,19 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
+
+def test_cli_complete_help_exposes_verification_override(capsys) -> None:
+    from todo_db.cli import main
+
+    with pytest.raises(SystemExit) as raised:
+        main(["complete", "--help"])
+    assert raised.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "verification ladder" in help_text
+    assert "--override-verification REASON" in help_text
+
 
 def test_cli_create_lifecycle_and_export(tmp_path: Path, capsys) -> None:
     from todo_db.cli import main
@@ -42,6 +55,62 @@ def test_cli_create_lifecycle_and_export(tmp_path: Path, capsys) -> None:
     assert main([*common, "export", "--output", str(export_path)]) == 0
     assert json.loads(export_path.read_text(encoding="utf-8"))["tables"]["items"][0]["state"] == "done"
     assert "cli-item done" in capsys.readouterr().out
+
+
+def test_cli_complete_requires_passing_verification_or_audited_override(tmp_path: Path, capsys) -> None:
+    from todo_db.cli import main
+
+    db_path = tmp_path / "standalone.sqlite"
+    common = [
+        "--db",
+        str(db_path),
+        "--project-id",
+        "cli-complete-test",
+        "--repository",
+        "todo-db",
+        "--actor",
+        "cli-actor",
+    ]
+    assert main([*common, "init"]) == 0
+    capsys.readouterr()
+    assert (
+        main(
+            [
+                *common,
+                "create",
+                "failing-item",
+                "--title",
+                "Failing completion item",
+                "--worktree",
+                "todo-db",
+                "--priority",
+                "high",
+                "--description",
+                "The CLI completion gate runs this failing verification.",
+                "--verify",
+                "vacuous selector::exit 5",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+    assert main([*common, "claim", "failing-item"]) == 0
+    capsys.readouterr()
+    assert main([*common, "complete", "failing-item"]) == 2
+    assert "verification seq=1 failed" in capsys.readouterr().err
+
+    reason = "External release gate supplied equivalent evidence"
+    assert main([*common, "complete", "failing-item", "--override-verification", reason]) == 0
+    capsys.readouterr()
+    export_path = tmp_path / "completion-export.json"
+    assert main([*common, "export", "--output", str(export_path)]) == 0
+    completion = [
+        event
+        for event in json.loads(export_path.read_text(encoding="utf-8"))["events"]
+        if event["action"] == "complete"
+    ][-1]
+    assert completion["actor"] == "cli-actor"
+    assert completion["detail"]["verification_override"]["reason"] == reason
 
 
 def test_cli_release_is_holder_only_via_cli(tmp_path: Path, capsys) -> None:

@@ -369,6 +369,10 @@ def test_hosted_verify_run_refuses_stored_commands_without_explicit_override(
     with pytest.raises(TodoError, match="lateral code-execution") as raised:
         tracker.run_verification("verify-item", 1)
     assert "TODO_DB_ALLOW_HOSTED_VERIFY_RUN" in str(raised.value)
+    tracker.claim("verify-item")
+    with pytest.raises(TodoError, match="lateral code-execution"):
+        tracker.complete("verify-item")
+    assert tracker.get_item("verify-item")["state"] == "active"
     database.close()
 
 
@@ -378,6 +382,9 @@ def test_hosted_verify_run_executes_when_explicitly_allowed(monkeypatch: pytest.
     result, output = tracker.run_verification("verify-item", 1)
     assert result == "pass"
     assert "PASS" in output
+    tracker.claim("verify-item")
+    tracker.complete("verify-item")
+    assert tracker.get_item("verify-item")["state"] == "done"
     database.close()
 
 

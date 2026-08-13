@@ -67,6 +67,84 @@ def test_full_item_lifecycle_is_audited_and_dependency_gated(tmp_path: Path) -> 
         events = database.export()["events"]
         assert events[-1]["action"] == "complete"
         assert events[-1]["detail"]["item_id"] == "feature-item"
+        assert events[-1]["detail"]["verification"] == {"result": "pass", "sequences": [1]}
+    finally:
+        database.close()
+
+
+def test_complete_refuses_exit_five_and_audits_reasoned_override(tmp_path: Path) -> None:
+    database, tracker = open_tracker(tmp_path)
+    try:
+        tracker.create_item(
+            item_id="vacuous-item",
+            title="Vacuous verification item",
+            worktree="todo-db",
+            priority="high",
+            description="The completion gate must reject a vacuous verification selector.",
+            verifications=[{"description": "No tests collected", "command": "exit 5"}],
+        )
+        tracker.claim("vacuous-item")
+
+        with pytest.raises(TodoError, match="verification seq=1 failed"):
+            tracker.complete("vacuous-item")
+        assert tracker.get_item("vacuous-item")["state"] == "active"
+        assert tracker.get_item("vacuous-item")["verifications"][0]["last_result"] == "fail"
+
+        tracker.complete(
+            "vacuous-item",
+            verification_override_reason="Maintainer accepted external certification evidence",
+        )
+        complete_event = database.export()["events"][-1]
+        assert complete_event["action"] == "complete"
+        assert complete_event["actor"] == "test-actor"
+        assert complete_event["detail"]["verification_override"] == {
+            "reason": "Maintainer accepted external certification evidence",
+            "sequences": [1],
+        }
+    finally:
+        database.close()
+
+
+def test_complete_grades_verification_by_exit_status_not_expected_prose(tmp_path: Path) -> None:
+    database, tracker = open_tracker(tmp_path)
+    try:
+        tracker.create_item(
+            item_id="human-expected-item",
+            title="Human expected text item",
+            worktree="todo-db",
+            priority="medium",
+            description="The expected field is human acceptance text rather than an output assertion.",
+            verifications=[
+                {
+                    "description": "Successful command",
+                    "command": "printf actual-output",
+                    "expected": "exit 0 and the release remains compatible",
+                }
+            ],
+        )
+        tracker.claim("human-expected-item")
+        tracker.complete("human-expected-item")
+        assert tracker.get_item("human-expected-item")["state"] == "done"
+    finally:
+        database.close()
+
+
+def test_complete_rejects_empty_or_unnecessary_verification_override(tmp_path: Path) -> None:
+    database, tracker = open_tracker(tmp_path)
+    try:
+        tracker.create_item(
+            item_id="no-ladder-item",
+            title="No ladder item",
+            worktree="todo-db",
+            priority="low",
+            description="An item with no configured verification ladder.",
+        )
+        tracker.claim("no-ladder-item")
+        with pytest.raises(TodoError, match="reason must not be empty"):
+            tracker.complete("no-ladder-item", verification_override_reason="  ")
+        with pytest.raises(TodoError, match="has no verification steps"):
+            tracker.complete("no-ladder-item", verification_override_reason="Not needed")
+        tracker.complete("no-ladder-item")
     finally:
         database.close()
 
