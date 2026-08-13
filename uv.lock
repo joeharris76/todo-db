@@ -373,6 +373,9 @@ wheels = [
 name = "todo-db"
 version = "0.3.1"
 source = { editable = "." }
+dependencies = [
+    { name = "tomli", marker = "python_full_version < '3.11'" },
+]
 
 [package.optional-dependencies]
 audit = [
@@ -404,6 +407,7 @@ requires-dist = [
     { name = "libsql", marker = "extra == 'hosted'", specifier = ">=0.1.11" },
     { name = "pyyaml", marker = "extra == 'findings'", specifier = ">=6" },
     { name = "pyyaml", marker = "extra == 'legacy'", specifier = ">=6" },
+    { name = "tomli", marker = "python_full_version < '3.11'", specifier = ">=2" },
 ]
 provides-extras = ["hosted", "audit", "legacy", "findings"]
 

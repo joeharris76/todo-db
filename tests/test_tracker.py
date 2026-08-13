@@ -211,6 +211,131 @@ def test_deferrals_lint_verification_and_export(tmp_path: Path) -> None:
         database.close()
 
 
+def _uv_project_lint_findings(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    command: str,
+    manifest: str,
+) -> list[str]:
+    project = tmp_path / "tools"
+    project.mkdir()
+    (project / "pyproject.toml").write_text(manifest, encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    database, tracker = open_tracker(tmp_path)
+    try:
+        tracker.create_item(
+            item_id="uv-project-item",
+            title="UV project verification item",
+            worktree="todo-db",
+            priority="medium",
+            description="An item used to lint selected uv project environments.",
+            verifications=[{"description": "Selected project", "command": command}],
+        )
+        return [finding for finding in tracker.lint("uv-project-item") if "runs pytest through uv project" in finding]
+    finally:
+        database.close()
+
+
+def test_uv_project_lint_flags_pytest_missing_from_selected_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    findings = _uv_project_lint_findings(
+        tmp_path,
+        monkeypatch,
+        "uv run --project tools -- python -m pytest tests -q",
+        '[project]\nname = "tools"\nversion = "0.1.0"\ndependencies = ["pyyaml"]\n',
+    )
+    assert len(findings) == 1
+    assert "does not declare or inject pytest" in findings[0]
+    assert "--with pytest" in findings[0]
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "uv run --project tools --no-dev -- python -m pytest -q",
+        "uv run --project tools --only-group lint -- python -m pytest -q",
+    ],
+)
+def test_uv_project_lint_respects_excluded_dependencies(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, command: str
+) -> None:
+    findings = _uv_project_lint_findings(
+        tmp_path,
+        monkeypatch,
+        command,
+        '[project]\nname = "tools"\nversion = "0.1.0"\ndependencies = []\n'
+        '[dependency-groups]\ndev = ["pytest>=9"]\nlint = ["ruff"]\n',
+    )
+    assert len(findings) == 1
+
+
+@pytest.mark.parametrize(
+    ("command", "manifest"),
+    [
+        (
+            "uv run --project tools -- python -m pytest -q",
+            '[project]\nname = "tools"\nversion = "0.1.0"\ndependencies = ["pytest>=9"]\n',
+        ),
+        (
+            "uv run --project tools -- pytest -q",
+            '[project]\nname = "tools"\nversion = "0.1.0"\ndependencies = []\n'
+            '[dependency-groups]\ndev = ["pytest>=9"]\n',
+        ),
+        (
+            "uv run --project tools --extra test -- python -m pytest -q",
+            '[project]\nname = "tools"\nversion = "0.1.0"\ndependencies = []\n'
+            '[project.optional-dependencies]\ntest = ["pytest>=9"]\n',
+        ),
+        (
+            "uv run --project tools -- python -m pytest -q",
+            '[project]\nname = "tools"\nversion = "0.1.0"\ndependencies = []\n'
+            '[dependency-groups]\ndev = [{include-group = "test"}]\ntest = ["pytest>=9"]\n',
+        ),
+        (
+            "uv run --project tools --with pytest -- python -m pytest -q",
+            '[project]\nname = "tools"\nversion = "0.1.0"\ndependencies = []\n',
+        ),
+        (
+            "uv run --project tools --with-requirements requirements.txt -- python -m pytest -q",
+            '[project]\nname = "tools"\nversion = "0.1.0"\ndependencies = []\n',
+        ),
+        (
+            "uv run --project tools -- python scripts/check.py",
+            '[project]\nname = "tools"\nversion = "0.1.0"\ndependencies = []\n',
+        ),
+    ],
+)
+def test_uv_project_lint_accepts_self_contained_or_non_pytest_commands(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    command: str,
+    manifest: str,
+) -> None:
+    assert _uv_project_lint_findings(tmp_path, monkeypatch, command, manifest) == []
+
+
+@pytest.mark.parametrize(
+    ("command", "manifest"),
+    [
+        ("uv run --project tools -- python -m 'pytest", "not valid toml = ["),
+        ("uv run --project tools -- python -m pytest", "not valid toml = ["),
+        ("uv run --project tools -- python -m pytest", 'project = "not a table"\n'),
+        (
+            "uv run --directory elsewhere --project tools -- python -m pytest",
+            '[project]\nname = "tools"\nversion = "0.1.0"\ndependencies = []\n',
+        ),
+    ],
+)
+def test_uv_project_lint_skips_ambiguous_shell_or_manifest(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    command: str,
+    manifest: str,
+) -> None:
+    assert _uv_project_lint_findings(tmp_path, monkeypatch, command, manifest) == []
+
+
 def test_existing_non_standalone_tracker_database_is_rejected(tmp_path: Path) -> None:
     path = tmp_path / "todo.sqlite"
     raw = sqlite3.connect(path)

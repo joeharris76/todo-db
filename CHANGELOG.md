@@ -20,6 +20,12 @@ adheres to [Semantic Versioning](https://semver.org/).
   and overridden sequence numbers are recorded in the hash-chained completion
   event. Items without a verification ladder keep their existing completion
   behavior.
+- `todo-db lint` now reports verification commands that invoke pytest through
+  a selected uv project whose base dependencies, enabled dependency groups,
+  and selected extras do not provide pytest. Explicit `--with pytest` and
+  `--with-requirements` injections remain valid. The check is static and
+  conservative: it does not execute commands and skips shell or TOML forms it
+  cannot parse safely.
 
 ## [0.3.1] - 2026-08-10
 

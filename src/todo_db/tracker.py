@@ -11,6 +11,7 @@ import fnmatch
 import getpass
 import os
 import re
+import shlex
 import socket
 import subprocess
 from datetime import datetime, timedelta, timezone
@@ -19,6 +20,14 @@ from typing import Any, Iterable
 
 from .database import TodoDatabase
 from .errors import TodoError
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - exercised on Python 3.10
+    try:
+        import tomli as tomllib
+    except ModuleNotFoundError:  # pragma: no cover - optional lint check degrades conservatively
+        tomllib = None  # type: ignore[assignment]
 
 
 PRIORITIES = ("critical", "high", "medium-high", "medium", "low")
@@ -141,6 +150,157 @@ def _would_cycle(edges: dict[str, list[str]], source: str, target: str) -> bool:
         seen.add(current)
         pending.extend(edges.get(current, ()))
     return False
+
+
+_REQUIREMENT_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*")
+_SHELL_BOUNDARIES = frozenset({"&&", "||", ";", "|"})
+
+
+def _requirement_name(value: str) -> str | None:
+    match = _REQUIREMENT_NAME_RE.match(value.strip())
+    return re.sub(r"[-_.]+", "-", match.group(0)).lower() if match else None
+
+
+def _option_values(tokens: list[str], name: str) -> list[str]:
+    values: list[str] = []
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if token == name and index + 1 < len(tokens):
+            values.append(tokens[index + 1])
+            index += 2
+            continue
+        prefix = f"{name}="
+        if token.startswith(prefix):
+            values.append(token[len(prefix) :])
+        index += 1
+    return values
+
+
+def _invokes_pytest(tokens: list[str]) -> bool:
+    for index, token in enumerate(tokens):
+        executable = Path(token.rstrip(";")).name
+        if executable == "pytest":
+            return True
+        if token == "-m" and index + 1 < len(tokens) and tokens[index + 1].rstrip(";") == "pytest":
+            return True
+    return False
+
+
+def _dependency_names(entries: Any) -> set[str]:
+    if not isinstance(entries, list):
+        return set()
+    return {name for entry in entries if isinstance(entry, str) and (name := _requirement_name(entry)) is not None}
+
+
+def _group_dependency_names(groups: dict[str, Any], selected: set[str]) -> set[str]:
+    names: set[str] = set()
+    pending = list(selected)
+    seen: set[str] = set()
+    while pending:
+        group = pending.pop()
+        if group in seen:
+            continue
+        seen.add(group)
+        entries = groups.get(group, [])
+        names.update(_dependency_names(entries))
+        if isinstance(entries, list):
+            pending.extend(
+                entry["include-group"]
+                for entry in entries
+                if isinstance(entry, dict) and isinstance(entry.get("include-group"), str)
+            )
+    return names
+
+
+def _uv_project_missing_pytest(command: str) -> str | None:
+    """Return the selected project label when a pytest command cannot provide pytest."""
+    try:
+        lexer = shlex.shlex(command, posix=True, punctuation_chars="|&;")
+        lexer.whitespace_split = True
+        lexer.commenters = ""
+        tokens = list(lexer)
+    except ValueError:
+        return None
+    for uv_index, token in enumerate(tokens):
+        if Path(token).name != "uv" or uv_index + 1 >= len(tokens) or tokens[uv_index + 1] != "run":
+            continue
+        if "cd" in tokens[:uv_index]:
+            continue
+        end = next(
+            (index for index in range(uv_index + 2, len(tokens)) if tokens[index] in _SHELL_BOUNDARIES),
+            len(tokens),
+        )
+        run_tokens = tokens[uv_index + 2 : end]
+        separator = run_tokens.index("--") if "--" in run_tokens else None
+        uv_options = run_tokens[:separator] if separator is not None else run_tokens
+        invoked_command = run_tokens[separator + 1 :] if separator is not None else run_tokens
+        if not _invokes_pytest(invoked_command):
+            continue
+        if _option_values(uv_options, "--directory"):
+            continue
+        injected = _option_values(uv_options, "--with") + _option_values(uv_options, "--with-editable")
+        if "pytest" in {_requirement_name(value) for value in injected}:
+            continue
+        if _option_values(uv_options, "--with-requirements"):
+            continue
+
+        project_values = _option_values(uv_options, "--project")
+        project_label = project_values[-1] if project_values else "."
+        project_path = Path(project_label).expanduser()
+        if not project_path.is_absolute():
+            project_path = Path.cwd() / project_path
+        project_path = project_path.resolve()
+        try:
+            project_path.relative_to(Path.cwd().resolve())
+        except ValueError:
+            continue
+        manifest = project_path if project_path.name == "pyproject.toml" else project_path / "pyproject.toml"
+        if tomllib is None or not manifest.is_file():
+            continue
+        try:
+            payload = tomllib.loads(manifest.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+
+        project = payload.get("project")
+        if not isinstance(project, dict):
+            continue
+        names = _dependency_names(project.get("dependencies"))
+        groups = payload.get("dependency-groups")
+        groups = groups if isinstance(groups, dict) else {}
+        selected_groups: set[str] = set()
+        only_groups = set(_option_values(uv_options, "--only-group"))
+        if not only_groups and "--no-default-groups" not in uv_options and "--no-dev" not in uv_options:
+            tool = payload.get("tool")
+            tool = tool if isinstance(tool, dict) else {}
+            uv_config = tool.get("uv")
+            uv_config = uv_config if isinstance(uv_config, dict) else {}
+            defaults = uv_config.get("default-groups", ["dev"])
+            if defaults == "all":
+                selected_groups.update(groups)
+            elif isinstance(defaults, list):
+                selected_groups.update(value for value in defaults if isinstance(value, str))
+        selected_groups.update(_option_values(uv_options, "--group"))
+        selected_groups.update(only_groups)
+        if "--all-groups" in uv_options:
+            selected_groups.update(groups)
+        selected_groups.difference_update(_option_values(uv_options, "--no-group"))
+        names.update(_group_dependency_names(groups, selected_groups))
+
+        if only_groups or "--no-project" in uv_options:
+            names = set()
+            names.update(_group_dependency_names(groups, selected_groups))
+
+        extras = project.get("optional-dependencies")
+        extras = extras if isinstance(extras, dict) else {}
+        selected_extras = set(extras) if "--all-extras" in uv_options else set(_option_values(uv_options, "--extra"))
+        selected_extras.difference_update(_option_values(uv_options, "--no-extra"))
+        for extra in selected_extras:
+            names.update(_dependency_names(extras.get(extra)))
+        if "pytest" not in names:
+            return project_label
+    return None
 
 
 class TodoTracker:
@@ -1019,6 +1179,14 @@ class TodoTracker:
             findings.append("no verification steps recorded")
         elif not any(entry["command"] for entry in item["verifications"]):
             findings.append("verification steps exist but none has a runnable command")
+        for entry in item["verifications"]:
+            project = _uv_project_missing_pytest(entry.get("command") or "")
+            if project is not None:
+                findings.append(
+                    f"verification seq {entry['seq']} runs pytest through uv project {project!r}, "
+                    "but that environment does not declare or inject pytest; use the repository project "
+                    "(`uv run -- ...`) or add an explicit `--with pytest`/project dependency"
+                )
         if self.get_config("lint.require_scope_rules") == "on" and item["work"] and not item["scope"]:
             findings.append("has work units but no scope rules (only_modify/do_not_modify)")
         if (
