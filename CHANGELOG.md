@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-08-13
+
 ### Added
 
 - `todo-db complete` now runs every configured verification rung before the
