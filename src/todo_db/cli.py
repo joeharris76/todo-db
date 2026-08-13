@@ -296,10 +296,20 @@ def _parser() -> argparse.ArgumentParser:
     dismiss.add_argument("--reason", required=True)
     _identity_args(dismiss)
 
-    for name, option in (("complete", "pr"), ("drop", "reason"), ("block", "reason")):
+    complete = sub.add_parser("complete", help="complete an item after running its verification ladder")
+    complete.add_argument("id")
+    complete.add_argument("--pr", type=int)
+    complete.add_argument(
+        "--override-verification",
+        metavar="REASON",
+        help="skip the verification ladder and record this override reason in the completion audit event",
+    )
+    _identity_args(complete)
+
+    for name, option in (("drop", "reason"), ("block", "reason")):
         command = sub.add_parser(name, help=f"{name} an item")
         command.add_argument("id")
-        command.add_argument(f"--{option}", required=(option != "pr"), type=int if option == "pr" else str)
+        command.add_argument(f"--{option}", required=True)
         _identity_args(command)
 
     listing = sub.add_parser("list", help="list items")
@@ -1199,7 +1209,7 @@ def _main(argv: list[str] | None = None) -> int:
                 tracker.dismiss_deferral(args.deferral_id, args.reason)
                 print(f"deferral #{args.deferral_id} dismissed")
             elif command == "complete":
-                tracker.complete(args.id, args.pr)
+                tracker.complete(args.id, args.pr, verification_override_reason=args.override_verification)
                 print(f"{args.id} done")
             elif command == "drop":
                 tracker.drop(args.id, args.reason)

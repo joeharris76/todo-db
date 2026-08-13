@@ -792,37 +792,98 @@ class TodoTracker:
             )
             self._event("dismiss", row["from_item"], {"deferral_id": deferral_id, "reason": reason})
 
-    def complete(self, item_id: str, pr: int | None = None) -> None:
+    def _completion_verifications(self, item_id: str) -> list[Any]:
+        return list(
+            self.connection.execute(
+                "SELECT seq, command, expected, last_result FROM verifications WHERE item_id = ? ORDER BY seq",
+                (item_id,),
+            )
+        )
+
+    def _validate_completion_state(self, item_id: str) -> Any:
+        item = self._require_item(item_id)
+        if item["state"] != "active":
+            raise TodoError(f"illegal transition {item['state']!r} -> 'done' for {item_id!r}")
+        undone = [
+            r["wid"]
+            for r in self.connection.execute(
+                "SELECT wid FROM work_units WHERE item_id = ? AND status != 'done'", (item_id,)
+            )
+        ]
+        if undone:
+            raise TodoError(f"cannot complete {item_id!r}: work units not done: {', '.join(undone)}")
+        open_deferrals = [
+            r["id"]
+            for r in self.connection.execute(
+                "SELECT id FROM deferrals WHERE from_item = ? AND resolution = 'open'", (item_id,)
+            )
+        ]
+        if open_deferrals:
+            raise TodoError(f"cannot complete {item_id!r}: unresolved deferrals: {', '.join(map(str, open_deferrals))}")
+        if item["blocked_reason"]:
+            raise TodoError(f"cannot complete {item_id!r} while blocked: {item['blocked_reason']}")
+        return item
+
+    def complete(
+        self,
+        item_id: str,
+        pr: int | None = None,
+        *,
+        verification_override_reason: str | None = None,
+    ) -> None:
+        override_reason = verification_override_reason.strip() if verification_override_reason is not None else None
+        if verification_override_reason is not None and not override_reason:
+            raise TodoError("verification override reason must not be empty")
+
         with self.database.transaction():
-            item = self._require_item(item_id)
-            if item["state"] != "active":
-                raise TodoError(f"illegal transition {item['state']!r} -> 'done' for {item_id!r}")
-            undone = [
-                r["wid"]
-                for r in self.connection.execute(
-                    "SELECT wid FROM work_units WHERE item_id = ? AND status != 'done'", (item_id,)
-                )
-            ]
-            if undone:
-                raise TodoError(f"cannot complete {item_id!r}: work units not done: {', '.join(undone)}")
-            open_deferrals = [
-                r["id"]
-                for r in self.connection.execute(
-                    "SELECT id FROM deferrals WHERE from_item = ? AND resolution = 'open'", (item_id,)
-                )
-            ]
-            if open_deferrals:
+            self._validate_completion_state(item_id)
+            initial_verifications = self._completion_verifications(item_id)
+        verification_definition = [(row["seq"], row["command"], row["expected"]) for row in initial_verifications]
+
+        if override_reason is None:
+            for seq, _command, _expected in verification_definition:
+                result, _output = self.run_verification(item_id, seq)
+                if result != "pass":
+                    raise TodoError(
+                        f"cannot complete {item_id!r}: verification seq={seq} failed; "
+                        f"inspect it with `todo-db verify {item_id}`"
+                    )
+        elif not verification_definition:
+            raise TodoError(f"cannot override verification for {item_id!r}: the item has no verification steps")
+
+        with self.database.transaction():
+            item = self._validate_completion_state(item_id)
+            current_verifications = self._completion_verifications(item_id)
+            current_definition = [(row["seq"], row["command"], row["expected"]) for row in current_verifications]
+            if current_definition != verification_definition:
                 raise TodoError(
-                    f"cannot complete {item_id!r}: unresolved deferrals: {', '.join(map(str, open_deferrals))}"
+                    f"cannot complete {item_id!r}: verification ladder changed while the completion gate ran; retry"
                 )
-            if item["blocked_reason"]:
-                raise TodoError(f"cannot complete {item_id!r} while blocked: {item['blocked_reason']}")
+            if override_reason is None:
+                failed = [row["seq"] for row in current_verifications if row["last_result"] != "pass"]
+                if failed:
+                    raise TodoError(
+                        f"cannot complete {item_id!r}: verification results are not passing: "
+                        f"{', '.join(map(str, failed))}"
+                    )
             self._transition(item, "done")
             self.connection.execute(
                 "UPDATE items SET completed_at = ?, completed_pr = ?, claimed_by = NULL, claimed_at = NULL WHERE id = ?",
                 (utc_now(), pr, item_id),
             )
-            self._event("complete", item_id, {"pr": pr})
+            verification_detail: dict[str, Any]
+            if override_reason is None:
+                verification_detail = {
+                    "verification": {"result": "pass", "sequences": [row["seq"] for row in current_verifications]}
+                }
+            else:
+                verification_detail = {
+                    "verification_override": {
+                        "reason": override_reason,
+                        "sequences": [row["seq"] for row in current_verifications],
+                    }
+                }
+            self._event("complete", item_id, {"pr": pr, **verification_detail})
 
     def drop(self, item_id: str, reason: str) -> None:
         if not reason.strip():
@@ -988,8 +1049,7 @@ class TodoTracker:
             raise TodoError(f"verification seq={seq} on {item_id!r} has no command")
         proc = subprocess.run(row["command"], shell=True, capture_output=True, text=True, check=False)
         output = (proc.stdout or "") + (proc.stderr or "")
-        passed = proc.returncode == 0 and (not row["expected"] or row["expected"] in output)
-        result = "pass" if passed else "fail"
+        result = "pass" if proc.returncode == 0 else "fail"
         with self.database.transaction():
             self.connection.execute(
                 "UPDATE verifications SET last_run = ?, last_result = ? WHERE item_id = ? AND seq = ?",

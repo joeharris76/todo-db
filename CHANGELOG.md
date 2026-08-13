@@ -4,6 +4,21 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- `todo-db complete` now runs every configured verification rung before the
+  item can become done. Any failing command, including pytest's exit 5 for an
+  empty selection, leaves the item active. Commands are graded only by exit
+  status; `expected` remains human acceptance text rather than an implicit
+  output-substring assertion. Hosted databases retain the
+  `TODO_DB_ALLOW_HOSTED_VERIFY_RUN=1` trust boundary. Maintainers can use
+  `--override-verification REASON` when a rung cannot run; the actor, reason,
+  and overridden sequence numbers are recorded in the hash-chained completion
+  event. Items without a verification ladder keep their existing completion
+  behavior.
+
 ## [0.3.1] - 2026-08-10
 
 ### Fixed
