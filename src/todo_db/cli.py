@@ -29,7 +29,7 @@ from .findings import (
     unsynced_drafts,
 )
 from .models import CredentialMode, DatabaseConfig, ProjectIdentity
-from .tracker import PRIORITIES, TodoTracker
+from .tracker import PRIORITIES, TodoTracker, _parse_anti_pattern
 
 
 FINDING_OFFLINE_SUBCOMMANDS = frozenset({"create", "candidates"})
@@ -232,23 +232,48 @@ def _parser() -> argparse.ArgumentParser:
     create.add_argument("--verify", action="append", default=[], metavar="DESC[::COMMAND[::EXPECTED]]")
     _identity_args(create)
 
-    update = sub.add_parser("update", help="amend item metadata, work breakdown, or verifications (fully audited)")
+    update = sub.add_parser(
+        "update",
+        help="amend item metadata, work, dependencies, guardrails, or verifications (fully audited)",
+    )
     update.add_argument("id")
     update.add_argument("--title")
     update.add_argument("--description")
     update.add_argument("--priority", choices=PRIORITIES)
     update.add_argument("--worktree")
+    update.add_argument("--approach")
+    update.add_argument("--category")
     update.add_argument("--add-work", action="append", default=[], metavar="WID:SUMMARY[:needs=w1,w2]")
     update.add_argument("--edit-work", action="append", default=[], metavar="WID:NEW-SUMMARY")
+    update.add_argument("--add-work-need", action="append", default=[], metavar="WID:NEEDS_WID")
+    update.add_argument("--drop-work-need", action="append", default=[], metavar="WID:NEEDS_WID")
     update.add_argument("--add-verify", action="append", default=[], metavar="DESC[::COMMAND[::EXPECTED]]")
     update.add_argument("--drop-verify", action="append", default=[], type=int, metavar="SEQ")
     update.add_argument("--add-only-modify", action="append", default=[], metavar="GLOB")
     update.add_argument("--drop-only-modify", action="append", default=[], metavar="GLOB")
     update.add_argument("--add-do-not-modify", action="append", default=[], metavar="GLOB")
     update.add_argument("--drop-do-not-modify", action="append", default=[], metavar="GLOB")
+    update.add_argument("--add-needs", action="append", default=[], metavar="ITEM")
+    update.add_argument("--drop-needs", action="append", default=[], metavar="ITEM")
+    update.add_argument("--add-preserve", action="append", default=[], metavar="BEHAVIOR")
+    update.add_argument("--drop-preserve", action="append", default=[], metavar="BEHAVIOR")
+    update.add_argument(
+        "--add-anti-pattern",
+        action="append",
+        default=[],
+        metavar="DONT -- because WHY -- INSTEAD",
+    )
+    update.add_argument("--drop-anti-pattern", action="append", default=[], metavar="DONT")
+    update.add_argument(
+        "--add-prior-art",
+        action="append",
+        default=[],
+        metavar="PATH::CONCEPT::reuse|extend|supersede",
+    )
+    update.add_argument("--drop-prior-art", action="append", default=[], metavar="PATH::CONCEPT")
     update.add_argument(
         "--reason",
-        help="required for any edit to a done/dropped item, --drop-verify, or scope change",
+        help="required for any edit to a done/dropped item, scope change, or a drop of verify/needs/preserve/anti-pattern/prior-art/work-need",
     )
     _identity_args(update)
 
@@ -504,6 +529,40 @@ def _parse_verify(specs: list[str]) -> list[dict[str, str]]:
         if len(fields) > 2:
             entry["expected"] = fields[2]
         result.append(entry)
+    return result
+
+
+def _parse_wid_pairs(specs: list[str], flag: str) -> list[tuple[str, str]]:
+    result: list[tuple[str, str]] = []
+    for spec in specs:
+        wid, sep, needs_wid = spec.partition(":")
+        if not sep or not wid or not needs_wid or ":" in needs_wid:
+            raise TodoError(f"{flag} expects WID:NEEDS_WID, got {spec!r}")
+        result.append((wid, needs_wid))
+    return result
+
+
+def _parse_anti_pattern_specs(specs: list[str]) -> list[tuple[str, str, str]]:
+    return [_parse_anti_pattern(spec) for spec in specs]
+
+
+def _parse_prior_art_adds(specs: list[str]) -> list[tuple[str, str, str]]:
+    result: list[tuple[str, str, str]] = []
+    for spec in specs:
+        fields = spec.split("::")
+        if len(fields) != 3 or not all(part.strip() for part in fields):
+            raise TodoError(f"--add-prior-art expects PATH::CONCEPT::reuse|extend|supersede, got {spec!r}")
+        result.append((fields[0].strip(), fields[1].strip(), fields[2].strip()))
+    return result
+
+
+def _parse_prior_art_drops(specs: list[str]) -> list[tuple[str, str]]:
+    result: list[tuple[str, str]] = []
+    for spec in specs:
+        fields = spec.split("::")
+        if len(fields) != 2 or not all(part.strip() for part in fields):
+            raise TodoError(f"--drop-prior-art expects PATH::CONCEPT, got {spec!r}")
+        result.append((fields[0].strip(), fields[1].strip()))
     return result
 
 
@@ -1159,6 +1218,8 @@ def _main(argv: list[str] | None = None) -> int:
                     description=args.description,
                     priority=args.priority,
                     worktree=args.worktree,
+                    approach=args.approach,
+                    category=args.category,
                     add_work=_parse_work(args.add_work),
                     edit_work=_parse_work_edits(args.edit_work),
                     add_verify=_parse_verify(args.add_verify),
@@ -1167,6 +1228,16 @@ def _main(argv: list[str] | None = None) -> int:
                     + [("do_not_modify", value) for value in args.add_do_not_modify],
                     drop_scope=[("only_modify", value) for value in args.drop_only_modify]
                     + [("do_not_modify", value) for value in args.drop_do_not_modify],
+                    add_deps=args.add_needs,
+                    drop_deps=args.drop_needs,
+                    add_preserves=args.add_preserve,
+                    drop_preserves=args.drop_preserve,
+                    add_anti_patterns=_parse_anti_pattern_specs(args.add_anti_pattern),
+                    drop_anti_patterns=args.drop_anti_pattern,
+                    add_prior_art=_parse_prior_art_adds(args.add_prior_art),
+                    drop_prior_art=_parse_prior_art_drops(args.drop_prior_art),
+                    add_work_needs=_parse_wid_pairs(args.add_work_need, "--add-work-need"),
+                    drop_work_needs=_parse_wid_pairs(args.drop_work_need, "--drop-work-need"),
                     reason=args.reason,
                 )
                 print(f"updated {args.id} ({', '.join(sorted(key for key in detail if key != 'reason'))})")

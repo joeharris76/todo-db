@@ -565,36 +565,107 @@ class TodoTracker:
         description: str | None = None,
         priority: str | None = None,
         worktree: str | None = None,
+        approach: str | None = None,
+        category: str | None = None,
         add_work: Iterable[dict[str, Any]] = (),
         edit_work: dict[str, str] | None = None,
         add_verify: Iterable[dict[str, str]] = (),
         drop_verify: Iterable[int] = (),
         add_scope: Iterable[tuple[str, str]] = (),
         drop_scope: Iterable[tuple[str, str]] = (),
+        add_deps: Iterable[str] = (),
+        drop_deps: Iterable[str] = (),
+        add_preserves: Iterable[str] = (),
+        drop_preserves: Iterable[str] = (),
+        add_anti_patterns: Iterable[tuple[str, str, str] | dict[str, str]] = (),
+        drop_anti_patterns: Iterable[str] = (),
+        add_prior_art: Iterable[tuple[str, str, str] | dict[str, str]] = (),
+        drop_prior_art: Iterable[tuple[str, str]] = (),
+        add_work_needs: Iterable[tuple[str, str]] = (),
+        drop_work_needs: Iterable[tuple[str, str]] = (),
         reason: str | None = None,
     ) -> dict[str, Any]:
         """Amend an item without touching its lifecycle; one chained `update` event carries every diff."""
 
         fields = {"title": title, "description": description, "priority": priority, "worktree": worktree}
+        optional_fields = {"approach": approach, "category": category}
         adds = [dict(unit) for unit in add_work]
         edits = dict(edit_work or {})
         verify_adds = [dict(entry) for entry in add_verify]
         verify_drops = [int(seq) for seq in drop_verify]
         scope_adds = self._normalize_scope_updates(add_scope)
         scope_drops = self._normalize_scope_updates(drop_scope)
+        dep_adds = self._normalize_unique_texts(add_deps, label="item dependency")
+        dep_drops = self._normalize_unique_texts(drop_deps, label="item dependency")
+        preserve_adds = self._normalize_unique_texts(add_preserves, label="preserve")
+        preserve_drops = self._normalize_unique_texts(drop_preserves, label="preserve")
+        anti_adds = self._normalize_anti_pattern_adds(add_anti_patterns)
+        anti_drops = self._normalize_unique_texts(drop_anti_patterns, label="anti-pattern")
+        prior_adds = self._normalize_prior_art_adds(add_prior_art)
+        prior_drops = self._normalize_prior_art_drops(drop_prior_art)
+        work_need_adds = self._normalize_work_need_pairs(add_work_needs, label="work-unit dependency")
+        work_need_drops = self._normalize_work_need_pairs(drop_work_needs, label="work-unit dependency")
         reason = reason.strip() if reason and reason.strip() else None
-        if all(value is None for value in fields.values()) and not (
-            adds or edits or verify_adds or verify_drops or scope_adds or scope_drops
+        if (
+            all(value is None for value in fields.values())
+            and all(value is None for value in optional_fields.values())
+            and not (
+                adds
+                or edits
+                or verify_adds
+                or verify_drops
+                or scope_adds
+                or scope_drops
+                or dep_adds
+                or dep_drops
+                or preserve_adds
+                or preserve_drops
+                or anti_adds
+                or anti_drops
+                or prior_adds
+                or prior_drops
+                or work_need_adds
+                or work_need_drops
+            )
         ):
             raise TodoError("update requires at least one change flag")
         if verify_drops and reason is None:
             raise TodoError("--drop-verify removes recorded verification steps; --reason is required")
         if (scope_adds or scope_drops) and reason is None:
             raise TodoError("scope changes require --reason because they amend the item's write boundary")
+        if dep_drops and reason is None:
+            raise TodoError("--drop-needs removes an item dependency; --reason is required")
+        if preserve_drops and reason is None:
+            raise TodoError("--drop-preserve removes a must-preserve rule; --reason is required")
+        if anti_drops and reason is None:
+            raise TodoError("--drop-anti-pattern removes a recorded anti-pattern; --reason is required")
+        if prior_drops and reason is None:
+            raise TodoError("--drop-prior-art removes recorded prior art; --reason is required")
+        if work_need_drops and reason is None:
+            raise TodoError("--drop-work-need removes a work-unit dependency; --reason is required")
         conflicting_scope = set(scope_adds) & set(scope_drops)
         if conflicting_scope:
             kind, path_glob = sorted(conflicting_scope)[0]
             raise TodoError(f"cannot add and drop the same scope rule: {kind}:{path_glob}")
+        self._reject_add_drop_overlap(
+            dep_adds, dep_drops, message="cannot add and drop the same item dependency: {key}"
+        )
+        self._reject_add_drop_overlap(
+            preserve_adds, preserve_drops, message="cannot add and drop the same preserve: {key}"
+        )
+        self._reject_add_drop_overlap(
+            [dont for dont, _why, _instead in anti_adds],
+            anti_drops,
+            message="cannot add and drop the same anti-pattern: {key}",
+        )
+        self._reject_add_drop_overlap(
+            [(path, concept) for path, concept, _decision in prior_adds],
+            prior_drops,
+            message="cannot add and drop the same prior art: {key}",
+        )
+        self._reject_add_drop_overlap(
+            work_need_adds, work_need_drops, message="cannot add and drop the same work-unit dependency: {key}"
+        )
         with self.database.transaction():
             item = self._require_item(item_id)
             if item["state"] in ("done", "dropped") and reason is None:
@@ -606,6 +677,13 @@ class TodoTracker:
                 if value == item[field]:
                     raise TodoError(f"--{field} equals the current value on {item_id!r}; nothing to update")
                 changes[field] = {"from": item[field], "to": value}
+            for field, value in optional_fields.items():
+                if value is None:
+                    continue
+                normalized = value.strip() or None
+                if normalized == item[field]:
+                    raise TodoError(f"--{field} equals the current value on {item_id!r}; nothing to update")
+                changes[field] = {"from": item[field], "to": normalized}
             merged = {field: changes[field]["to"] if field in changes else item[field] for field in fields}
             self._validate_item(item_id, merged["title"], merged["worktree"], merged["priority"], merged["description"])
             if changes:
@@ -705,6 +783,120 @@ class TodoTracker:
                     "INSERT INTO scope_rules (item_id, kind, path_glob) VALUES (?, ?, ?)",
                     (item_id, kind, path_glob),
                 )
+            existing_deps = {
+                row["needs_item"]
+                for row in self.connection.execute("SELECT needs_item FROM item_deps WHERE item_id = ?", (item_id,))
+            }
+            for dep in dep_adds:
+                if (
+                    dep == item_id
+                    or self.connection.execute("SELECT 1 FROM items WHERE id = ?", (dep,)).fetchone() is None
+                ):
+                    raise TodoError(f"dependency {item_id!r} -> {dep!r} references a missing item")
+                if dep in existing_deps:
+                    raise TodoError(f"item dependency already exists on {item_id!r}: {dep}")
+            for dep in dep_drops:
+                if dep not in existing_deps:
+                    raise TodoError(f"no item dependency on {item_id!r}: {dep}")
+            for dep in dep_drops:
+                self.connection.execute("DELETE FROM item_deps WHERE item_id = ? AND needs_item = ?", (item_id, dep))
+            for dep in dep_adds:
+                if _would_cycle(self._item_dep_edges(), item_id, dep):
+                    raise TodoError(f"item dependency cycle: {item_id} -> {dep}")
+                self.connection.execute("INSERT INTO item_deps (item_id, needs_item) VALUES (?, ?)", (item_id, dep))
+            existing_preserves = {
+                row["behavior"]
+                for row in self.connection.execute("SELECT behavior FROM preserves WHERE item_id = ?", (item_id,))
+            }
+            for behavior in preserve_adds:
+                if behavior in existing_preserves:
+                    raise TodoError(f"preserve already exists on {item_id!r}: {behavior}")
+            for behavior in preserve_drops:
+                if behavior not in existing_preserves:
+                    raise TodoError(f"no preserve on {item_id!r}: {behavior}")
+            for behavior in preserve_drops:
+                self.connection.execute("DELETE FROM preserves WHERE item_id = ? AND behavior = ?", (item_id, behavior))
+            for behavior in preserve_adds:
+                self.connection.execute("INSERT INTO preserves (item_id, behavior) VALUES (?, ?)", (item_id, behavior))
+            existing_antis = {
+                row["dont"]: {"dont": row["dont"], "why": row["why"], "instead": row["instead"]}
+                for row in self.connection.execute(
+                    "SELECT dont, why, instead FROM anti_patterns WHERE item_id = ?", (item_id,)
+                )
+            }
+            for dont, _why, _instead in anti_adds:
+                if dont in existing_antis:
+                    raise TodoError(f"anti-pattern already exists on {item_id!r}: {dont}")
+            for dont in anti_drops:
+                if dont not in existing_antis:
+                    raise TodoError(f"no anti-pattern on {item_id!r}: {dont}")
+            anti_dropped = [existing_antis[dont] for dont in anti_drops]
+            for dont in anti_drops:
+                self.connection.execute("DELETE FROM anti_patterns WHERE item_id = ? AND dont = ?", (item_id, dont))
+            anti_added = [{"dont": dont, "why": why, "instead": instead} for dont, why, instead in anti_adds]
+            for dont, why, instead in anti_adds:
+                self.connection.execute(
+                    "INSERT INTO anti_patterns (item_id, dont, why, instead) VALUES (?, ?, ?, ?)",
+                    (item_id, dont, why, instead),
+                )
+            existing_prior = {
+                (row["path"], row["concept"]): {
+                    "path": row["path"],
+                    "concept": row["concept"],
+                    "decision": row["decision"],
+                }
+                for row in self.connection.execute(
+                    "SELECT path, concept, decision FROM prior_art WHERE item_id = ?", (item_id,)
+                )
+            }
+            for path, concept, _decision in prior_adds:
+                if (path, concept) in existing_prior:
+                    raise TodoError(f"prior art already exists on {item_id!r}: {path}::{concept}")
+            for key in prior_drops:
+                if key not in existing_prior:
+                    raise TodoError(f"no prior art on {item_id!r}: {key[0]}::{key[1]}")
+            prior_dropped = [existing_prior[key] for key in prior_drops]
+            for path, concept in prior_drops:
+                self.connection.execute(
+                    "DELETE FROM prior_art WHERE item_id = ? AND path = ? AND concept = ?",
+                    (item_id, path, concept),
+                )
+            prior_added = [
+                {"path": path, "concept": concept, "decision": decision} for path, concept, decision in prior_adds
+            ]
+            for path, concept, decision in prior_adds:
+                self.connection.execute(
+                    "INSERT INTO prior_art (item_id, path, concept, decision) VALUES (?, ?, ?, ?)",
+                    (item_id, path, concept, decision),
+                )
+            existing_work_needs = {
+                (row["wid"], row["needs_wid"])
+                for row in self.connection.execute(
+                    "SELECT wid, needs_wid FROM work_needs WHERE item_id = ?", (item_id,)
+                )
+            }
+            for wid, needs_wid in work_need_adds:
+                if wid not in wids:
+                    raise TodoError(f"no such work unit: {item_id}:{wid}")
+                if needs_wid not in wids:
+                    raise TodoError(f"work need {item_id}:{wid} -> {needs_wid} references a missing unit")
+                if (wid, needs_wid) in existing_work_needs:
+                    raise TodoError(f"work-unit dependency already exists on {item_id!r}: {wid}->{needs_wid}")
+            for wid, needs_wid in work_need_drops:
+                if (wid, needs_wid) not in existing_work_needs:
+                    raise TodoError(f"no work-unit dependency on {item_id!r}: {wid}->{needs_wid}")
+            for wid, needs_wid in work_need_drops:
+                self.connection.execute(
+                    "DELETE FROM work_needs WHERE item_id = ? AND wid = ? AND needs_wid = ?",
+                    (item_id, wid, needs_wid),
+                )
+            for wid, needs_wid in work_need_adds:
+                if _would_cycle(self._work_edges(item_id), wid, needs_wid):
+                    raise TodoError(f"work-unit dependency cycle: {item_id}:{wid} -> {needs_wid}")
+                self.connection.execute(
+                    "INSERT INTO work_needs (item_id, wid, needs_wid) VALUES (?, ?, ?)",
+                    (item_id, wid, needs_wid),
+                )
             detail: dict[str, Any] = {}
             if changes:
                 detail["changes"] = changes
@@ -720,6 +912,28 @@ class TodoTracker:
                 detail["scope_added"] = [{"kind": kind, "path_glob": path_glob} for kind, path_glob in scope_adds]
             if scope_drops:
                 detail["scope_dropped"] = [{"kind": kind, "path_glob": path_glob} for kind, path_glob in scope_drops]
+            if dep_adds:
+                detail["deps_added"] = list(dep_adds)
+            if dep_drops:
+                detail["deps_dropped"] = list(dep_drops)
+            if preserve_adds:
+                detail["preserves_added"] = list(preserve_adds)
+            if preserve_drops:
+                detail["preserves_dropped"] = list(preserve_drops)
+            if anti_added:
+                detail["anti_patterns_added"] = anti_added
+            if anti_dropped:
+                detail["anti_patterns_dropped"] = anti_dropped
+            if prior_added:
+                detail["prior_art_added"] = prior_added
+            if prior_dropped:
+                detail["prior_art_dropped"] = prior_dropped
+            if work_need_adds:
+                detail["work_needs_added"] = [{"wid": wid, "needs_wid": needs_wid} for wid, needs_wid in work_need_adds]
+            if work_need_drops:
+                detail["work_needs_dropped"] = [
+                    {"wid": wid, "needs_wid": needs_wid} for wid, needs_wid in work_need_drops
+                ]
             if reason is not None:
                 detail["reason"] = reason
             self._event("update", item_id, detail)
@@ -741,6 +955,94 @@ class TodoTracker:
                 raise TodoError(f"scope rule named more than once: {kind}:{path_glob}")
             seen.add(rule)
             normalized.append(rule)
+        return normalized
+
+    @staticmethod
+    def _normalize_unique_texts(values: Iterable[str], *, label: str) -> list[str]:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for raw in values:
+            text = str(raw).strip()
+            if not text:
+                raise TodoError(f"{label} must not be empty")
+            if text in seen:
+                raise TodoError(f"{label} named more than once: {text}")
+            seen.add(text)
+            normalized.append(text)
+        return normalized
+
+    @staticmethod
+    def _reject_add_drop_overlap(adds: Iterable[Any], drops: Iterable[Any], *, message: str) -> None:
+        overlap = set(adds) & set(drops)
+        if overlap:
+            raise TodoError(message.format(key=sorted(overlap, key=str)[0]))
+
+    @staticmethod
+    def _normalize_anti_pattern_adds(
+        entries: Iterable[tuple[str, str, str] | dict[str, str]],
+    ) -> list[tuple[str, str, str]]:
+        normalized: list[tuple[str, str, str]] = []
+        seen: set[str] = set()
+        for entry in entries:
+            values = (entry["dont"], entry["why"], entry["instead"]) if isinstance(entry, dict) else tuple(entry)
+            dont, why, instead = (str(part).strip() for part in values)
+            if not dont:
+                raise TodoError("anti-pattern dont must not be empty")
+            if dont in seen:
+                raise TodoError(f"anti-pattern named more than once: {dont}")
+            seen.add(dont)
+            normalized.append((dont, why or "(unstated)", instead or "(not specified)"))
+        return normalized
+
+    @staticmethod
+    def _normalize_prior_art_adds(
+        entries: Iterable[tuple[str, str, str] | dict[str, str]],
+    ) -> list[tuple[str, str, str]]:
+        normalized: list[tuple[str, str, str]] = []
+        seen: set[tuple[str, str]] = set()
+        for entry in entries:
+            values = (entry["path"], entry["concept"], entry["decision"]) if isinstance(entry, dict) else tuple(entry)
+            path, concept, decision = (str(part).strip() for part in values)
+            if not path or not concept:
+                raise TodoError("prior art path and concept must not be empty")
+            if decision not in ("reuse", "extend", "supersede"):
+                raise TodoError(f"invalid prior_art decision {decision!r}")
+            key = (path, concept)
+            if key in seen:
+                raise TodoError(f"prior art named more than once: {path}::{concept}")
+            seen.add(key)
+            normalized.append((path, concept, decision))
+        return normalized
+
+    @staticmethod
+    def _normalize_prior_art_drops(entries: Iterable[tuple[str, str]]) -> list[tuple[str, str]]:
+        normalized: list[tuple[str, str]] = []
+        seen: set[tuple[str, str]] = set()
+        for entry in entries:
+            path, concept = (str(part).strip() for part in entry)
+            if not path or not concept:
+                raise TodoError("prior art path and concept must not be empty")
+            key = (path, concept)
+            if key in seen:
+                raise TodoError(f"prior art named more than once: {path}::{concept}")
+            seen.add(key)
+            normalized.append(key)
+        return normalized
+
+    @staticmethod
+    def _normalize_work_need_pairs(pairs: Iterable[tuple[str, str]], *, label: str) -> list[tuple[str, str]]:
+        normalized: list[tuple[str, str]] = []
+        seen: set[tuple[str, str]] = set()
+        for raw_wid, raw_needs in pairs:
+            wid = str(raw_wid).strip()
+            needs_wid = str(raw_needs).strip()
+            if not wid or not needs_wid:
+                raise TodoError(f"{label} must not be empty")
+            key = (wid, needs_wid)
+            if key in seen:
+                raise TodoError(f"{label} named more than once: {wid}->{needs_wid}")
+            seen.add(key)
+            normalized.append(key)
         return normalized
 
     def add_work_need(self, item_id: str, wid: str, needs_wid: str) -> None:
