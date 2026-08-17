@@ -57,27 +57,35 @@ uv run todo-db --db .todo-db/standalone.sqlite update example-item \
   --drop-verify 1 --reason "tests and lint are now the reviewed boundary"
 ```
 
-Metadata edits (`--title`, `--description`, `--priority`, `--worktree`) are
-validated exactly as `create` validates them. The item id, state, created
-timestamps, and project identity are immutable, and `update` never
-transitions state — the lifecycle verbs own that. `--edit-work` applies only
-while a work unit is pending; a done unit's evidence attaches to its
-summary, so it is immutable. `--reason` is required for any edit to a
-done/dropped item and always for `--drop-verify`. Every call commits
-atomically with one hash-chained `update` audit event carrying exact
-from/to diffs; verification adds and drops log the full command text,
-because `verify --run` executes stored commands and amendments to them are
-security-relevant history. A call with no change flags, or an edit equal to
-the current value, is rejected (exit 2) rather than logged as an empty diff.
+Metadata edits (`--title`, `--description`, `--priority`, `--worktree`,
+`--approach`, `--category`) are validated exactly as `create` validates them.
+Empty `--approach` or `--category` values clear the stored field. The item
+id, state, created timestamps, and project identity are immutable, and
+`update` never transitions state — the lifecycle verbs own that.
+`--edit-work` applies only while a work unit is pending; a done unit's
+evidence attaches to its summary, so it is immutable. `--reason` is required
+for any edit to a done/dropped item, every scope change, and any drop of a
+verification, item dependency, preserve, anti-pattern, prior-art row, or
+work-unit dependency. Every call commits atomically with one hash-chained
+`update` audit event carrying exact from/to diffs; verification adds and
+drops log the full command text, because `verify --run` executes stored
+commands and amendments to them are security-relevant history. A call with
+no change flags, or an edit equal to the current value, is rejected (exit 2)
+rather than logged as an empty diff.
 
 Scope rules are amended explicitly with `--add-only-modify`,
 `--drop-only-modify`, `--add-do-not-modify`, and `--drop-do-not-modify`.
 Every scope mutation requires `--reason`, including additions: adding an
 `only_modify` rule can broaden an existing allowlist, while removing the last
-one can remove the allowlist entirely. The event records exact `scope_added`
-and `scope_dropped` entries, and duplicate, missing, contradictory, or empty
-rules abort the whole update transaction without a partial metadata/work/
-verification change.
+one can remove the allowlist entirely. Item dependencies use `--add-needs`
+and `--drop-needs`; work-unit dependencies on existing units use
+`--add-work-need WID:NEEDS_WID` and `--drop-work-need`. Guardrail rows use
+`--add-preserve` / `--drop-preserve`, `--add-anti-pattern` /
+`--drop-anti-pattern`, and `--add-prior-art PATH::CONCEPT::reuse|extend|supersede`
+/ `--drop-prior-art PATH::CONCEPT`. The event records the exact added and
+dropped rows, and duplicate, missing, contradictory, or empty values abort
+the whole update transaction without a partial metadata/work/verification
+change.
 
 ## Adopting todo-db in a new project
 

@@ -247,6 +247,125 @@ def test_scope_amendments_reject_duplicate_conflicting_empty_and_existing_rules(
         database.close()
 
 
+def test_optional_metadata_updates_and_clears_log_from_to(tmp_path: Path) -> None:
+    database, tracker = open_tracker(tmp_path)
+    try:
+        create_basic_item(tracker, approach="Ship the first slice", category="code")
+        detail = tracker.update_item("update-item", approach="Ship the remaining fields", category="docs")
+        item = tracker.get_item("update-item")
+        assert item["approach"] == "Ship the remaining fields"
+        assert item["category"] == "docs"
+        assert detail["changes"] == {
+            "approach": {"from": "Ship the first slice", "to": "Ship the remaining fields"},
+            "category": {"from": "code", "to": "docs"},
+        }
+        cleared = tracker.update_item("update-item", approach="", category="   ")
+        assert cleared["changes"] == {
+            "approach": {"from": "Ship the remaining fields", "to": None},
+            "category": {"from": "docs", "to": None},
+        }
+        cleared_item = tracker.get_item("update-item")
+        assert cleared_item["approach"] is None
+        assert cleared_item["category"] is None
+        with pytest.raises(TodoError, match="nothing to update"):
+            tracker.update_item("update-item", approach="")
+    finally:
+        database.close()
+
+
+def test_item_dependency_amendments_enforce_claim_and_reject_cycles(tmp_path: Path) -> None:
+    database, tracker = open_tracker(tmp_path)
+    try:
+        create_basic_item(tracker)
+        create_basic_item(
+            tracker,
+            item_id="other-item",
+            title="Other item",
+            description="A second item used as a dependency target.",
+        )
+        detail = tracker.update_item("update-item", add_deps=["other-item"])
+        assert detail["deps_added"] == ["other-item"]
+        assert tracker.get_item("update-item")["deps"] == ["other-item"]
+        with pytest.raises(TodoError, match="unmet dependencies"):
+            tracker.claim("update-item")
+        with pytest.raises(TodoError, match="--reason is required"):
+            tracker.update_item("update-item", drop_deps=["other-item"])
+        tracker.update_item("update-item", drop_deps=["other-item"], reason="the other item is no longer a gate")
+        assert tracker.get_item("update-item")["deps"] == []
+        tracker.update_item("update-item", add_deps=["other-item"])
+        with pytest.raises(TodoError, match="item dependency cycle"):
+            tracker.update_item("other-item", add_deps=["update-item"])
+        with pytest.raises(TodoError, match="already exists"):
+            tracker.update_item("update-item", add_deps=["other-item"])
+        with pytest.raises(TodoError, match="missing item"):
+            tracker.update_item("update-item", add_deps=["missing-item"])
+    finally:
+        database.close()
+
+
+def test_guardrail_and_work_need_amendments_are_atomic_and_audited(tmp_path: Path) -> None:
+    database, tracker = open_tracker(tmp_path)
+    try:
+        create_basic_item(
+            tracker,
+            work=[
+                {"id": "w0", "summary": "Original pending unit"},
+                {"id": "w1", "summary": "Second pending unit"},
+            ],
+            preserves=["keep the export envelope"],
+            anti_patterns=[{"dont": "rewrite history", "why": "audit breaks", "instead": "amend in place"}],
+            prior_art=[{"path": "README.md", "concept": "documented update verb", "decision": "extend"}],
+        )
+        events_before = len(database.export()["events"])
+        with pytest.raises(TodoError, match="--reason is required"):
+            tracker.update_item("update-item", drop_preserves=["keep the export envelope"])
+        with pytest.raises(TodoError, match="no preserve"):
+            tracker.update_item(
+                "update-item",
+                add_preserves=["keep claim blocking"],
+                drop_preserves=["missing preserve"],
+                reason="exercise rollback",
+            )
+        assert tracker.get_item("update-item")["preserves"] == ["keep the export envelope"]
+        assert len(database.export()["events"]) == events_before
+
+        detail = tracker.update_item(
+            "update-item",
+            add_preserves=["keep claim blocking"],
+            drop_preserves=["keep the export envelope"],
+            add_anti_patterns=[{"dont": "drop and recreate", "why": "ids die", "instead": "use update"}],
+            drop_anti_patterns=["rewrite history"],
+            add_prior_art=[{"path": "src/todo_db/tracker.py", "concept": "update_item", "decision": "extend"}],
+            drop_prior_art=[("README.md", "documented update verb")],
+            add_work_needs=[("w1", "w0")],
+            reason="bind the remaining create-time fields to the audited update verb",
+        )
+        item = tracker.get_item("update-item")
+        assert item["preserves"] == ["keep claim blocking"]
+        assert item["anti_patterns"] == [{"dont": "drop and recreate", "why": "ids die", "instead": "use update"}]
+        assert item["prior_art"] == [{"path": "src/todo_db/tracker.py", "concept": "update_item", "decision": "extend"}]
+        assert item["work"][1]["needs"] == ["w0"]
+        event = database.export()["events"][-1]
+        assert event["detail"]["preserves_added"] == detail["preserves_added"] == ["keep claim blocking"]
+        assert event["detail"]["preserves_dropped"] == ["keep the export envelope"]
+        assert event["detail"]["anti_patterns_added"] == [
+            {"dont": "drop and recreate", "why": "ids die", "instead": "use update"}
+        ]
+        assert event["detail"]["anti_patterns_dropped"] == [
+            {"dont": "rewrite history", "why": "audit breaks", "instead": "amend in place"}
+        ]
+        assert event["detail"]["prior_art_added"] == [
+            {"path": "src/todo_db/tracker.py", "concept": "update_item", "decision": "extend"}
+        ]
+        assert event["detail"]["work_needs_added"] == [{"wid": "w1", "needs_wid": "w0"}]
+        with pytest.raises(TodoError, match="work-unit dependency cycle"):
+            tracker.update_item("update-item", add_work_needs=[("w0", "w1")])
+        with pytest.raises(TodoError, match="--reason is required"):
+            tracker.update_item("update-item", drop_work_needs=[("w1", "w0")])
+    finally:
+        database.close()
+
+
 def test_no_change_flags_and_no_op_edits_are_rejected_without_events(tmp_path: Path) -> None:
     database, tracker = open_tracker(tmp_path)
     try:
@@ -347,3 +466,94 @@ def test_cli_update_exit_codes_show_and_audit_verify(tmp_path: Path, capsys: pyt
     assert main([*common, "update", "cli-item", "--edit-work", "w0:Rewritten done unit"]) == 2
     assert "only pending units" in capsys.readouterr().err
     assert main([*common, "audit", "verify"]) == 0
+
+
+def test_cli_update_remaining_fields(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    from todo_db.cli import main
+
+    db_path = tmp_path / "standalone.sqlite"
+    common = ["--db", str(db_path), "--project-id", "update-cli", "--repository", "todo-db"]
+    assert main([*common, "init"]) == 0
+    assert (
+        main(
+            [
+                *common,
+                "create",
+                "dep-item",
+                "--title",
+                "Dependency item",
+                "--worktree",
+                "todo-db",
+                "--priority",
+                "medium",
+                "--description",
+                "An item used as a dependency target.",
+                "--work",
+                "w0:Do the work",
+            ]
+        )
+        == 0
+    )
+    assert (
+        main(
+            [
+                *common,
+                "create",
+                "cli-item",
+                "--title",
+                "CLI item",
+                "--worktree",
+                "todo-db",
+                "--priority",
+                "medium",
+                "--description",
+                "A CLI item exercising remaining update fields.",
+                "--work",
+                "w0:Do the work",
+                "--work",
+                "w1:Follow-up work",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+    assert main([*common, "update", "cli-item", "--drop-needs", "dep-item"]) == 2
+    assert "--reason is required" in capsys.readouterr().err
+    assert (
+        main(
+            [
+                *common,
+                "update",
+                "cli-item",
+                "--approach",
+                "Amend through update",
+                "--category",
+                "code",
+                "--add-needs",
+                "dep-item",
+                "--add-preserve",
+                "keep the item id",
+                "--add-anti-pattern",
+                "DO NOT drop and recreate -- because ids die -- use update",
+                "--add-prior-art",
+                "src/todo_db/tracker.py::update_item::extend",
+                "--add-work-need",
+                "w1:w0",
+            ]
+        )
+        == 0
+    )
+    assert "updated cli-item" in capsys.readouterr().out
+    assert main([*common, "show", "cli-item", "--json"]) == 0
+    shown = json.loads(capsys.readouterr().out)
+    assert shown["approach"] == "Amend through update"
+    assert shown["category"] == "code"
+    assert shown["deps"] == ["dep-item"]
+    assert shown["preserves"] == ["keep the item id"]
+    assert shown["anti_patterns"] == [{"dont": "drop and recreate", "why": "ids die", "instead": "use update"}]
+    assert shown["prior_art"] == [{"path": "src/todo_db/tracker.py", "concept": "update_item", "decision": "extend"}]
+    assert shown["work"][1]["needs"] == ["w0"]
+    assert main([*common, "update", "cli-item", "--approach", ""]) == 0
+    capsys.readouterr()
+    assert main([*common, "show", "cli-item", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["approach"] is None

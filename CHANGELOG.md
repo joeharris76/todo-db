@@ -6,6 +6,21 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `todo-db update` now amends the remaining create-time item fields that are
+  not identity or lifecycle state: `--approach` and `--category` (empty
+  values clear the stored field), `--add-needs` / `--drop-needs` for
+  inter-item dependencies, `--add-work-need` / `--drop-work-need` for
+  dependencies on existing work units, and add/drop flags for `preserves`,
+  `anti_patterns`, and `prior_art`. Additions of those rows are audited in
+  the same chained `update` event as today's metadata/work/verify/scope
+  diffs. Drops that loosen a gate or remove a recorded guardrail require
+  `--reason`. Duplicate, missing, contradictory, empty, and cyclic values
+  abort the transaction without writing a partial event. Item id, state,
+  created timestamps, project identity, and done work-unit summaries stay
+  immutable.
+
 ## [0.3.2] - 2026-08-13
 
 ### Added
