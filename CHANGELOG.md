@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Replace generated-wrapper token mint/retry behavior with a single-execution
+  v2 auth-contract marker, add a targeted `refresh-wrapper` migration, and
+  remove Turso account probes from `doctor`.
+
 ## [0.4.1] - 2026-08-18
 
 ### Added

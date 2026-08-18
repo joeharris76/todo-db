@@ -89,7 +89,7 @@ def test_doctor_fails_with_exit_4_when_the_hosted_probe_is_auth_rejected(
     out = capsys.readouterr().out
     assert "FAIL database:" in out
     assert "turso auth login" in out
-    assert "WARN turso-cli:" in out and "re-mint unavailable" in out
+    assert "turso-cli" not in out
     assert url not in out and "expired-doctor-token" not in out
     assert "[REDACTED]" in out
 
@@ -135,7 +135,7 @@ def test_doctor_passes_against_a_healthy_hosted_database(
     out = capsys.readouterr().out
     assert "PASS database: read-only probe ok" in out
     assert "PASS identity:" in out and "doctor-hosted" in out
-    assert "WARN turso-cli: turso CLI not found" in out
+    assert "turso-cli" not in out
 
 
 def test_doctor_warns_when_the_local_schema_is_behind(tmp_path: Path, capsys) -> None:

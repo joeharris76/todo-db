@@ -5,10 +5,10 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import shutil
 import sqlite3
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -55,8 +55,8 @@ exit codes:
   0  success (doctor: every check passed; warnings allowed)
   1  findings reported (check-scope violations, lint findings, verify --run failures)
   2  generic error: fix the reported cause and retry
-  4  hosted authentication failure: refresh the auth token, e.g.
-     export TODO_DB_AUTH_TOKEN=$(turso db tokens create <db>), or run 'turso auth login'"""
+  4  hosted authentication failure: inject a valid bounded TODO_DB_AUTH_TOKEN
+     (or TODO_DB_RO_AUTH_TOKEN for reads) and retry in a fresh process"""
 
 
 def _load_repo_config(path: Path) -> dict[str, Any]:
@@ -218,6 +218,16 @@ def _parser() -> argparse.ArgumentParser:
         help=f"also write an executable wrapper script (default location {DEFAULT_WRAPPER_RELATIVE})",
     )
     init_project.add_argument("--force", action="store_true", help="overwrite an existing config/wrapper")
+
+    refresh_wrapper = sub.add_parser(
+        "refresh-wrapper", help="safely replace a recognized generated wrapper without changing project config"
+    )
+    refresh_wrapper.add_argument(
+        "--wrapper",
+        default=None,
+        metavar="PATH",
+        help=f"wrapper path relative to the project root (default: config value or {DEFAULT_WRAPPER_RELATIVE})",
+    )
 
     doctor = sub.add_parser("doctor", help="read-only preflight: config, identity, database, auth, drafts dir")
     doctor.add_argument("--json", action="store_true")
@@ -905,10 +915,15 @@ def _print_finding(finding: dict[str, Any]) -> None:
         print(f"link: {link['kind']} -> {target}")
 
 
+WRAPPER_VERSION_MARKER = "# todo-db-wrapper: v2"
+_GENERATED_WRAPPER_SIGNATURE = "TODO tracker entry point. Routes every subcommand to the"
+
+
 def _wrapper_script(project_id: str, wrapper_rel_path: str = DEFAULT_WRAPPER_RELATIVE) -> str:
     parts = Path(wrapper_rel_path).parent.parts
     upward = "/".join(".." for _ in parts) if parts else "."
     return f"""#!/usr/bin/env bash
+{WRAPPER_VERSION_MARKER}
 #
 # {project_id} TODO tracker entry point. Routes every subcommand to the
 # canonical `todo-db` CLI. Project identity and database location come from
@@ -920,15 +935,14 @@ def _wrapper_script(project_id: str, wrapper_rel_path: str = DEFAULT_WRAPPER_REL
 #   2. `todo-db` on PATH  an installed todo-db package
 #   3. sibling checkout   <repo>/../todo-db
 #
-# On exit 4 (hosted auth failure) against a libsql:// database, a fresh token
-# is minted with the turso CLI and the command retried once. The token is
-# exported, never echoed. When remediation is impossible an ALERT block is
-# printed to stderr and exit 4 propagates.
+# Authentication is data-plane only. This wrapper never calls the Turso CLI,
+# mints or stores tokens, or retries a failed command.
 #
 set -euo pipefail
 
 REPO_ROOT="$(cd -- "$(dirname -- "${{BASH_SOURCE[0]}}")/{upward}" && pwd)"
 export TODO_DB_CONFIG="${{TODO_DB_CONFIG:-$REPO_ROOT/.todo-db/config.json}}"
+export TODO_DB_AUTH_CONTRACT=v2
 
 run_todo_db() {{
   if [ -n "${{TODO_DB_TOOL:-}}" ]; then
@@ -948,63 +962,10 @@ run_todo_db() {{
   return 2
 }}
 
-print_auth_alert() {{
-  cat >&2 <<'ALERT'
-==================== TODO-DB AUTH ALERT ====================
-Tracker writes are BLOCKED: hosted database authentication
-failed and automatic token re-mint did not succeed.
-Fix it now, one of:
-  1. turso auth login
-  2. export TODO_DB_AUTH_TOKEN="$(turso db tokens create <database-name>)"
-Do not continue batch work until resolved: tracker items are
-not being updated.
-============================================================
-ALERT
-}}
-
-status=0
-run_todo_db "$@" || status=$?
-if [ "$status" -ne 4 ]; then
-  exit "$status"
-fi
-
-target="${{TODO_DB_URL:-}}"
-if [ -z "$target" ] && [ -f "$TODO_DB_CONFIG" ]; then
-  target="$(sed -n 's/.*"db"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p' "$TODO_DB_CONFIG" | head -n 1)" || target=""
-fi
-case "$target" in
-  libsql://*) ;;
-  *)
-    print_auth_alert
-    exit 4
-    ;;
-esac
-if ! command -v turso >/dev/null 2>&1 || ! turso auth whoami >/dev/null 2>&1; then
-  print_auth_alert
-  exit 4
-fi
-
-host="${{target#libsql://}}"
-host="${{host%%/*}}"
-host="${{host%%\\?*}}"
-db_name="$(turso db list 2>/dev/null | awk -v host="$host" 'index($0, host) {{print $1; exit}}')" || db_name=""
-if [ -z "$db_name" ]; then
-  print_auth_alert
-  exit 4
-fi
-fresh_token="$(turso db tokens create "$db_name" 2>/dev/null)" || fresh_token=""
-if [ -z "$fresh_token" ]; then
-  print_auth_alert
-  exit 4
-fi
-export TODO_DB_AUTH_TOKEN="$fresh_token"
-echo "todo: hosted auth failure; minted a fresh token for '$db_name', retrying once" >&2
-
 status=0
 run_todo_db "$@" || status=$?
 if [ "$status" -eq 4 ]; then
-  print_auth_alert
-  exit 4
+  echo "todo: hosted authentication failed; inject a bounded credential and retry (automatic token minting is disabled)" >&2
 fi
 exit "$status"
 """
@@ -1056,6 +1017,8 @@ def _init_project(args: argparse.Namespace, identity: ProjectIdentity, raw_db: s
 
     config_dir.mkdir(parents=True, exist_ok=True)
     payload = {"project_id": identity.project_id, "repository": identity.repository, "db": db_value}
+    if args.wrapper is not None:
+        payload["wrapper"] = args.wrapper
     config_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(f"wrote {config_path}")
     gitignore_path.write_text(SCAFFOLD_GITIGNORE, encoding="utf-8")
@@ -1067,6 +1030,80 @@ def _init_project(args: argparse.Namespace, identity: ProjectIdentity, raw_db: s
         print(f"wrote {wrapper_path} (executable)")
     _warn_if_git_ignored(config_path, root)
     return 0
+
+
+def _refresh_wrapper(args: argparse.Namespace) -> int:
+    """Replace only a recognized generated wrapper; leave every other scaffold file untouched."""
+
+    discovered = _discover_repo_config()
+    if discovered is None:
+        raise TodoError(f"refresh-wrapper requires a discovered {CONFIG_DIRNAME}/{CONFIG_FILENAME}")
+    config_path, payload = discovered
+    root = _config_root(config_path).resolve()
+    relative = str(args.wrapper or payload.get("wrapper") or DEFAULT_WRAPPER_RELATIVE)
+    candidate = Path(relative)
+    if candidate.is_absolute():
+        raise TodoError("refresh-wrapper requires a path relative to the project root")
+    lexical_path = root / candidate
+    if lexical_path.is_symlink():
+        raise TodoError(f"refusing to replace symlinked wrapper: {lexical_path}")
+    wrapper_path = lexical_path.resolve()
+    try:
+        wrapper_path.relative_to(root)
+    except ValueError:
+        raise TodoError("refresh-wrapper path escapes the project root") from None
+    if not wrapper_path.is_file():
+        raise TodoError(f"no existing wrapper to refresh: {wrapper_path}")
+    current = wrapper_path.read_text(encoding="utf-8")
+    if _GENERATED_WRAPPER_SIGNATURE not in current:
+        raise TodoError(f"refusing to replace unrecognized wrapper: {wrapper_path}")
+
+    project_id = str(payload.get("project_id") or "").strip()
+    if not project_id:
+        raise TodoError(f"{config_path} has no project_id for the generated wrapper")
+    replacement = _wrapper_script(project_id, wrapper_rel_path=relative)
+    if current == replacement:
+        print(f"wrapper already current: {wrapper_path}")
+        return 0
+
+    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{wrapper_path.name}.", dir=wrapper_path.parent)
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(replacement)
+        temporary.chmod(wrapper_path.stat().st_mode | 0o111)
+        os.replace(temporary, wrapper_path)
+    finally:
+        temporary.unlink(missing_ok=True)
+    print(f"refreshed wrapper {wrapper_path}")
+    return 0
+
+
+def _doctor_wrapper_check(discovered: tuple[Path, dict[str, Any]] | None) -> DoctorCheck | None:
+    if discovered is None:
+        return None
+    config_path, payload = discovered
+    root = _config_root(config_path)
+    relative = str(payload.get("wrapper") or DEFAULT_WRAPPER_RELATIVE)
+    candidate = Path(relative)
+    if candidate.is_absolute() or ".." in candidate.parts:
+        return ("FAIL", f"unsafe wrapper path in {config_path}: {relative}", "record a project-relative wrapper path")
+    wrapper_path = root / candidate
+    if not wrapper_path.exists():
+        if payload.get("wrapper"):
+            return ("FAIL", f"configured wrapper is missing: {wrapper_path}", "restore it or remove the wrapper key")
+        return None
+    if wrapper_path.is_symlink():
+        return ("FAIL", f"configured wrapper is a symlink: {wrapper_path}", "replace it with a regular generated file")
+    try:
+        content = wrapper_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return ("FAIL", f"cannot inspect wrapper {wrapper_path}: {exc}", "fix wrapper permissions")
+    if WRAPPER_VERSION_MARKER in content:
+        return ("PASS", f"v2 wrapper: {wrapper_path}", None)
+    if _GENERATED_WRAPPER_SIGNATURE in content:
+        return ("FAIL", f"legacy generated wrapper: {wrapper_path}", "run `todo-db refresh-wrapper`")
+    return ("WARN", f"unrecognized wrapper left unmanaged: {wrapper_path}", None)
 
 
 _FOREIGN_TRACKER_TABLES = frozenset({"items", "work_units", "item_deps", "meta"})
@@ -1185,6 +1222,9 @@ def _doctor(args: argparse.Namespace) -> int:
         add("config", "PASS", f"discovered {discovered[0]}")
     else:
         add("config", "PASS", f"no {CONFIG_DIRNAME}/{CONFIG_FILENAME} discovered; flags/env/defaults apply")
+    wrapper_check = _doctor_wrapper_check(discovered)
+    if wrapper_check is not None:
+        add("wrapper", *wrapper_check)
 
     identity = None
     identity_error: str | None = None
@@ -1224,34 +1264,18 @@ def _doctor(args: argparse.Namespace) -> int:
         )
     add("database", *db_check)
 
-    if hosted:
-        if shutil.which("turso") is None:
-            add(
-                "turso-cli", "WARN", "turso CLI not found", "automatic token re-mint unavailable; install the turso CLI"
-            )
-        else:
-            whoami = subprocess.run(["turso", "auth", "whoami"], capture_output=True, text=True, check=False)
-            if whoami.returncode != 0:
-                add(
-                    "turso-cli",
-                    "WARN",
-                    "turso CLI is logged out",
-                    "automatic token re-mint unavailable: run 'turso auth login'",
-                )
-            else:
-                add("turso-cli", "PASS", f"turso auth whoami: {whoami.stdout.strip() or 'ok'}")
-        if args.rw:
-            rw_config = DatabaseConfig(
-                path=target, identity=identity, credential_mode=CredentialMode.READ_WRITE, replica_path=args.replica
-            )
-            try:
-                connect(rw_config).close()
-                add("hosted-rw", "PASS", "hosted direct connection succeeded")
-            except HostedAuthError as exc:
-                auth_failure = True
-                add("hosted-rw", "FAIL", str(exc))
-            except (TodoDBError, OSError, ValueError, sqlite3.Error) as exc:
-                add("hosted-rw", "FAIL", str(exc))
+    if hosted and args.rw:
+        rw_config = DatabaseConfig(
+            path=target, identity=identity, credential_mode=CredentialMode.READ_WRITE, replica_path=args.replica
+        )
+        try:
+            connect(rw_config).close()
+            add("hosted-rw", "PASS", "hosted direct connection succeeded")
+        except HostedAuthError as exc:
+            auth_failure = True
+            add("hosted-rw", "FAIL", str(exc))
+        except (TodoDBError, OSError, ValueError, sqlite3.Error) as exc:
+            add("hosted-rw", "FAIL", str(exc))
 
     project_hint = identity.project_id if identity is not None else (bound[0] if bound else None)
     if os.environ.get("TODO_DB_FINDING_DRAFTS_DIR") or project_hint:
@@ -1514,6 +1538,8 @@ def _main(argv: list[str] | None = None) -> int:
             return _init_project(args, identity, raw_db)
         if args.command == "doctor":
             return _doctor(args)
+        if args.command == "refresh-wrapper":
+            return _refresh_wrapper(args)
         discovered = _discover_repo_config()
         identity = _resolve_identity(args, discovered)
         args.db = _resolve_db(raw_db, discovered)
