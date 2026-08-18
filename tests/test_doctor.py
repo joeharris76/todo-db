@@ -20,6 +20,7 @@ ENVIRONMENT = (
     "TODO_DB_CONFIG",
     "TODO_DB_AUTH_TOKEN",
     "TODO_DB_RO_AUTH_TOKEN",
+    "TODO_DB_AUTH_CONTRACT",
     "TODO_DB_FINDING_DRAFTS_DIR",
 )
 
@@ -73,6 +74,7 @@ def test_doctor_fails_with_exit_4_when_the_hosted_probe_is_auth_rejected(
     from todo_db.cli import main
 
     monkeypatch.setenv("TODO_DB_AUTH_TOKEN", "expired-doctor-token")
+    monkeypatch.setenv("TODO_DB_AUTH_CONTRACT", "v2")
     empty_bin = tmp_path / "emptybin"
     empty_bin.mkdir()
     monkeypatch.setenv("PATH", str(empty_bin))
@@ -88,10 +90,36 @@ def test_doctor_fails_with_exit_4_when_the_hosted_probe_is_auth_rejected(
     assert main(["--db", url, "doctor"]) == 4
     out = capsys.readouterr().out
     assert "FAIL database:" in out
-    assert "turso auth login" in out
-    assert "turso-cli" not in out
+    assert "E_AUTH_REJECTED" in out
+    assert "credential: TODO_DB_AUTH_TOKEN (read-write)" in out
+    assert "turso" not in out.lower()
     assert url not in out and "expired-doctor-token" not in out
     assert "[REDACTED]" in out
+
+
+def test_doctor_json_uses_legacy_safe_exit_and_reports_auth_provenance(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys
+) -> None:
+    from todo_db.cli import main
+
+    monkeypatch.setenv("TODO_DB_RO_AUTH_TOKEN", "rejected-ro-token")
+    fake = types.ModuleType("libsql")
+
+    def unauthorized_connect(database, **kwargs):
+        raise ValueError("Hrana: status=401 Unauthorized")
+
+    fake.connect = unauthorized_connect
+    monkeypatch.setitem(sys.modules, "libsql", fake)
+
+    assert main(["--db", "libsql://doctor-legacy.example.test", "doctor", "--json"]) == 2
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["exit"] == 2
+    database = next(check for check in payload["checks"] if check["name"] == "database")
+    assert database["code"] == "E_AUTH_REJECTED"
+    assert database["source"] == "TODO_DB_RO_AUTH_TOKEN"
+    assert database["capability"] == "read-only"
+    assert any(check["name"] == "auth-contract" for check in payload["checks"])
+    assert "rejected-ro-token" not in json.dumps(payload)
 
 
 def test_doctor_reports_missing_hosted_token_as_auth_failure(
@@ -103,10 +131,12 @@ def test_doctor_reports_missing_hosted_token_as_auth_failure(
     empty_bin.mkdir()
     monkeypatch.setenv("PATH", str(empty_bin))
     monkeypatch.setitem(sys.modules, "libsql", types.ModuleType("libsql"))
+    monkeypatch.setenv("TODO_DB_AUTH_CONTRACT", "v2")
 
     assert main(["--db", "libsql://doctor-notoken.example.test", "doctor"]) == 4
     out = capsys.readouterr().out
-    assert "FAIL database: no TODO_DB_RO_AUTH_TOKEN or TODO_DB_AUTH_TOKEN" in out
+    assert "FAIL database: hosted read access requires TODO_DB_RO_AUTH_TOKEN or TODO_DB_AUTH_TOKEN" in out
+    assert "code: E_AUTH_MISSING" in out
 
 
 def test_doctor_passes_against_a_healthy_hosted_database(
@@ -134,8 +164,16 @@ def test_doctor_passes_against_a_healthy_hosted_database(
     assert main(["--db", url, "doctor"]) == 0
     out = capsys.readouterr().out
     assert "PASS database: read-only probe ok" in out
+    assert "credential: TODO_DB_AUTH_TOKEN (read-write)" in out
     assert "PASS identity:" in out and "doctor-hosted" in out
     assert "turso-cli" not in out
+
+    assert main(["--db", url, "doctor", "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    database_check = next(check for check in payload["checks"] if check["name"] == "database")
+    assert database_check["source"] == "TODO_DB_AUTH_TOKEN"
+    assert database_check["capability"] == "read-write"
+    assert "rw-token" not in json.dumps(payload)
 
 
 def test_doctor_warns_when_the_local_schema_is_behind(tmp_path: Path, capsys) -> None:

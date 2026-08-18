@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Unify hosted credential selection and doctor provenance, add coded missing and rejected auth errors, narrow ambiguous failure classification, and negotiate legacy-safe versus v2 authentication exit codes.
+- Require the scheduled hosted audit to prove it selected the server-enforced read-only credential before verifying the audit chain.
+
 ## [0.4.1] - 2026-08-18
 
 ### Added

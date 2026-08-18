@@ -3,6 +3,8 @@
 from .audit import sign_export, verify_signed_export
 from .database import TodoDatabase
 from .errors import (
+    E_AUTH_MISSING,
+    E_AUTH_REJECTED,
     AuditIntegrityError,
     HostedAuthError,
     ProjectIdentityMismatchError,
@@ -18,6 +20,8 @@ __all__ = [
     "AuditIntegrityError",
     "CredentialMode",
     "DatabaseConfig",
+    "E_AUTH_MISSING",
+    "E_AUTH_REJECTED",
     "FindingsTracker",
     "HostedAuthError",
     "ProjectIdentity",

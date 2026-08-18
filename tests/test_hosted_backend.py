@@ -117,6 +117,66 @@ def test_turso_read_only_uses_read_only_token_against_primary(monkeypatch: pytes
     readonly.close()
 
 
+def test_read_only_resolution_prefers_ro_then_falls_back_to_rw(monkeypatch: pytest.MonkeyPatch) -> None:
+    from todo_db import CredentialMode, DatabaseConfig
+    from todo_db.backends import resolve_credential
+
+    config = DatabaseConfig(path="libsql://resolver.example.test", credential_mode=CredentialMode.READ_ONLY)
+    monkeypatch.setenv("TODO_DB_AUTH_TOKEN", "rw-fallback")
+    resolved = resolve_credential(config)
+    assert (resolved.source, resolved.capability, resolved.token) == (
+        "TODO_DB_AUTH_TOKEN",
+        "read-write",
+        "rw-fallback",
+    )
+
+    monkeypatch.setenv("TODO_DB_RO_AUTH_TOKEN", "ro-preferred")
+    resolved = resolve_credential(config)
+    assert (resolved.source, resolved.capability, resolved.token) == (
+        "TODO_DB_RO_AUTH_TOKEN",
+        "read-only",
+        "ro-preferred",
+    )
+    assert "ro-preferred" not in repr(resolved)
+
+
+def test_empty_read_only_value_is_absent_and_explicit_token_has_external_provenance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from todo_db import CredentialMode, DatabaseConfig
+    from todo_db.backends import resolve_credential
+
+    monkeypatch.setenv("TODO_DB_RO_AUTH_TOKEN", "")
+    monkeypatch.setenv("TODO_DB_AUTH_TOKEN", "rw-fallback")
+    config = DatabaseConfig(path="libsql://resolver.example.test", credential_mode=CredentialMode.READ_ONLY)
+    assert resolve_credential(config).source == "TODO_DB_AUTH_TOKEN"
+
+    explicit = resolve_credential(
+        DatabaseConfig(
+            path="libsql://resolver.example.test",
+            credential_mode=CredentialMode.READ_ONLY,
+            auth_token="explicit-token",
+        )
+    )
+    assert (explicit.source, explicit.capability) == ("DatabaseConfig.auth_token", "unknown")
+    assert "explicit-token" not in repr(explicit)
+
+
+def test_missing_hosted_credential_is_a_coded_auth_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    from todo_db import CredentialMode, DatabaseConfig
+    from todo_db.backends import resolve_credential
+    from todo_db.errors import E_AUTH_MISSING, HostedAuthError
+
+    monkeypatch.delenv("TODO_DB_AUTH_TOKEN", raising=False)
+    monkeypatch.delenv("TODO_DB_RO_AUTH_TOKEN", raising=False)
+    with pytest.raises(HostedAuthError) as raised:
+        resolve_credential(
+            DatabaseConfig(path="libsql://resolver.example.test", credential_mode=CredentialMode.READ_ONLY)
+        )
+    assert raised.value.code == E_AUTH_MISSING
+    assert "TODO_DB_RO_AUTH_TOKEN or TODO_DB_AUTH_TOKEN" in str(raised.value)
+
+
 def test_turso_backend_rejects_plaintext_urls(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase
     from todo_db.errors import TodoDBError
@@ -221,8 +281,9 @@ def test_auth_shaped_connect_failure_raises_hosted_auth_error_with_remediation(
         )
     message = str(raised.value)
     assert "hosted backend connection failed" in message
-    assert "token invalid or expired: refresh TODO_DB_AUTH_TOKEN" in message
-    assert "turso db tokens create" in message and "turso auth login" in message
+    assert "credential rejected: replace the bounded credential from DatabaseConfig.auth_token" in message
+    assert raised.value.code == "E_AUTH_REJECTED"
+    assert "turso" not in message.lower()
     assert url not in message and token not in message
     assert "[REDACTED]" in message
 
@@ -236,6 +297,7 @@ def _scrub_cli_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         "TODO_DB_CONFIG",
         "TODO_DB_AUTH_TOKEN",
         "TODO_DB_RO_AUTH_TOKEN",
+        "TODO_DB_AUTH_CONTRACT",
     ):
         monkeypatch.delenv(variable, raising=False)
     monkeypatch.chdir(tmp_path)
@@ -249,9 +311,13 @@ def test_cli_maps_hosted_auth_error_to_exit_4_with_redacted_output(
     _scrub_cli_env(monkeypatch, tmp_path)
     url = "libsql://auth-cli.example.test"
     monkeypatch.setenv("TODO_DB_RO_AUTH_TOKEN", "expired-ro-token")
+    monkeypatch.setenv("TODO_DB_AUTH_TOKEN", "valid-rw-token-must-not-be-used")
+    monkeypatch.setenv("TODO_DB_AUTH_CONTRACT", "v2")
     fake = types.ModuleType("libsql")
+    attempts: list[str] = []
 
     def unauthorized_connect(database, **kwargs):
+        attempts.append(kwargs["auth_token"])
         raise ValueError(f"Hrana: api error: status=401, Unauthorized for {database} ({kwargs['auth_token']})")
 
     fake.connect = unauthorized_connect
@@ -259,10 +325,76 @@ def test_cli_maps_hosted_auth_error_to_exit_4_with_redacted_output(
 
     assert main(["--db", url, "list"]) == 4
     err = capsys.readouterr().err
-    assert "refresh TODO_DB_RO_AUTH_TOKEN" in err
-    assert "turso auth login" in err
+    assert "replace the bounded credential from TODO_DB_RO_AUTH_TOKEN" in err
+    assert "turso" not in err.lower()
     assert url not in err and "expired-ro-token" not in err
+    assert "valid-rw-token-must-not-be-used" not in err
     assert "[REDACTED]" in err
+    assert "E_AUTH_REJECTED" in err
+    assert attempts == ["expired-ro-token"]
+
+
+def test_cli_uses_legacy_safe_exit_2_without_v2_contract(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from todo_db.cli import main
+
+    _scrub_cli_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("TODO_DB_RO_AUTH_TOKEN", "rejected-ro-token")
+    fake = types.ModuleType("libsql")
+
+    def unauthorized_connect(database, **kwargs):
+        raise ValueError("Hrana: status=401 Unauthorized")
+
+    fake.connect = unauthorized_connect
+    monkeypatch.setitem(sys.modules, "libsql", fake)
+
+    assert main(["--db", "libsql://legacy-contract.example.test", "list"]) == 2
+    error = capsys.readouterr().err
+    assert "E_AUTH_REJECTED" in error
+    assert "legacy-safe exit 2" in error
+    assert "TODO_DB_AUTH_CONTRACT=v2" in error
+    assert "rejected-ro-token" not in error
+
+
+@pytest.mark.parametrize(("contract", "expected"), [(None, 2), ("v2", 4)])
+def test_cli_missing_token_exit_depends_on_v2_contract(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    contract: str | None,
+    expected: int,
+) -> None:
+    from todo_db.cli import main
+
+    _scrub_cli_env(monkeypatch, tmp_path)
+    if contract:
+        monkeypatch.setenv("TODO_DB_AUTH_CONTRACT", contract)
+
+    assert main(["--db", "libsql://missing-token.example.test", "list"]) == expected
+    error = capsys.readouterr().err
+    assert "E_AUTH_MISSING" in error
+    assert ("legacy-safe exit 2" in error) is (contract is None)
+
+
+@pytest.mark.parametrize(
+    ("detail", "expected"),
+    [
+        ("Hrana status=401 Unauthorized", True),
+        ("status=400 JWT error: InvalidToken", True),
+        ("The JWT is expired", True),
+        ("HTTP 403 Forbidden", True),
+        ("HTTP 403 quota exceeded", False),
+        ("TLS authority validation failed", False),
+        ("token bucket exhausted", False),
+        ("database suspended by policy", False),
+        ("write denied by read-only policy", False),
+    ],
+)
+def test_auth_classifier_uses_high_confidence_evidence(detail: str, expected: bool) -> None:
+    from todo_db.backends import is_auth_shaped
+
+    assert is_auth_shaped(detail) is expected
 
 
 def test_cli_keeps_non_auth_hosted_errors_generic_with_exit_2(
@@ -283,7 +415,7 @@ def test_cli_keeps_non_auth_hosted_errors_generic_with_exit_2(
     assert main(["--db", "libsql://outage-cli.example.test", "list"]) == 2
     err = capsys.readouterr().err
     assert "hosted backend connection failed" in err
-    assert "turso auth login" not in err
+    assert "credential rejected" not in err
 
 
 def _open_hosted_tracker(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
@@ -445,7 +577,46 @@ def test_hosted_execute_and_commit_errors_are_redacted_and_classified(tmp_path: 
     assert "secret-123" not in msg
     assert "https://secret.turso.io" not in msg
     assert "[REDACTED]" in msg
-    assert "token invalid or expired" in msg
+    assert "credential rejected" in msg
+    assert exc.value.code == "E_AUTH_REJECTED"
 
     with pytest.raises(HostedAuthError):
         conn.commit()
+
+
+def test_hosted_non_auth_execute_error_is_redacted_without_auth_classification() -> None:
+    from todo_db.backends import HostedConnection
+    from todo_db.errors import HostedAuthError, TodoDBError
+
+    class NetworkFailure:
+        def execute(self, sql, params):
+            raise Exception(
+                "TLS authority validation failed for https://secret.turso.io using credential secret-123"
+            )
+
+    conn = HostedConnection(
+        NetworkFailure(),
+        url="https://secret.turso.io",
+        token="secret-123",
+        token_variable="TODO_DB_AUTH_TOKEN",
+    )
+    with pytest.raises(TodoDBError) as raised:
+        conn.execute("SELECT 1")
+    assert not isinstance(raised.value, HostedAuthError)
+    assert "authority validation failed" in str(raised.value)
+    assert "https://secret.turso.io" not in str(raised.value)
+    assert "secret-123" not in str(raised.value)
+
+    class OperationalNetworkFailure:
+        def execute(self, sql, params):
+            raise sqlite3.OperationalError("connection reset for https://secret.turso.io with secret-123")
+
+    operational = HostedConnection(
+        OperationalNetworkFailure(),
+        url="https://secret.turso.io",
+        token="secret-123",
+    )
+    with pytest.raises(TodoDBError) as operational_error:
+        operational.execute("SELECT 1")
+    assert "https://secret.turso.io" not in str(operational_error.value)
+    assert "secret-123" not in str(operational_error.value)

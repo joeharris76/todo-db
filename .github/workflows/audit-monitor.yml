@@ -36,6 +36,7 @@ jobs:
         env:
           TODO_DB_URL: ${{ secrets.TODO_DB_PROD_URL }}
           TODO_DB_RO_AUTH_TOKEN: ${{ secrets.TODO_DB_PROD_RO_TOKEN }}
+          TODO_DB_AUTH_CONTRACT: v2
           TODO_DB_AUDIT_OPEN_POLICY: full
           TARGET_INPUT: ${{ github.event.inputs.database_target }}
         run: |
@@ -49,6 +50,20 @@ jobs:
             fi
           fi
           echo "Verifying audit chain for target: $TARGET"
+          case "$TARGET" in
+            libsql://*|https://*)
+              uv run todo-db --db "$TARGET" doctor --json > /tmp/todo-db-doctor.json
+              uv run python - <<'PY'
+          import json
+
+          with open("/tmp/todo-db-doctor.json", encoding="utf-8") as handle:
+              report = json.load(handle)
+          database = next(check for check in report["checks"] if check["name"] == "database")
+          if database.get("source") != "TODO_DB_RO_AUTH_TOKEN" or database.get("capability") != "read-only":
+              raise SystemExit("hosted audit requires TODO_DB_RO_AUTH_TOKEN with read-only provenance")
+          PY
+              ;;
+          esac
           uv run todo-db --db "$TARGET" audit verify > /tmp/audit-integrity.txt
           cat /tmp/audit-integrity.txt
 
