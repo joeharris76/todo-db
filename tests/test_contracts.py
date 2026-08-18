@@ -270,6 +270,41 @@ def test_prior_package_refuses_a_database_with_a_newer_schema(tmp_path: Path) ->
         TodoDatabase.open(DatabaseConfig(path=path, identity=identity))
 
 
+def test_schema_behind_in_read_only_mode_raises_schema_behind_error(tmp_path: Path) -> None:
+    from todo_db import CredentialMode, DatabaseConfig, ProjectIdentity, TodoDatabase
+    from todo_db.errors import SchemaBehindError
+
+    path = tmp_path / "behind.sqlite"
+    identity = ProjectIdentity(project_id="project-test", repository="https://example.test/project")
+    TodoDatabase.open(DatabaseConfig(path=path, identity=identity)).close()
+
+    raw = sqlite3.connect(path)
+    max_ver = raw.execute("SELECT max(version) FROM schema_migrations").fetchone()[0]
+    raw.execute("DELETE FROM schema_migrations WHERE version = ?", (max_ver,))
+    raw.commit()
+    raw.close()
+
+    with pytest.raises(SchemaBehindError, match="E_SCHEMA_BEHIND"):
+        TodoDatabase.open(DatabaseConfig(path=path, identity=identity, credential_mode=CredentialMode.READ_ONLY))
+
+
+def test_schema_diverged_raises_schema_diverged_error(tmp_path: Path) -> None:
+    from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase
+    from todo_db.errors import SchemaDivergedError
+
+    path = tmp_path / "diverged.sqlite"
+    identity = ProjectIdentity(project_id="project-test", repository="https://example.test/project")
+    TodoDatabase.open(DatabaseConfig(path=path, identity=identity)).close()
+
+    raw = sqlite3.connect(path)
+    raw.execute("UPDATE schema_migrations SET checksum = 'diverged-checksum' WHERE version = 1")
+    raw.commit()
+    raw.close()
+
+    with pytest.raises(SchemaDivergedError, match="E_SCHEMA_DIVERGED"):
+        TodoDatabase.open(DatabaseConfig(path=path, identity=identity))
+
+
 def test_export_is_deterministic_for_unchanged_state(tmp_path: Path) -> None:
     from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase
 

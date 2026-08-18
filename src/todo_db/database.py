@@ -12,7 +12,13 @@ from typing import Any
 
 from .audit import AUDIT_HASH_ALGORITHM, AUDIT_HASH_VERSION, canonical_json, event_hash, verify_event_chain
 from .backends import connect
-from .errors import AuditIntegrityError, ProjectIdentityMismatchError, SchemaMismatchError
+from .errors import (
+    AuditIntegrityError,
+    ProjectIdentityMismatchError,
+    SchemaBehindError,
+    SchemaDivergedError,
+    SchemaMismatchError,
+)
 from .models import CredentialMode, DatabaseConfig, ProjectIdentity
 
 
@@ -668,7 +674,7 @@ class TodoDatabase:
                 }
                 foreign_tracker_tables = existing_tables & {"items", "work_units", "item_deps", "meta"}
                 if foreign_tracker_tables:
-                    raise SchemaMismatchError(
+                    raise SchemaDivergedError(
                         "database contains a different tracker schema "
                         f"({', '.join(sorted(foreign_tracker_tables))}); use a dedicated todo-db path"
                     )
@@ -680,7 +686,9 @@ class TodoDatabase:
                 applied = [(row["version"], row["name"], row["checksum"]) for row in rows]
                 expected_prefix = [record[:3] for record in expected[: len(applied)]]
                 if applied != expected_prefix:
-                    raise SchemaMismatchError(f"schema migration mismatch: expected {expected_prefix}, got {applied}")
+                    raise SchemaDivergedError(
+                        f"E_SCHEMA_DIVERGED: schema migration mismatch: expected {expected_prefix}, got {applied}; database migrations differ from codebase"
+                    )
             current = applied[-1][0] if applied else 0
             for version, name, checksum in expected:
                 if version <= current:
@@ -707,7 +715,17 @@ class TodoDatabase:
         actual = [(row["version"], row["name"], row["checksum"]) for row in rows]
         expected_records = [(version, name, checksum) for version, name, checksum in expected]
         if actual != expected_records:
-            raise SchemaMismatchError(f"schema migration mismatch: expected {expected_records}, got {actual}")
+            expected_prefix = expected_records[: len(actual)]
+            if actual == expected_prefix and len(actual) < len(expected_records):
+                curr_ver = actual[-1][0] if actual else 0
+                exp_ver = expected_records[-1][0]
+                raise SchemaBehindError(
+                    f"E_SCHEMA_BEHIND: database schema version {curr_ver} is behind expected version {exp_ver}; "
+                    "re-open with write credentials to apply pending migrations"
+                )
+            raise SchemaDivergedError(
+                f"E_SCHEMA_DIVERGED: schema migration mismatch: expected {expected_records}, got {actual}"
+            )
 
     def _bind_identity(self) -> None:
         row = self._connection.execute(

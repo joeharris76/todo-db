@@ -21,5 +21,13 @@ class SchemaMismatchError(TodoDBError):
     """Raised when the database migration history differs from packaged SQL."""
 
 
+class SchemaBehindError(SchemaMismatchError):
+    """Raised when the database is at an older schema version than expected."""
+
+
+class SchemaDivergedError(SchemaMismatchError):
+    """Raised when the database migrations have diverged from packaged SQL."""
+
+
 class AuditIntegrityError(TodoDBError):
     """Raised when the audit chain or an export signature fails verification."""
