@@ -315,17 +315,23 @@ identity resolution (with its source tier; failing only when no source
 resolves and the database is unbound), the database target (local: file or
 creatable parent plus schema version, warning `behind -- run init to
 migrate`; hosted: URL scheme and a read-only `SELECT` probe against the
-primary using `TODO_DB_RO_AUTH_TOKEN`, else `TODO_DB_AUTH_TOKEN`), turso CLI
-availability and `turso auth whoami` when the target is hosted (warning
-means automatic token re-mint is unavailable), and finding-drafts dir
-writability. Exit 0 when healthy (warnings allowed), 4 on any
-auth-classified failure, 2 otherwise. `--json` emits
+primary using `TODO_DB_RO_AUTH_TOKEN`, else `TODO_DB_AUTH_TOKEN`), a local
+wrapper-version check when a generated wrapper is present, and finding-drafts
+dir writability. It never invokes the Turso CLI. Exit 0 when healthy (warnings
+allowed), 4 on any auth-classified failure, 2 otherwise. `--json` emits
 `{"checks": [{name, status, detail, remediation?}], "exit": N}`.
 
-The wrapper scaffolded by the current release auto-remediates an exit 4 by
-using the authenticated Turso CLI to mint an RW token and retry once. That
-legacy behavior cannot update its parent environment and does not set an
-explicit token lifetime, so ADR 0004 deprecates it. Do not depend on automatic
-recovery: inject a bounded token before invoking the wrapper. The v2 wrapper
-migration removes control-plane calls and retries; until it is installed, an
-authentication alert is a hard stop for batch work.
+Wrappers scaffolded by this release carry `# todo-db-wrapper: v2`, export the
+non-secret `TODO_DB_AUTH_CONTRACT=v2` compatibility marker, invoke todo-db
+exactly once, and propagate its status. They never invoke Turso, mint or cache a
+token, or retry authentication. Refresh a recognized older generated wrapper
+without rewriting project config or other scaffolding:
+
+```sh
+todo-db refresh-wrapper
+```
+
+The command refuses symlinks, paths outside the project, missing files, and
+unrecognized custom scripts. `doctor` reports a legacy generated wrapper with
+the same targeted remediation. Inject a bounded credential before invoking the
+wrapper; an authentication failure is a hard stop for batch work.

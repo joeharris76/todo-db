@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# todo-db-wrapper: v2
 #
 # todo-db TODO tracker entry point. Routes every subcommand to the
 # canonical `todo-db` CLI. Project identity and database location come from
@@ -10,15 +11,14 @@
 #   2. `todo-db` on PATH  an installed todo-db package
 #   3. sibling checkout   <repo>/../todo-db
 #
-# On exit 4 (hosted auth failure) against a libsql:// database, a fresh token
-# is minted with the turso CLI and the command retried once. The token is
-# exported, never echoed. When remediation is impossible an ALERT block is
-# printed to stderr and exit 4 propagates.
+# Authentication is data-plane only. This wrapper never calls the Turso CLI,
+# mints or stores tokens, or retries a failed command.
 #
 set -euo pipefail
 
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 export TODO_DB_CONFIG="${TODO_DB_CONFIG:-$REPO_ROOT/.todo-db/config.json}"
+export TODO_DB_AUTH_CONTRACT=v2
 
 run_todo_db() {
   if [ -n "${TODO_DB_TOOL:-}" ]; then
@@ -38,62 +38,9 @@ run_todo_db() {
   return 2
 }
 
-print_auth_alert() {
-  cat >&2 <<'ALERT'
-==================== TODO-DB AUTH ALERT ====================
-Tracker writes are BLOCKED: hosted database authentication
-failed and automatic token re-mint did not succeed.
-Fix it now, one of:
-  1. turso auth login
-  2. export TODO_DB_AUTH_TOKEN="$(turso db tokens create <database-name>)"
-Do not continue batch work until resolved: tracker items are
-not being updated.
-============================================================
-ALERT
-}
-
-status=0
-run_todo_db "$@" || status=$?
-if [ "$status" -ne 4 ]; then
-  exit "$status"
-fi
-
-target="${TODO_DB_URL:-}"
-if [ -z "$target" ] && [ -f "$TODO_DB_CONFIG" ]; then
-  target="$(sed -n 's/.*"db"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$TODO_DB_CONFIG" | head -n 1)" || target=""
-fi
-case "$target" in
-  libsql://*) ;;
-  *)
-    print_auth_alert
-    exit 4
-    ;;
-esac
-if ! command -v turso >/dev/null 2>&1 || ! turso auth whoami >/dev/null 2>&1; then
-  print_auth_alert
-  exit 4
-fi
-
-host="${target#libsql://}"
-host="${host%%/*}"
-host="${host%%\?*}"
-db_name="$(turso db list 2>/dev/null | awk -v host="$host" 'index($0, host) {print $1; exit}')" || db_name=""
-if [ -z "$db_name" ]; then
-  print_auth_alert
-  exit 4
-fi
-fresh_token="$(turso db tokens create "$db_name" 2>/dev/null)" || fresh_token=""
-if [ -z "$fresh_token" ]; then
-  print_auth_alert
-  exit 4
-fi
-export TODO_DB_AUTH_TOKEN="$fresh_token"
-echo "todo: hosted auth failure; minted a fresh token for '$db_name', retrying once" >&2
-
 status=0
 run_todo_db "$@" || status=$?
 if [ "$status" -eq 4 ]; then
-  print_auth_alert
-  exit 4
+  echo "todo: hosted authentication failed; inject a bounded credential and retry (automatic token minting is disabled)" >&2
 fi
 exit "$status"
