@@ -1,0 +1,60 @@
+name: Audit Chain Operational Monitor
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"  # Every 6 hours
+  workflow_dispatch:
+    inputs:
+      database_target:
+        description: "Database URL or path to verify"
+        required: false
+        default: ""
+
+jobs:
+  verify-audit:
+    name: Full Audit Verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+          enable-cache: true
+
+      - name: Set up Python 3.12
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Run Full Audit Chain Verification
+        env:
+          TODO_DB_URL: ${{ secrets.TODO_DB_PROD_URL }}
+          TODO_DB_RO_AUTH_TOKEN: ${{ secrets.TODO_DB_PROD_RO_TOKEN }}
+          TODO_DB_AUDIT_OPEN_POLICY: full
+        run: |
+          TARGET="${{ github.event.inputs.database_target }}"
+          if [ -z "$TARGET" ]; then
+            TARGET="${TODO_DB_URL:-.todo-db/standalone.sqlite}"
+          fi
+          echo "Verifying audit chain for target: $TARGET"
+          uv run todo-db --db "$TARGET" export --output /tmp/audit-export.json
+          echo "Audit chain verification passed. Export size: $(wc -c < /tmp/audit-export.json) bytes"
+
+      - name: Upload Verified Export Artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verified-audit-export
+          path: /tmp/audit-export.json
+          retention-days: 30
+
+      - name: Notify on Failure
+        if: failure()
+        run: |
+          echo "::error::Audit chain integrity failure detected! Investigating potential history tamper."

@@ -32,8 +32,10 @@ uv run todo-db --db .todo-db/standalone.sqlite export \
 
 The database binds to the supplied project identity. Reusing a database for a
 different project is rejected before access. Migration SQL is packaged and
-checksum-verified. The audit chain uses SHA-256 and is checked on open and
-export. Every lifecycle mutation and its audit event commit atomically.
+checksum-verified. The audit chain uses SHA-256 (`sha256-chain-v2`); on open,
+it performs an $O(1)$ audit-head consistency check by default (with full $O(N)$
+chain verification during `complete`, `export`, or when `TODO_DB_AUDIT_OPEN_POLICY=full`
+is configured). Every lifecycle mutation and its audit event commit atomically.
 
 The default standalone path is `.todo-db/standalone.sqlite`. This is
 deliberate: an existing `.todo-db/todo.sqlite` from another tracker schema is

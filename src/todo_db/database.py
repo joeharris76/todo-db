@@ -4,13 +4,21 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from importlib import metadata, resources
 from typing import Any
 
-from .audit import AUDIT_HASH_ALGORITHM, AUDIT_HASH_VERSION, canonical_json, event_hash, verify_event_chain
+from .audit import (
+    AUDIT_HASH_ALGORITHM,
+    AUDIT_HASH_VERSION,
+    canonical_json,
+    event_hash,
+    verify_audit_head,
+    verify_event_chain,
+)
 from .backends import connect
 from .errors import (
     AuditIntegrityError,
@@ -287,7 +295,11 @@ class TodoDatabase:
                 database._bind_identity()
                 database._upgrade_audit_history()
                 database._ensure_audit_head()
-            database.verify_audit()
+            policy = os.environ.get("TODO_DB_AUDIT_OPEN_POLICY", "head").lower()
+            if policy == "full":
+                database.verify_audit()
+            else:
+                database._check_audit_head()
             return database
         except BaseException:
             connection.close()
@@ -631,6 +643,17 @@ class TodoDatabase:
             identity=self.project_identity,
             head_seq=int(head["head_seq"]),
             head_hash=head["head_hash"],
+        )
+
+    def _check_audit_head(self) -> dict[str, Any]:
+        head = self._connection.execute("SELECT head_seq, head_hash FROM audit_head WHERE singleton = 1").fetchone()
+        if head is None:
+            raise AuditIntegrityError("audit integrity: audit head is missing")
+        last_event = self._connection.execute("SELECT seq, event_hash FROM events ORDER BY seq DESC LIMIT 1").fetchone()
+        return verify_audit_head(
+            head_seq=int(head["head_seq"]),
+            head_hash=head["head_hash"],
+            last_event=dict(last_event) if last_event else None,
         )
 
     def close(self) -> None:
