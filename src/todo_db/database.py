@@ -9,6 +9,7 @@ import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from importlib import metadata, resources
+from pathlib import Path
 from typing import Any
 
 from .audit import (
@@ -324,9 +325,21 @@ class TodoDatabase:
 
     @property
     def is_hosted(self) -> bool:
-        """True when this database is a shared hosted (libsql/https) backend."""
-
-        return self._config.is_hosted
+        """True when this database is a shared hosted (libsql/https) backend or replica."""
+        if self._config.is_hosted:
+            return True
+        path = Path(self._config.path)
+        if path.is_file():
+            if path.name.startswith("replica.") or path.name == "replica.db":
+                return True
+            parent = path.parent
+            if (
+                (parent / f"{path.name}-info").exists()
+                or (parent / f"{path.name}-durable").exists()
+                or (parent / f"{path.name}.replica-info").exists()
+            ):
+                return True
+        return False
 
     @property
     def schema_version(self) -> int:

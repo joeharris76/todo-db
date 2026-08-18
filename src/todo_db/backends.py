@@ -91,29 +91,53 @@ class HostedCursor:
 class HostedConnection:
     """Small sqlite3-compatible surface over the libsql Python client."""
 
-    def __init__(self, raw: Any):
+    def __init__(self, raw: Any, *, url: str = "", token: str = "", token_variable: str = "TODO_DB_AUTH_TOKEN"):
         self._raw = raw
+        self._url = url
+        self._token = token
+        self._token_variable = token_variable
+
+    def _wrap_error(self, exc: BaseException, context: str) -> Exception:
+        if isinstance(exc, (sqlite3.IntegrityError, sqlite3.OperationalError, TodoDBError)):
+            return exc
+        message = str(exc)
+        if "constraint" in message.lower():
+            return sqlite3.IntegrityError(message)
+        if self._url and (is_auth_shaped(message) or "hrana" in message.lower() or "stream" in message.lower() or "http" in message.lower()):
+            return hosted_error(exc, url=self._url, token=self._token, context=context, token_variable=self._token_variable)
+        return sqlite3.OperationalError(message)
 
     def execute(self, sql: str, params=()) -> HostedCursor:
         try:
             return HostedCursor(self._raw.execute(sql, tuple(params)))
         except ValueError as exc:
-            message = str(exc)
-            if "constraint" in message.lower():
-                raise sqlite3.IntegrityError(message) from exc
-            raise sqlite3.OperationalError(message) from exc
+            raise self._wrap_error(exc, "execute") from None
+        except Exception as exc:
+            raise self._wrap_error(exc, "execute") from None
 
     def commit(self) -> None:
-        self._raw.commit()
+        try:
+            self._raw.commit()
+        except Exception as exc:
+            raise self._wrap_error(exc, "commit") from None
 
     def rollback(self) -> None:
-        self._raw.rollback()
+        try:
+            self._raw.rollback()
+        except Exception as exc:
+            raise self._wrap_error(exc, "rollback") from None
 
     def close(self) -> None:
-        self._raw.close()
+        try:
+            self._raw.close()
+        except Exception as exc:
+            raise self._wrap_error(exc, "close") from None
 
     def sync(self) -> None:
-        self._raw.sync()
+        try:
+            self._raw.sync()
+        except Exception as exc:
+            raise self._wrap_error(exc, "sync") from None
 
 
 def _normalize_url(value: str) -> str:
@@ -185,7 +209,7 @@ def _connect_hosted(config: DatabaseConfig) -> HostedConnection:
         raw = libsql.connect(url, auth_token=token, isolation_level=None)
     except Exception as exc:
         raise hosted_error(exc, url=url, token=token, context="connection", token_variable=variable) from None
-    connection = HostedConnection(raw)
+    connection = HostedConnection(raw, url=url, token=token, token_variable=variable)
     if config.credential_mode is not CredentialMode.READ_ONLY:
         try:
             connection.execute("PRAGMA foreign_keys = ON")

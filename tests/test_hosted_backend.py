@@ -393,3 +393,59 @@ def test_hosted_tracker_lifecycle_uses_same_transactional_service(
     tracker.complete("hosted-item")
     assert database.verify_audit()["event_count"] == 4
     database.close()
+
+
+def test_replica_sidecar_triggers_hosted_verify_gate(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase, TodoTracker
+    from todo_db.errors import TodoError
+
+    monkeypatch.delenv("TODO_DB_ALLOW_HOSTED_VERIFY_RUN", raising=False)
+    db_path = tmp_path / "replica.db"
+    (tmp_path / "replica.db-info").write_bytes(b"sidecar")
+    database = TodoDatabase.open(
+        DatabaseConfig(
+            path=db_path,
+            identity=ProjectIdentity(project_id="replica-verify", repository="todo-db"),
+        )
+    )
+    tracker = TodoTracker(database, actor="tester")
+    tracker.create_item(
+        item_id="item-rep",
+        title="Replica item",
+        worktree="todo-db",
+        priority="high",
+        description="Replica verify gate test",
+        verifications=[{"description": "v1", "command": "echo PASS", "expected": "PASS"}],
+    )
+    with pytest.raises(TodoError, match="TODO_DB_ALLOW_HOSTED_VERIFY_RUN"):
+        tracker.run_verification("item-rep", 1)
+    database.close()
+
+
+def test_hosted_execute_and_commit_errors_are_redacted_and_classified(tmp_path: Path) -> None:
+    from todo_db.backends import HostedConnection
+    from todo_db.errors import HostedAuthError
+
+    class FlakyRaw:
+        def execute(self, sql, params):
+            raise Exception("HTTP 401 Unauthorized: token expired for https://secret.turso.io with token secret-123")
+
+        def commit(self):
+            raise Exception("HTTP 403 Forbidden: stream closed")
+
+    conn = HostedConnection(
+        FlakyRaw(),
+        url="https://secret.turso.io",
+        token="secret-123",
+        token_variable="TODO_DB_AUTH_TOKEN",
+    )
+    with pytest.raises(HostedAuthError) as exc:
+        conn.execute("SELECT 1")
+    msg = str(exc.value)
+    assert "secret-123" not in msg
+    assert "https://secret.turso.io" not in msg
+    assert "[REDACTED]" in msg
+    assert "token invalid or expired" in msg
+
+    with pytest.raises(HostedAuthError):
+        conn.commit()
