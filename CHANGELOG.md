@@ -6,12 +6,6 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### Fixed
-
-- Replace generated-wrapper token mint/retry behavior with a single-execution
-  v2 auth-contract marker, add a targeted `refresh-wrapper` migration, and
-  remove Turso account probes from `doctor`.
-
 ## [0.4.1] - 2026-08-18
 
 ### Added
@@ -28,12 +22,16 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Replace generated-wrapper token mint/retry behavior with a single-execution
+  v2 auth-contract marker, add a targeted `refresh-wrapper` migration, and
+  remove Turso account probes from `doctor`.
 - Require Pi project trust before resolving or executing project wrappers,
   compile the adapter against Pi's real extension API, and use its actual
   session identifier.
 - Execute human agent verification ladders exactly once, reject commands that
-  mutate the Git workspace, and require a current attestation for no-shell
-  model completion.
+  mutate the Git workspace, require a current attestation for no-shell model
+  completion, and prevent tracker/Turso credentials from entering verification
+  subprocesses even through the explicit passthrough setting.
 - Recheck claim generation during completion and require it for streamlined
   release/rebaseline mutations; audit adoption and reject multiple live claims.
 - Replace false hosted certification with a real-primary two-connection Turso
@@ -45,7 +43,8 @@ adheres to [Semantic Versioning](https://semver.org/).
   allowlists, and lossless Git filename decoding.
 - Constrain the Python source distribution to reviewed project sources and
   packaging metadata so local agent/tooling directories cannot leak into a
-  published artifact.
+  published artifact, and move the Pi build hook to `prepack` so consumers do
+  not need TypeScript during installation.
 
 ## [0.4.0] - 2026-08-18
 
