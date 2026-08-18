@@ -257,10 +257,11 @@ TODO_DB_RO_AUTH_TOKEN=... uv run todo-db \
   --output export.json
 ```
 
-Hosted read-write connections connect directly to the primary with
-`TODO_DB_AUTH_TOKEN`; read-only exports connect with
-`TODO_DB_RO_AUTH_TOKEN`. Plaintext `http://` URLs are refused. Provision
-bounded database-scoped credentials outside todo-db:
+Hosted read-write connections require `TODO_DB_AUTH_TOKEN`. Read-only commands
+prefer `TODO_DB_RO_AUTH_TOKEN` and fall back to `TODO_DB_AUTH_TOKEN` only when
+the RO variable is absent or empty; rejection of a present RO credential never
+triggers an RW retry. Plaintext `http://` URLs are refused. Provision bounded
+database-scoped credentials outside todo-db:
 
 ```sh
 export TODO_DB_AUTH_TOKEN="$(turso db tokens create <db> --expiration 90d)"
@@ -281,8 +282,9 @@ unless `TODO_DB_ALLOW_HOSTED_VERIFY_RUN=1` is set; inspect the command first
 with `todo-db verify <id>`, then opt in per invocation. Agent model finish never
 executes stored commands. Human `agent finish --run-verifications` previews and
 runs each rung exactly once, then binds the passing ladder to a deterministic
-Git workspace fingerprint. Verification subprocesses receive a small environment allowlist; extra names
-require explicit `TODO_DB_VERIFY_ENV_PASSTHROUGH`. Tracker data-plane
+Git workspace fingerprint. Verification subprocesses receive a small
+environment allowlist; extra names require explicit
+`TODO_DB_VERIFY_ENV_PASSTHROUGH`. Tracker data-plane
 credentials (`TODO_DB_AUTH_TOKEN`, `TODO_DB_RO_AUTH_TOKEN`) and Turso
 control-plane credentials (`TURSO_AUTH_TOKEN`, `TURSO_API_TOKEN`) are always
 rejected from passthrough, with variable names—but never values—reported.
@@ -303,15 +305,21 @@ Exit codes are a contract (also printed in `todo-db --help`):
 | ---- | ------- |
 | 0    | success (`doctor`: every check passed; warnings allowed) |
 | 1    | findings reported (`check-scope` violations, `lint` findings, `verify --run` failures) |
-| 2    | generic error: fix the reported cause and retry |
-| 4    | hosted authentication failure |
+| 2    | generic error, or legacy-safe authentication failure before v2 negotiation |
+| 4    | hosted authentication failure under `TODO_DB_AUTH_CONTRACT=v2` |
 
-Hosted connect/sync failures that are auth-shaped (HTTP 401/403,
-`unauthorized`/`forbidden`, token/JWT complaints in the underlying libsql
-error) raise `HostedAuthError` and exit 4; the message keeps the URL and
-token redacted and states the remediation: refresh the token, e.g. `export
-TODO_DB_AUTH_TOKEN=$(turso db tokens create <db> --expiration 90d)`, or `turso auth login` if
-the turso CLI itself is logged out. Non-auth hosted failures stay exit 2.
+Missing credentials raise `HostedAuthError` with `E_AUTH_MISSING`; confidently
+classified server rejection uses `E_AUTH_REJECTED`. HTTP 401 and explicit
+`unauthorized`, `forbidden`, invalid-token, or expired/invalid JWT evidence are
+auth-shaped. Bare 403, quota/suspension, network, TLS authority, protocol, and
+other ambiguous failures stay generic exit 2. Messages and tracebacks redact
+the URL and selected token.
+
+A v2 wrapper negotiates exit 4 automatically. Direct CLI automation must set
+`TODO_DB_AUTH_CONTRACT=v2` explicitly. Without that handshake, auth failures
+return exit 2 with wrapper-migration guidance so a committed legacy wrapper
+cannot intercept exit 4 and mint an RW token. Library callers always receive
+the coded `HostedAuthError`, independent of CLI exit negotiation.
 
 `todo-db doctor` is a read-only preflight (no writes, no replica sync unless
 `--rw` is passed) intended before batch work. It checks config discovery,
@@ -321,9 +329,12 @@ creatable parent plus schema version, warning `behind -- run init to
 migrate`; hosted: URL scheme and a read-only `SELECT` probe against the
 primary using `TODO_DB_RO_AUTH_TOKEN`, else `TODO_DB_AUTH_TOKEN`), a local
 wrapper-version check when a generated wrapper is present, and finding-drafts
-dir writability. It never invokes the Turso CLI. Exit 0 when healthy (warnings
-allowed), 4 on any auth-classified failure, 2 otherwise. `--json` emits
-`{"checks": [{name, status, detail, remediation?}], "exit": N}`.
+dir writability. It never invokes the Turso CLI. Hosted database checks include
+non-secret `source`, `capability`, and auth `code` fields in JSON; text output
+names the same provenance but never the token value. Exit 4 requires both an
+auth failure and the v2 contract; legacy-safe callers receive exit 2.
+`--json` emits `{"checks": [{name, status, detail, remediation?, source?,
+capability?, code?}], "exit": N}`.
 
 Wrappers scaffolded by this release carry `# todo-db-wrapper: v2`, export the
 non-secret `TODO_DB_AUTH_CONTRACT=v2` compatibility marker, invoke todo-db

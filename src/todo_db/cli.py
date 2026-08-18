@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from .audit import canonical_json
-from .backends import auth_remediation, connect, hosted_error
+from .backends import ResolvedCredential, connect, hosted_error, resolve_credential
 from .database import SCHEMA_VERSION, TodoDatabase
 from .database import TOOL_VERSION
 from .errors import HostedAuthError, TodoDBError, TodoError
@@ -54,9 +54,20 @@ EXIT_CODES_EPILOG = """\
 exit codes:
   0  success (doctor: every check passed; warnings allowed)
   1  findings reported (check-scope violations, lint findings, verify --run failures)
-  2  generic error: fix the reported cause and retry
-  4  hosted authentication failure: inject a valid bounded TODO_DB_AUTH_TOKEN
-     (or TODO_DB_RO_AUTH_TOKEN for reads) and retry in a fresh process"""
+  2  generic error, or legacy-safe auth failure before the v2 contract is negotiated
+  4  hosted authentication failure under TODO_DB_AUTH_CONTRACT=v2: inject a valid
+     bounded TODO_DB_AUTH_TOKEN (or TODO_DB_RO_AUTH_TOKEN for reads) and retry"""
+
+
+def _auth_contract_v2() -> bool:
+    return os.environ.get("TODO_DB_AUTH_CONTRACT") == "v2"
+
+
+def _legacy_auth_warning() -> str:
+    return (
+        "v2 auth exit contract not negotiated; returning legacy-safe exit 2 so an older wrapper cannot "
+        "mint credentials (run through a v2 wrapper or set TODO_DB_AUTH_CONTRACT=v2 for direct automation)"
+    )
 
 
 def _load_repo_config(path: Path) -> dict[str, Any]:
@@ -1158,28 +1169,47 @@ def _doctor_local_probe(path: Path) -> tuple[DoctorCheck, tuple[str, str] | None
         connection.close()
 
 
-def _doctor_hosted_probe(target: str) -> tuple[DoctorCheck, tuple[str, str] | None, bool]:
-    """Read-only SELECT probe against the primary. Returns (check, bound identity, auth-classified)."""
+def _credential_metadata(
+    credential: ResolvedCredential | None, error: HostedAuthError | None = None
+) -> dict[str, str]:
+    metadata: dict[str, str] = {}
+    if credential is not None:
+        metadata.update(source=credential.source, capability=credential.capability)
+    if error is not None and error.code:
+        metadata["code"] = error.code
+    return metadata
+
+
+def _doctor_hosted_probe(
+    target: str,
+) -> tuple[DoctorCheck, tuple[str, str] | None, bool, dict[str, str]]:
+    """Read-only primary probe with shared credential resolution and non-secret provenance."""
 
     if target.lower().startswith("http://"):
-        return ("FAIL", "plaintext http:// is refused for the hosted backend", "use https:// or libsql://"), None, False
-    ro_token = os.environ.get("TODO_DB_RO_AUTH_TOKEN", "")
-    token = ro_token or os.environ.get("TODO_DB_AUTH_TOKEN", "")
-    variable = "TODO_DB_RO_AUTH_TOKEN" if ro_token else "TODO_DB_AUTH_TOKEN"
-    if not token:
-        detail = "no TODO_DB_RO_AUTH_TOKEN or TODO_DB_AUTH_TOKEN in the environment"
-        return ("FAIL", detail, auth_remediation()), None, True
-    config = DatabaseConfig(path=target, credential_mode=CredentialMode.READ_ONLY, auth_token=token)
+        check = ("FAIL", "plaintext http:// is refused for the hosted backend", "use https:// or libsql://")
+        return check, None, False, {}
+    config = DatabaseConfig(path=target, credential_mode=CredentialMode.READ_ONLY)
     try:
-        connection = connect(config)
+        credential = resolve_credential(config)
     except HostedAuthError as exc:
-        return ("FAIL", str(exc), None), None, True
+        metadata = {
+            "source": "TODO_DB_RO_AUTH_TOKEN|TODO_DB_AUTH_TOKEN",
+            "capability": "read-only requested",
+            **_credential_metadata(None, exc),
+        }
+        return ("FAIL", str(exc), None), None, True, metadata
+    try:
+        connection = connect(config, credential=credential)
+    except HostedAuthError as exc:
+        return ("FAIL", str(exc), None), None, True, _credential_metadata(credential, exc)
     except (TodoDBError, OSError, ValueError) as exc:
-        return ("FAIL", str(exc), None), None, False
+        return ("FAIL", str(exc), None), None, False, _credential_metadata(credential)
     try:
         tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        metadata = _credential_metadata(credential)
         if "schema_migrations" not in tables:
-            return ("WARN", f"{target} reachable but has no todo-db schema", "run `todo-db init`"), None, False
+            check = ("WARN", f"{target} reachable but has no todo-db schema", "run `todo-db init`")
+            return check, None, False, metadata
         version = int(connection.execute("SELECT max(version) AS v FROM schema_migrations").fetchone()["v"] or 0)
         bound = None
         if "project_identity" in tables:
@@ -1189,11 +1219,13 @@ def _doctor_hosted_probe(target: str) -> tuple[DoctorCheck, tuple[str, str] | No
             bound = (row["project_id"], row["repository"]) if row else None
         if version < SCHEMA_VERSION:
             detail = f"{target} schema v{version} behind packaged v{SCHEMA_VERSION}"
-            return ("WARN", detail, "behind -- run init to migrate"), bound, False
-        return ("PASS", f"read-only probe ok: {target} schema v{version}", None), bound, False
+            return ("WARN", detail, "behind -- run init to migrate"), bound, False, metadata
+        return ("PASS", f"read-only probe ok: {target} schema v{version}", None), bound, False, metadata
     except (sqlite3.Error, ValueError) as exc:
-        classified = hosted_error(exc, url=target, token=token, context="read-only probe", token_variable=variable)
-        return ("FAIL", str(classified), None), None, isinstance(classified, HostedAuthError)
+        classified = hosted_error(exc, url=target, credential=credential, context="read-only probe")
+        auth_error = classified if isinstance(classified, HostedAuthError) else None
+        metadata = _credential_metadata(credential, auth_error)
+        return ("FAIL", str(classified), None), None, auth_error is not None, metadata
     finally:
         connection.close()
 
@@ -1202,8 +1234,14 @@ def _doctor(args: argparse.Namespace) -> int:
     checks: list[dict[str, str]] = []
     auth_failure = False
 
-    def add(name: str, status: str, detail: str, remediation: str | None = None) -> None:
-        check = {"name": name, "status": status, "detail": detail}
+    def add(
+        name: str,
+        status: str,
+        detail: str,
+        remediation: str | None = None,
+        **metadata: str,
+    ) -> None:
+        check = {"name": name, "status": status, "detail": detail, **metadata}
         if remediation:
             check["remediation"] = remediation
         checks.append(check)
@@ -1242,9 +1280,9 @@ def _doctor(args: argparse.Namespace) -> int:
     target = _resolve_db(getattr(args, "db", None), discovered)
     hosted = DatabaseConfig(path=target).is_hosted
     if hosted:
-        db_check, bound, db_auth = _doctor_hosted_probe(target)
+        db_check, bound, db_auth, db_metadata = _doctor_hosted_probe(target)
     else:
-        (db_check, bound), db_auth = _doctor_local_probe(Path(target)), False
+        (db_check, bound), db_auth, db_metadata = _doctor_local_probe(Path(target)), False, {}
     auth_failure = auth_failure or db_auth
 
     if identity_error is not None:
@@ -1262,20 +1300,30 @@ def _doctor(args: argparse.Namespace) -> int:
             "no identity from flags/env/config and the database is not bound to one",
             IDENTITY_SOURCES_HINT,
         )
-    add("database", *db_check)
+    add("database", *db_check, **db_metadata)
 
     if hosted and args.rw:
         rw_config = DatabaseConfig(
             path=target, identity=identity, credential_mode=CredentialMode.READ_WRITE, replica_path=args.replica
         )
+        rw_credential: ResolvedCredential | None = None
         try:
-            connect(rw_config).close()
-            add("hosted-rw", "PASS", "hosted direct connection succeeded")
+            rw_credential = resolve_credential(rw_config)
+            connect(rw_config, credential=rw_credential).close()
+            add("hosted-rw", "PASS", "hosted direct connection succeeded", **_credential_metadata(rw_credential))
         except HostedAuthError as exc:
             auth_failure = True
-            add("hosted-rw", "FAIL", str(exc))
+            add("hosted-rw", "FAIL", str(exc), **_credential_metadata(rw_credential, exc))
         except (TodoDBError, OSError, ValueError, sqlite3.Error) as exc:
-            add("hosted-rw", "FAIL", str(exc))
+            add("hosted-rw", "FAIL", str(exc), **_credential_metadata(rw_credential))
+
+    if auth_failure and not _auth_contract_v2():
+        add(
+            "auth-contract",
+            "WARN",
+            _legacy_auth_warning(),
+            "refresh a generated wrapper with `todo-db refresh-wrapper`, or explicitly negotiate v2",
+        )
 
     project_hint = identity.project_id if identity is not None else (bound[0] if bound else None)
     if os.environ.get("TODO_DB_FINDING_DRAFTS_DIR") or project_hint:
@@ -1300,12 +1348,16 @@ def _doctor(args: argparse.Namespace) -> int:
         )
 
     statuses = {check["status"] for check in checks}
-    exit_code = 4 if auth_failure else (2 if "FAIL" in statuses else 0)
+    exit_code = 4 if auth_failure and _auth_contract_v2() else (2 if "FAIL" in statuses else 0)
     if args.json:
         print(json.dumps({"checks": checks, "exit": exit_code}, indent=2, sort_keys=True))
     else:
         for check in checks:
             print(f"{check['status']:4s} {check['name']}: {check['detail']}")
+            if check.get("source"):
+                print(f"     credential: {check['source']} ({check.get('capability', 'unknown')})")
+            if check.get("code"):
+                print(f"     code: {check['code']}")
             if check.get("remediation"):
                 print(f"     remediation: {check['remediation']}")
     return exit_code
@@ -1832,8 +1884,12 @@ def _main(argv: list[str] | None = None) -> int:
                 parser.error(f"unsupported command: {command}")
         return 0
     except HostedAuthError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 4
+        label = f"error [{exc.code}]" if exc.code else "error"
+        print(f"{label}: {exc}", file=sys.stderr)
+        if _auth_contract_v2():
+            return 4
+        print(f"warning: {_legacy_auth_warning()}", file=sys.stderr)
+        return 2
     except (TodoDBError, TodoError, OSError, ValueError, sqlite3.Error) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2

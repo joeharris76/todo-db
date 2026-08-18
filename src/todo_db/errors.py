@@ -37,6 +37,8 @@ class AuditIntegrityError(TodoDBError):
     """Raised when the audit chain or an export signature fails verification."""
 
 
+E_AUTH_MISSING = "E_AUTH_MISSING"
+E_AUTH_REJECTED = "E_AUTH_REJECTED"
 E_NO_PROJECT = "E_NO_PROJECT"
 E_CLAIM_STALE = "E_CLAIM_STALE"
 E_MULTIPLE_CLAIMS = "E_MULTIPLE_CLAIMS"

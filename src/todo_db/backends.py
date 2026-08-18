@@ -5,16 +5,19 @@ from __future__ import annotations
 import os
 import re
 import sqlite3
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .errors import HostedAuthError, TodoDBError
+from .errors import E_AUTH_MISSING, E_AUTH_REJECTED, HostedAuthError, TodoDBError
 from .models import CredentialMode, DatabaseConfig
 
 
-def connect(config: DatabaseConfig) -> sqlite3.Connection | "HostedConnection":
+def connect(
+    config: DatabaseConfig, *, credential: "ResolvedCredential | None" = None
+) -> sqlite3.Connection | "HostedConnection":
     if config.is_hosted:
-        return _connect_hosted(config)
+        return _connect_hosted(config, credential=credential)
     return _connect_sqlite(config)
 
 
@@ -88,23 +91,42 @@ class HostedCursor:
         return self._cursor.rowcount
 
 
+@dataclass(frozen=True, slots=True)
+class ResolvedCredential:
+    token: str = field(repr=False)
+    source: str
+    capability: str
+
+
 class HostedConnection:
     """Small sqlite3-compatible surface over the libsql Python client."""
 
-    def __init__(self, raw: Any, *, url: str = "", token: str = "", token_variable: str = "TODO_DB_AUTH_TOKEN"):
+    def __init__(
+        self,
+        raw: Any,
+        *,
+        url: str = "",
+        credential: ResolvedCredential | None = None,
+        token: str = "",
+        token_variable: str = "TODO_DB_AUTH_TOKEN",
+    ):
         self._raw = raw
         self._url = url
-        self._token = token
-        self._token_variable = token_variable
+        self._credential = credential or ResolvedCredential(token, token_variable, "unknown")
+        self._token = self._credential.token
 
     def _wrap_error(self, exc: BaseException, context: str) -> Exception:
-        if isinstance(exc, (sqlite3.IntegrityError, sqlite3.OperationalError, TodoDBError)):
+        if isinstance(exc, TodoDBError):
             return exc
         message = str(exc)
-        if "constraint" in message.lower():
+        if isinstance(exc, sqlite3.IntegrityError) or "constraint" in message.lower():
+            if self._url:
+                message = _redacted_error(exc, url=self._url, token=self._token)
             return sqlite3.IntegrityError(message)
-        if self._url and (is_auth_shaped(message) or "hrana" in message.lower() or "stream" in message.lower() or "http" in message.lower()):
-            return hosted_error(exc, url=self._url, token=self._token, context=context, token_variable=self._token_variable)
+        if self._url:
+            return hosted_error(exc, url=self._url, credential=self._credential, context=context)
+        if isinstance(exc, sqlite3.OperationalError):
+            return exc
         return sqlite3.OperationalError(message)
 
     def execute(self, sql: str, params=()) -> HostedCursor:
@@ -153,14 +175,31 @@ def _secure_url(value: str) -> str:
     return value
 
 
-def _token(config: DatabaseConfig) -> str:
+def resolve_credential(config: DatabaseConfig) -> ResolvedCredential:
+    """Resolve one hosted credential and retain only non-secret provenance metadata."""
+
     if config.auth_token:
-        return config.auth_token
-    variable = "TODO_DB_RO_AUTH_TOKEN" if config.credential_mode is CredentialMode.READ_ONLY else "TODO_DB_AUTH_TOKEN"
-    token = os.environ.get(variable, "")
-    if not token:
-        raise TodoDBError(f"hosted backend requires {variable}")
-    return token
+        return ResolvedCredential(config.auth_token, "DatabaseConfig.auth_token", "unknown")
+    if config.credential_mode is CredentialMode.READ_WRITE:
+        token = os.environ.get("TODO_DB_AUTH_TOKEN", "")
+        if token:
+            return ResolvedCredential(token, "TODO_DB_AUTH_TOKEN", "read-write")
+        raise HostedAuthError(
+            "hosted backend requires TODO_DB_AUTH_TOKEN; inject a bounded read-write credential",
+            code=E_AUTH_MISSING,
+        )
+
+    read_only = os.environ.get("TODO_DB_RO_AUTH_TOKEN", "")
+    if read_only:
+        return ResolvedCredential(read_only, "TODO_DB_RO_AUTH_TOKEN", "read-only")
+    read_write = os.environ.get("TODO_DB_AUTH_TOKEN", "")
+    if read_write:
+        return ResolvedCredential(read_write, "TODO_DB_AUTH_TOKEN", "read-write")
+    raise HostedAuthError(
+        "hosted read access requires TODO_DB_RO_AUTH_TOKEN or TODO_DB_AUTH_TOKEN; "
+        "inject a bounded credential",
+        code=E_AUTH_MISSING,
+    )
 
 
 def _redacted_error(exc: BaseException, *, url: str, token: str) -> str:
@@ -168,48 +207,54 @@ def _redacted_error(exc: BaseException, *, url: str, token: str) -> str:
     return message.replace(token, "[REDACTED]") if token else message
 
 
-_AUTH_MARKERS = re.compile(r"\b(?:401|403|unauthorized|forbidden|auth\w*|token\w*|jwt)\b", re.IGNORECASE)
+_AUTH_MARKERS = re.compile(
+    r"(?:\b401\b|\bunauthorized\b|\bforbidden\b|\binvalid[ _-]?token\b|"
+    r"\bjwt(?:\s+error)?\b.*\b(?:expired|invalid)\b|\b(?:expired|invalid)\b.*\bjwt\b)",
+    re.IGNORECASE,
+)
 
 
 def is_auth_shaped(detail: str) -> bool:
-    """Conservative auth classification over an already-redacted error message."""
+    """Best-effort auth classification requiring high-confidence upstream evidence."""
 
     return _AUTH_MARKERS.search(detail) is not None
 
 
-def auth_remediation(token_variable: str = "TODO_DB_AUTH_TOKEN") -> str:
-    return (
-        f"token invalid or expired: refresh {token_variable}, "
-        "e.g. export TODO_DB_AUTH_TOKEN=$(turso db tokens create <db>); "
-        "if the turso CLI itself is logged out, run 'turso auth login'"
-    )
+def auth_remediation(credential: ResolvedCredential | None = None) -> str:
+    source = credential.source if credential is not None else "the configured credential source"
+    return f"credential rejected: replace the bounded credential from {source} and retry in a fresh process"
 
 
 def hosted_error(
-    exc: BaseException, *, url: str, token: str, context: str, token_variable: str = "TODO_DB_AUTH_TOKEN"
+    exc: BaseException, *, url: str, credential: ResolvedCredential, context: str
 ) -> TodoDBError:
     """Redact and classify a hosted failure: HostedAuthError when auth-shaped, TodoDBError otherwise."""
 
-    detail = _redacted_error(exc, url=url, token=token)
+    detail = _redacted_error(exc, url=url, token=credential.token)
     if is_auth_shaped(detail):
-        return HostedAuthError(f"hosted backend {context} failed: {detail}; {auth_remediation(token_variable)}")
+        return HostedAuthError(
+            f"hosted backend {context} failed: {detail}; {auth_remediation(credential)}",
+            code=E_AUTH_REJECTED,
+        )
     return TodoDBError(f"hosted backend {context} failed: {detail}")
 
 
-def _connect_hosted(config: DatabaseConfig) -> HostedConnection:
+def _connect_hosted(
+    config: DatabaseConfig, *, credential: ResolvedCredential | None = None
+) -> HostedConnection:
     url = _secure_url(str(config.path))
-    token = _token(config)
+    credential = credential or resolve_credential(config)
+    token = credential.token
     try:
         import libsql
     except ImportError as exc:
         raise TodoDBError("hosted backend requires the `todo-db[hosted]` extra") from exc
 
-    variable = "TODO_DB_RO_AUTH_TOKEN" if config.credential_mode is CredentialMode.READ_ONLY else "TODO_DB_AUTH_TOKEN"
     try:
         raw = libsql.connect(url, auth_token=token, isolation_level=None)
     except Exception as exc:
-        raise hosted_error(exc, url=url, token=token, context="connection", token_variable=variable) from None
-    connection = HostedConnection(raw, url=url, token=token, token_variable=variable)
+        raise hosted_error(exc, url=url, credential=credential, context="connection") from None
+    connection = HostedConnection(raw, url=url, credential=credential)
     if config.credential_mode is not CredentialMode.READ_ONLY:
         try:
             connection.execute("PRAGMA foreign_keys = ON")
