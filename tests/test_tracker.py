@@ -519,3 +519,68 @@ def test_release_is_holder_only(tmp_path: Path) -> None:
         )
     finally:
         database.close()
+
+
+def test_claim_coordination_metadata_and_clearance(tmp_path: Path) -> None:
+    from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase, TodoTracker
+
+    db_path = tmp_path / "coord.sqlite"
+    config = DatabaseConfig(
+        path=db_path,
+        identity=ProjectIdentity(project_id="coord-test", repository="todo-db"),
+    )
+    database = TodoDatabase.open(config)
+    try:
+        tracker = TodoTracker(database, actor="agent-1")
+        tracker.create_item(
+            item_id="item-coord",
+            title="Coordination Item",
+            worktree="todo-db",
+            priority="high",
+            description="Testing coordination fields",
+            work=[{"id": "w0", "summary": "Do work"}],
+            verifications=[{"description": "v1", "command": "true"}],
+        )
+
+        # Claim with session and baseline
+        tracker.claim(
+            "item-coord",
+            session="session-xyz",
+            branch="feat-branch",
+            worktree="/path/to/worktree",
+            git_baseline="abcdef123456",
+        )
+        row = database.connection.execute(
+            "SELECT claimed_by, claimed_session, claim_token, claimed_branch, claimed_worktree, git_baseline FROM items WHERE id = 'item-coord'"
+        ).fetchone()
+        assert row["claimed_by"] == "agent-1"
+        assert row["claimed_session"] == "session-xyz"
+        assert row["claimed_branch"] == "feat-branch"
+        assert row["claimed_worktree"] == "/path/to/worktree"
+        assert row["git_baseline"] == "abcdef123456"
+        assert row["claim_token"] is not None and len(row["claim_token"]) > 10
+
+        # Release clears all metadata
+        tracker.release("item-coord")
+        row = database.connection.execute(
+            "SELECT claimed_by, claimed_session, claim_token, claimed_branch, claimed_worktree, git_baseline FROM items WHERE id = 'item-coord'"
+        ).fetchone()
+        assert row["claimed_by"] is None
+        assert row["claimed_session"] is None
+        assert row["claim_token"] is None
+        assert row["git_baseline"] is None
+
+        # Reclaim and complete clears all metadata
+        tracker.claim("item-coord", session="session-2")
+        tracker.start_unit("item-coord", "w0")
+        tracker.done_unit("item-coord", "w0", "evidence")
+        tracker.complete("item-coord")
+        row = database.connection.execute(
+            "SELECT claimed_by, claimed_session, claim_token, git_baseline, state FROM items WHERE id = 'item-coord'"
+        ).fetchone()
+        assert row["state"] == "done"
+        assert row["claimed_by"] is None
+        assert row["claimed_session"] is None
+        assert row["claim_token"] is None
+    finally:
+        database.close()

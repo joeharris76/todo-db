@@ -11,6 +11,7 @@ import fnmatch
 import getpass
 import os
 import re
+import secrets
 import shlex
 import socket
 import subprocess
@@ -1289,7 +1290,17 @@ class TodoTracker:
         item["blocked_units"] = blocked
         return item
 
-    def claim(self, item_id: str, ttl_hours: float = DEFAULT_LEASE_TTL_HOURS) -> dict[str, Any]:
+    def claim(
+        self,
+        item_id: str,
+        ttl_hours: float = DEFAULT_LEASE_TTL_HOURS,
+        *,
+        session: str | None = None,
+        claim_token: str | None = None,
+        branch: str | None = None,
+        worktree: str | None = None,
+        git_baseline: str | None = None,
+    ) -> dict[str, Any]:
         with self.database.transaction():
             item = self._require_item(item_id)
             if item["state"] not in ("planning", "active"):
@@ -1307,12 +1318,23 @@ class TodoTracker:
             ]
             if unmet:
                 raise TodoError(f"{item_id!r} has unmet dependencies: {', '.join(unmet)}")
+            token = claim_token or secrets.token_hex(16)
+            loc_worktree, loc_branch = _git_location()
+            eff_worktree = worktree or loc_worktree
+            eff_branch = branch or loc_branch
             self.connection.execute(
-                "UPDATE items SET claimed_by = ?, claimed_at = ?, state = CASE WHEN state = 'planning' THEN 'active' ELSE state END "
+                "UPDATE items SET claimed_by = ?, claimed_at = ?, claimed_session = ?, claim_token = ?, "
+                "claimed_branch = ?, claimed_worktree = ?, git_baseline = COALESCE(?, git_baseline), "
+                "state = CASE WHEN state = 'planning' THEN 'active' ELSE state END "
                 "WHERE id = ? AND (claimed_by IS NULL OR claimed_by = ? OR claimed_at IS NULL OR claimed_at < ? OR claimed_at NOT LIKE '____-__-__T__:__:__Z')",
                 (
                     self.actor,
                     utc_now(),
+                    session,
+                    token,
+                    eff_branch,
+                    eff_worktree,
+                    git_baseline,
                     item_id,
                     self.actor,
                     (datetime.now(timezone.utc) - timedelta(hours=ttl_hours)).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -1320,7 +1342,12 @@ class TodoTracker:
             )
             if self.connection.execute("SELECT changes() AS n").fetchone()["n"] != 1:
                 raise TodoError(f"{item_id!r} was claimed concurrently")
-            self._event("claim", item_id, {"previous_holder": holder})
+            event_detail: dict[str, Any] = {"previous_holder": holder}
+            if session:
+                event_detail["session"] = session
+            if token:
+                event_detail["claim_token"] = token
+            self._event("claim", item_id, event_detail)
         return self.work_order(item_id)
 
     def release(self, item_id: str) -> None:
@@ -1331,7 +1358,9 @@ class TodoTracker:
             if item["claimed_by"] != self.actor:
                 raise TodoError(f"{item_id!r} is claimed by {item['claimed_by']!r}; only the holder can release")
             self.connection.execute(
-                "UPDATE items SET claimed_by = NULL, claimed_at = NULL WHERE id = ? AND claimed_by = ?",
+                "UPDATE items SET claimed_by = NULL, claimed_at = NULL, claimed_session = NULL, "
+                "claim_token = NULL, claimed_branch = NULL, claimed_worktree = NULL, git_baseline = NULL "
+                "WHERE id = ? AND claimed_by = ?",
                 (item_id, self.actor),
             )
             if self.connection.execute("SELECT changes() AS n").fetchone()["n"] != 1:
@@ -1512,7 +1541,9 @@ class TodoTracker:
                     )
             self._transition(item, "done")
             self.connection.execute(
-                "UPDATE items SET completed_at = ?, completed_pr = ?, claimed_by = NULL, claimed_at = NULL WHERE id = ?",
+                "UPDATE items SET completed_at = ?, completed_pr = ?, claimed_by = NULL, claimed_at = NULL, "
+                "claimed_session = NULL, claim_token = NULL, claimed_branch = NULL, claimed_worktree = NULL, "
+                "git_baseline = NULL WHERE id = ?",
                 (utc_now(), pr, item_id),
             )
             verification_detail: dict[str, Any]
@@ -1540,7 +1571,11 @@ class TodoTracker:
             if open_deferrals:
                 raise TodoError(f"cannot drop {item_id!r}: unresolved deferrals")
             self._transition(item, "dropped")
-            self.connection.execute("UPDATE items SET claimed_by = NULL, claimed_at = NULL WHERE id = ?", (item_id,))
+            self.connection.execute(
+                "UPDATE items SET claimed_by = NULL, claimed_at = NULL, claimed_session = NULL, "
+                "claim_token = NULL, claimed_branch = NULL, claimed_worktree = NULL, git_baseline = NULL WHERE id = ?",
+                (item_id,),
+            )
             self._event("drop", item_id, {"reason": reason})
 
     def block(self, item_id: str, reason: str) -> None:
@@ -1568,7 +1603,10 @@ class TodoTracker:
             for row in rows:
                 if _lease_expired(row["claimed_at"], ttl_hours):
                     self.connection.execute(
-                        "UPDATE items SET claimed_by = NULL, claimed_at = NULL WHERE id = ?", (row["id"],)
+                        "UPDATE items SET claimed_by = NULL, claimed_at = NULL, claimed_session = NULL, "
+                        "claim_token = NULL, claimed_branch = NULL, claimed_worktree = NULL, git_baseline = NULL "
+                        "WHERE id = ?",
+                        (row["id"],),
                     )
                     self._event(
                         "sweep", row["id"], {"stale_holder": row["claimed_by"], "claimed_at": row["claimed_at"]}
