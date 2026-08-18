@@ -62,19 +62,19 @@ def test_baseline_counts_per_command(sql_trace: SQLTrace, seeded_db: TodoDatabas
     ready_statements = sql_trace.total_statements
     assert ready_statements == 1
 
-    # 2. Baseline get_item count
+    # 2. Baseline get_item count (1 query per child table, independent of work unit count)
     sql_trace.reset()
     item = tracker.get_item("item-00")
     assert item is not None
     get_statements = sql_trace.total_statements
-    assert get_statements >= 1
+    assert get_statements == 10
 
-    # 3. Baseline work_order count
+    # 3. Baseline work_order count (derived in-memory, 0 extra queries beyond get_item)
     sql_trace.reset()
     order = tracker.work_order("item-00")
     assert order is not None
     order_statements = sql_trace.total_statements
-    assert order_statements >= 1
+    assert order_statements == 10
 
     # 4. Baseline lint
     sql_trace.reset()

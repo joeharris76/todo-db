@@ -1066,19 +1066,23 @@ class TodoTracker:
             self.connection.execute("INSERT INTO item_deps (item_id, needs_item) VALUES (?, ?)", (item_id, needs_item))
             self._event("dependency", item_id, {"needs_item": needs_item})
 
-    def get_item(self, item_id: str) -> dict[str, Any]:
-        item = _dict(self._require_item(item_id))
+    def _load_item_summary(self, item_id: str) -> dict[str, Any]:
+        return _dict(self._require_item(item_id))
+
+    def _load_item_plan(self, item_id: str) -> dict[str, Any]:
+        item = self._load_item_summary(item_id)
+        work_needs: dict[str, list[str]] = {}
+        for r in self.connection.execute(
+            "SELECT wid, needs_wid FROM work_needs WHERE item_id = ? ORDER BY wid, needs_wid", (item_id,)
+        ):
+            work_needs.setdefault(r["wid"], []).append(r["needs_wid"])
+
         item["work"] = []
         for row in self.connection.execute("SELECT * FROM work_units WHERE item_id = ? ORDER BY wid", (item_id,)):
             unit = _dict(row)
-            unit["needs"] = [
-                r["needs_wid"]
-                for r in self.connection.execute(
-                    "SELECT needs_wid FROM work_needs WHERE item_id = ? AND wid = ? ORDER BY needs_wid",
-                    (item_id, row["wid"]),
-                )
-            ]
+            unit["needs"] = work_needs.get(row["wid"], [])
             item["work"].append(unit)
+
         item["deps"] = [
             r["needs_item"]
             for r in self.connection.execute(
@@ -1095,6 +1099,10 @@ class TodoTracker:
             _dict(r)
             for r in self.connection.execute("SELECT * FROM verifications WHERE item_id = ? ORDER BY seq", (item_id,))
         ]
+        return item
+
+    def _load_item_full(self, item_id: str) -> dict[str, Any]:
+        item = self._load_item_plan(item_id)
         item["preserves"] = [
             r["behavior"]
             for r in self.connection.execute(
@@ -1119,20 +1127,17 @@ class TodoTracker:
         ]
         return item
 
+    def get_item(self, item_id: str) -> dict[str, Any]:
+        return self._load_item_full(item_id)
+
     def work_order(self, item_id: str) -> dict[str, Any]:
         item = self.get_item(item_id)
+        done_wids = {unit["wid"] for unit in item["work"] if unit["status"] == "done"}
         ready, blocked = [], []
         for unit in item["work"]:
             if unit["status"] == "done":
                 continue
-            unmet = [
-                row["needs_wid"]
-                for row in self.connection.execute(
-                    "SELECT n.needs_wid FROM work_needs n JOIN work_units u ON u.item_id = n.item_id AND u.wid = n.needs_wid "
-                    "WHERE n.item_id = ? AND n.wid = ? AND u.status != 'done'",
-                    (item_id, unit["wid"]),
-                )
-            ]
+            unmet = [need for need in unit.get("needs", []) if need not in done_wids]
             if unmet:
                 blocked.append({**unit, "unmet": unmet})
             else:
