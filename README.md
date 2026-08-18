@@ -146,9 +146,11 @@ TODO_DB_AUTH_TOKEN=... uv run todo-db \
   --wrapper
 ```
 
-`scripts/turso_acceptance.sh` exercises the full hosted lifecycle against a
-throwaway Turso database and destroys it afterwards; it requires an
-authenticated `turso` CLI and costs real resources.
+`scripts/turso_acceptance.sh` runs an opt-in, real-primary, two-connection
+one-winner claim race against a throwaway Turso database and destroys it
+afterwards. Exit 77 means the test did not run and is not certification.
+Commit-outcome fault behavior remains unmeasured, so agent mutations on hosted
+Turso are experimental rather than certified.
 
 ## Findings
 
@@ -243,8 +245,13 @@ database those commands are written by other actors, so running one locally
 is a lateral code-execution channel across the trust boundary between
 writers. Against a hosted backend `verify --run` therefore refuses (exit 2)
 unless `TODO_DB_ALLOW_HOSTED_VERIFY_RUN=1` is set; inspect the command first
-with `todo-db verify <id>`, then opt in per invocation. Local databases are
-unaffected.
+with `todo-db verify <id>`, then opt in per invocation. Agent model finish never
+executes stored commands. Human `agent finish --run-verifications` previews and
+runs each rung exactly once, then binds the passing ladder to a deterministic
+Git workspace fingerprint. Verification subprocesses receive a small
+environment allowlist; extra names require explicit
+`TODO_DB_VERIFY_ENV_PASSTHROUGH`. This reduces ambient-secret exposure but is
+not a sandbox: an approved command still has the caller's filesystem access.
 
 Signed export manifests are available through `todo_db.sign_export()` and
 `todo_db.verify_signed_export()`. Keep the signing key outside the database;

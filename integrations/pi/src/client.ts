@@ -1,4 +1,5 @@
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import { spawn } from "node:child_process";
 
@@ -6,44 +7,49 @@ export interface ExecResult {
   exitCode: number;
   stdout: string;
   stderr: string;
+  stdoutTruncated: boolean;
+  stderrTruncated: boolean;
 }
 
 export function findProjectRoot(startDir: string): string | null {
   let probe = path.resolve(startDir);
   const home = process.env.HOME ? path.resolve(process.env.HOME) : null;
-
   while (true) {
     const configPath = path.join(probe, ".todo-db", "config.json");
     if (fs.existsSync(configPath)) {
-      return probe;
-    }
-    const gitPath = path.join(probe, ".git");
-    const isGit = fs.existsSync(gitPath);
-
-    const parent = path.dirname(probe);
-    if (parent === probe || isGit || (home && probe === home)) {
-      if (fs.existsSync(configPath)) {
-        return probe;
+      try {
+        const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+        if (typeof config.project_id === "string" && typeof config.repository === "string") return probe;
+      } catch {
+        return null;
       }
-      break;
     }
+    const atBoundary = fs.existsSync(path.join(probe, ".git"));
+    const parent = path.dirname(probe);
+    if (parent === probe || atBoundary || (home && probe === home)) break;
     probe = parent;
   }
   return null;
 }
 
+export function stablePrincipal(): string {
+  const configured = process.env.TODO_DB_PI_PRINCIPAL?.trim();
+  if (configured) return configured;
+  return `pi:${process.env.USER || process.env.LOGNAME || "user"}@${os.hostname()}`;
+}
+
+export function agentArgs(args: string[]): string[] {
+  return ["--actor", stablePrincipal(), "agent", ...args];
+}
+
 export function getSanitizedEnv(): NodeJS.ProcessEnv {
-  const env = { ...process.env };
-  const hostileKeys = [
-    "DYLD_INSERT_LIBRARIES",
-    "DYLD_LIBRARY_PATH",
-    "LD_PRELOAD",
-    "LD_LIBRARY_PATH",
-  ];
-  for (const key of hostileKeys) {
-    delete env[key];
-  }
-  return env;
+  const allowed = new Set([
+    "CI", "COLORTERM", "HOME", "LANG", "LC_ALL", "LOGNAME", "NO_COLOR", "PATH", "SHELL", "TERM",
+    "TMPDIR", "USER", "UV_CACHE_DIR", "VIRTUAL_ENV", "TODO_DB_AUTH_TOKEN", "TODO_DB_RO_AUTH_TOKEN",
+    "TODO_DB_URL", "TODO_DB_PATH", "TODO_DB_CONFIG", "TODO_DB_TOOL", "TODO_DB_PROJECT_ID",
+    "TODO_DB_REPOSITORY", "TODO_DB_PI_PRINCIPAL",
+  ]);
+  return Object.fromEntries(Object.entries(process.env).filter(([key]) => allowed.has(key)));
 }
 
 export function resolveWrapperPath(projectRoot: string): string | null {
@@ -52,102 +58,84 @@ export function resolveWrapperPath(projectRoot: string): string | null {
     path.join(projectRoot, "scripts", "todo"),
     path.join(projectRoot, "todo"),
   ];
-
   const configPath = path.join(projectRoot, ".todo-db", "config.json");
-  if (fs.existsSync(configPath)) {
-    try {
-      const cfg = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-      if (cfg.wrapper) {
-        candidates.unshift(path.resolve(projectRoot, cfg.wrapper));
-      }
-    } catch {
-      // Ignore JSON parse errors in config
-    }
+  try {
+    const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+    if (typeof config.wrapper === "string") candidates.unshift(path.resolve(projectRoot, config.wrapper));
+  } catch {
+    return null;
   }
-
-  for (const cand of candidates) {
-    if (fs.existsSync(cand)) {
-      try {
-        fs.accessSync(cand, fs.constants.X_OK);
-        return cand;
-      } catch {
-        // Not executable
-      }
+  for (const candidate of candidates) {
+    try {
+      fs.accessSync(candidate, fs.constants.X_OK);
+      return candidate;
+    } catch {
+      // Continue to the next fixed candidate.
     }
   }
   return null;
 }
 
+function appendBounded(chunks: Buffer[], chunk: Buffer, used: number, cap: number): number {
+  const remaining = cap - used;
+  if (remaining > 0) chunks.push(chunk.subarray(0, remaining));
+  return used + chunk.length;
+}
+
 export async function runTodoDb(
   projectRoot: string,
   args: string[],
-  options?: { timeoutMs?: number; signal?: AbortSignal; envOverride?: NodeJS.ProcessEnv }
+  options?: { timeoutMs?: number; signal?: AbortSignal; envOverride?: NodeJS.ProcessEnv; byteCap?: number }
 ): Promise<ExecResult> {
   const timeoutMs = options?.timeoutMs ?? 30000;
+  const byteCap = options?.byteCap ?? 64 * 1024;
   const wrapper = resolveWrapperPath(projectRoot);
-  const cmd = wrapper || "todo-db";
-  const cmdArgs = args;
-
+  const command = wrapper || "todo-db";
   return new Promise<ExecResult>((resolve, reject) => {
     let completed = false;
-    const env = options?.envOverride ?? getSanitizedEnv();
-    const proc = spawn(cmd, cmdArgs, {
+    const processHandle = spawn(command, args, {
       cwd: projectRoot,
-      env,
+      env: options?.envOverride ?? getSanitizedEnv(),
       shell: false,
       signal: options?.signal,
     });
-
-    let stdout = "";
-    let stderr = "";
-    const byteCap = 64 * 1024;
-
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
+    let stdoutBytes = 0;
+    let stderrBytes = 0;
     const timer = setTimeout(() => {
-      if (!completed) {
-        proc.kill("SIGTERM");
-        const killTimer = setTimeout(() => {
-          if (!completed) {
-            proc.kill("SIGKILL");
-          }
-        }, 2000);
-        killTimer.unref();
-        completed = true;
-        reject(new Error(`Command timed out after ${timeoutMs}ms: ${cmd} ${cmdArgs.join(" ")}`));
-      }
+      if (completed) return;
+      completed = true;
+      processHandle.kill("SIGTERM");
+      const killTimer = setTimeout(() => processHandle.kill("SIGKILL"), 2000);
+      killTimer.unref();
+      reject(new Error(`Command timed out after ${timeoutMs}ms: ${command}`));
     }, timeoutMs);
 
-    proc.stdout?.on("data", (chunk: Buffer) => {
-      const currentBytes = Buffer.byteLength(stdout, "utf-8");
-      if (currentBytes < byteCap) {
-        stdout += chunk.toString("utf-8");
-      }
+    processHandle.stdout?.on("data", (chunk: Buffer) => {
+      stdoutBytes = appendBounded(stdoutChunks, chunk, stdoutBytes, byteCap);
     });
-
-    proc.stderr?.on("data", (chunk: Buffer) => {
-      const currentBytes = Buffer.byteLength(stderr, "utf-8");
-      if (currentBytes < byteCap) {
-        stderr += chunk.toString("utf-8");
-      }
+    processHandle.stderr?.on("data", (chunk: Buffer) => {
+      stderrBytes = appendBounded(stderrChunks, chunk, stderrBytes, byteCap);
     });
-
-    proc.on("error", (err) => {
+    processHandle.on("error", (error) => {
       if (!completed) {
         completed = true;
         clearTimeout(timer);
-        reject(err);
+        reject(error);
       }
     });
-
-    proc.on("close", (code) => {
-      if (!completed) {
-        completed = true;
-        clearTimeout(timer);
-        resolve({
-          exitCode: code ?? 0,
-          stdout: stdout.trim(),
-          stderr: stderr.trim(),
-        });
-      }
+    processHandle.on("close", (code) => {
+      if (completed) return;
+      completed = true;
+      clearTimeout(timer);
+      resolve({
+        exitCode: code ?? 1,
+        stdout: Buffer.concat(stdoutChunks).toString("utf8").trim(),
+        stderr: Buffer.concat(stderrChunks).toString("utf8").trim(),
+        stdoutTruncated: stdoutBytes > byteCap,
+        stderrTruncated: stderrBytes > byteCap,
+      });
     });
   });
 }

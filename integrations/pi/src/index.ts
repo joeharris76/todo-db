@@ -1,82 +1,82 @@
-import { executeTodoDbTool, todoDbToolSchema } from "./tool.js";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { agentArgs, findProjectRoot, runTodoDb } from "./client.js";
 import { renderToolResult } from "./render.js";
-import { findProjectRoot, runTodoDb } from "./client.js";
+import { executeTodoDbTool, todoDbToolSchema } from "./tool.js";
 import { TodoPanelComponent, updateTodoStatusWidget } from "./ui.js";
-import type { ExtensionAPI, ExtensionContext } from "./types.js";
 
 export default function (pi: ExtensionAPI): void {
-  // 1. Session Lifecycle hooks
+  let toolRegistered = false;
+  const registerToolIfTrusted = (ctx: Parameters<typeof updateTodoStatusWidget>[0]) => {
+    if (toolRegistered || !ctx.isProjectTrusted() || !findProjectRoot(ctx.cwd)) return;
+    toolRegistered = true;
+    pi.registerTool({
+      name: "todo_db",
+      label: "Todo Database",
+      description: "Use one bounded, claim-coordinated todo-db workflow tool. Finish never executes stored shell commands.",
+      parameters: todoDbToolSchema,
+      async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+        const result = await executeTodoDbTool(params, ctx, signal);
+        if (["take", "progress", "finish", "release"].includes(params.action) && !result.isError) {
+          await updateTodoStatusWidget(ctx);
+        }
+        return result;
+      },
+      renderResult(result, options, theme) {
+        const lines = renderToolResult(result, options, theme);
+        return { render: () => lines, invalidate: () => {} };
+      },
+    });
+  };
+
   pi.on("session_start", async (_event, ctx) => {
+    registerToolIfTrusted(ctx);
     await updateTodoStatusWidget(ctx);
   });
-
-  pi.on("session_switch", async (_event, ctx) => {
+  pi.on("session_before_switch", async (_event, ctx) => {
     ctx.ui.setStatus("todo-db", undefined);
     ctx.ui.setWidget("todo-db", undefined);
-    await updateTodoStatusWidget(ctx);
   });
-
-  pi.on("session_fork", async (_event, ctx) => {
-    await updateTodoStatusWidget(ctx);
+  pi.on("session_before_fork", async (_event, ctx) => {
+    ctx.ui.setStatus("todo-db", undefined);
+    ctx.ui.setWidget("todo-db", undefined);
   });
-
   pi.on("session_shutdown", async (_event, ctx) => {
     ctx.ui.setStatus("todo-db", undefined);
     ctx.ui.setWidget("todo-db", undefined);
   });
 
-  // 2. Register the single todo_db tool
-  pi.registerTool({
-    name: "todo_db",
-    label: "Todo Database",
-    description:
-      "Manage project lifecycle and task execution with todo-db. " +
-      "Actions: 'next' (inspect next work), 'take' (claim ready item), " +
-      "'context' (get bounded task projection), 'progress' (complete work unit), " +
-      "'finish' (complete item with model assertion), 'claims' (list active claims), 'release' (release claim).",
-    parameters: todoDbToolSchema,
-    async execute(toolCallId, params, signal, _onUpdate, ctx) {
-      const result = await executeTodoDbTool(params, ctx, signal);
-      const isMutation = ["take", "progress", "finish", "adopt", "release"].includes(params.action);
-      if (ctx && isMutation && !result.isError) {
-        await updateTodoStatusWidget(ctx);
-      }
-      return result;
-    },
-    renderResult(result, options, theme) {
-      return renderToolResult(result, options, theme);
-    },
-  });
-
-  // 3. Register user command /todo-db
   pi.registerCommand("todo-db", {
-    description: "Open interactive todo-db status panel",
-    handler: async (_args, ctx: ExtensionContext) => {
-      const projectRoot = findProjectRoot(ctx.cwd);
-      if (!projectRoot) {
-        ctx.ui.notify("No .todo-db project found in repository", "warning");
+    description: "Open the read-only todo-db status panel",
+    handler: async (_args, ctx: ExtensionCommandContext) => {
+      if (!ctx.isProjectTrusted()) {
+        ctx.ui.notify("todo-db is disabled until this project is trusted", "warning");
         return;
       }
-
-      const res = await runTodoDb(projectRoot, ["agent", "next"]);
+      if (ctx.mode !== "tui") {
+        ctx.ui.notify("/todo-db panel is available only in TUI mode", "warning");
+        return;
+      }
+      const projectRoot = findProjectRoot(ctx.cwd);
+      if (!projectRoot) {
+        ctx.ui.notify("No valid .todo-db project found", "warning");
+        return;
+      }
+      const result = await runTodoDb(projectRoot, agentArgs(["next"]));
       let data: any = { status: "idle" };
-      if (res.exitCode === 0) {
+      if (result.exitCode === 0 && !result.stdoutTruncated) {
         try {
-          data = JSON.parse(res.stdout);
+          data = JSON.parse(result.stdout);
           if (data.status === "claimed" && data.item) {
-            const ctxRes = await runTodoDb(projectRoot, ["agent", "context", data.item.id]);
-            if (ctxRes.exitCode === 0) {
-              data = JSON.parse(ctxRes.stdout);
-            }
+            const contextResult = await runTodoDb(projectRoot, agentArgs(["context", data.item.id, "--limit", "20"]));
+            if (contextResult.exitCode === 0 && !contextResult.stdoutTruncated) data = JSON.parse(contextResult.stdout);
           }
         } catch {
-          data = { output: res.stdout };
+          data = { status: "error", error: "Invalid todo-db protocol output" };
         }
       }
-
-      await ctx.ui.custom((theme: any, onClose: () => void) => {
-        return new TodoPanelComponent(data, theme, onClose);
-      });
+      await ctx.ui.custom((_tui, theme, _keybindings, done) =>
+        new TodoPanelComponent(data, theme, () => done(undefined))
+      );
     },
   });
 }

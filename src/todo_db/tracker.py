@@ -338,28 +338,34 @@ def _uv_project_missing_pytest(command: str) -> str | None:
 
 
 def _sanitized_verify_env() -> dict[str, str]:
-    base_env = dict(os.environ)
-    sensitive_keys = {
-        "TODO_DB_AUTH_TOKEN",
-        "TODO_DB_RO_AUTH_TOKEN",
-        "TODO_DB_URL",
-        "TODO_DB_CONFIG",
-        "TODO_DB_TOOL",
-        "AWS_SECRET_ACCESS_KEY",
-        "GITHUB_TOKEN",
-        "TURSO_AUTH_TOKEN",
-        "DYLD_INSERT_LIBRARIES",
-        "LD_PRELOAD",
+    """Build a small verification environment; this reduces ambient exposure, not command authority."""
+    safe_keys = {
+        "CI",
+        "COLORTERM",
+        "HOME",
+        "LANG",
+        "LC_ALL",
+        "LOGNAME",
+        "NO_COLOR",
+        "PATH",
+        "PYTHONPATH",
+        "SHELL",
+        "TERM",
+        "TMPDIR",
+        "USER",
+        "UV_CACHE_DIR",
+        "VIRTUAL_ENV",
     }
     passthrough = {
-        v.strip()
-        for v in os.environ.get("TODO_DB_VERIFY_ENV_PASSTHROUGH", "").split(",")
-        if v.strip()
+        value.strip()
+        for value in os.environ.get("TODO_DB_VERIFY_ENV_PASSTHROUGH", "").split(",")
+        if value.strip()
     }
-    for key in list(base_env.keys()):
-        if key in sensitive_keys and key not in passthrough:
-            del base_env[key]
-    return base_env
+    return {
+        key: value
+        for key, value in os.environ.items()
+        if key in safe_keys or key in passthrough
+    }
 
 
 class TodoTracker:
@@ -1370,7 +1376,7 @@ class TodoTracker:
         if session:
             event_detail["session"] = session
         if token:
-            event_detail["claim_token"] = token
+            event_detail["claim_generation"] = "rotated"
         self._event("claim", item_id, event_detail)
         return self.work_order(item_id)
 
@@ -1396,18 +1402,21 @@ class TodoTracker:
                 git_baseline=git_baseline,
             )
 
-    def release(self, item_id: str) -> None:
+    def release(self, item_id: str, *, claim_token: str | None = None, require_claim_token: bool = False) -> None:
         with self.database.transaction():
             item = self._require_item(item_id)
             if item["claimed_by"] is None:
                 return
             if item["claimed_by"] != self.actor:
                 raise TodoError(f"{item_id!r} is claimed by {item['claimed_by']!r}; only the holder can release")
+            current_token = item["claim_token"] if "claim_token" in item.keys() else None
+            if require_claim_token and current_token and claim_token != current_token:
+                raise TodoError(f"claim token mismatch on {item_id!r}: E_CLAIM_STALE", code="E_CLAIM_STALE")
             self.connection.execute(
                 "UPDATE items SET claimed_by = NULL, claimed_at = NULL, claimed_session = NULL, "
                 "claim_token = NULL, claimed_branch = NULL, claimed_worktree = NULL, git_baseline = NULL "
-                "WHERE id = ? AND claimed_by = ?",
-                (item_id, self.actor),
+                "WHERE id = ? AND claimed_by = ? AND claim_token IS ?",
+                (item_id, self.actor, current_token),
             )
             if self.connection.execute("SELECT changes() AS n").fetchone()["n"] != 1:
                 raise TodoError(f"{item_id!r} was released or claimed concurrently")
@@ -1513,10 +1522,33 @@ class TodoTracker:
     def _completion_verifications(self, item_id: str) -> list[Any]:
         return list(
             self.connection.execute(
-                "SELECT seq, command, expected, last_run, last_result FROM verifications WHERE item_id = ? ORDER BY seq",
+                "SELECT seq, command, expected, last_run, last_result, workspace_fingerprint "
+                "FROM verifications WHERE item_id = ? ORDER BY seq",
                 (item_id,),
             )
         )
+
+    def attest_verifications(self, item_id: str, workspace_fingerprint: str) -> None:
+        """Bind a fully passing ladder to one final workspace state."""
+        if not workspace_fingerprint:
+            raise TodoError("workspace fingerprint is required for verification attestation")
+        with self.database.transaction():
+            rows = self._completion_verifications(item_id)
+            failed = [row["seq"] for row in rows if row["last_result"] != "pass" or not row["last_run"]]
+            if failed:
+                raise TodoError(
+                    f"cannot attest {item_id!r}: verification results are not passing: {', '.join(map(str, failed))}",
+                    code=E_VERIFY_GATE,
+                )
+            self.connection.execute(
+                "UPDATE verifications SET workspace_fingerprint = ? WHERE item_id = ?",
+                (workspace_fingerprint, item_id),
+            )
+            self._event(
+                "verify_attest",
+                item_id,
+                {"sequences": [row["seq"] for row in rows], "workspace_fingerprint": workspace_fingerprint},
+            )
 
     def _validate_completion_state(self, item_id: str) -> Any:
         item = self._require_item(item_id)
@@ -1549,25 +1581,46 @@ class TodoTracker:
         *,
         verification_override_reason: str | None = None,
         model_assert: bool = False,
+        verified_workspace_fingerprint: str | None = None,
+        expected_claimed_by: str | None = None,
+        expected_claim_token: str | None = None,
+        enforce_claim_generation: bool = False,
     ) -> None:
         override_reason = verification_override_reason.strip() if verification_override_reason is not None else None
         if verification_override_reason is not None and not override_reason:
             raise TodoError("verification override reason must not be empty")
 
+        def validate_claim(item: Any) -> None:
+            if expected_claimed_by is not None and item["claimed_by"] != expected_claimed_by:
+                raise TodoError(f"claim holder changed on {item_id!r}: E_CLAIM_STALE", code="E_CLAIM_STALE")
+            if enforce_claim_generation and item["claim_token"] != expected_claim_token:
+                raise TodoError(f"claim token changed on {item_id!r}: E_CLAIM_STALE", code="E_CLAIM_STALE")
+
         with self.database.transaction():
-            self._validate_completion_state(item_id)
+            initial_item = self._validate_completion_state(item_id)
+            validate_claim(initial_item)
             initial_verifications = self._completion_verifications(item_id)
         verification_definition = [(row["seq"], row["command"], row["expected"]) for row in initial_verifications]
 
         if override_reason is None:
-            if model_assert:
+            if verified_workspace_fingerprint is not None:
                 for row in initial_verifications:
-                    if row["last_result"] != "pass" or not row["last_run"]:
+                    if (
+                        row["last_result"] != "pass"
+                        or not row["last_run"]
+                        or row["workspace_fingerprint"] != verified_workspace_fingerprint
+                    ):
                         raise TodoError(
-                            f"cannot complete {item_id!r}: verifications not passed: seq={row['seq']} not passing or unexecuted; "
-                            f"run `todo-db verify {item_id}`",
+                            f"cannot complete {item_id!r}: verification seq={row['seq']} is not attested "
+                            "to the current workspace; run `todo agent finish "
+                            f"{item_id} --run-verifications` after reviewing the commands",
                             code=E_VERIFY_GATE,
                         )
+            elif model_assert:
+                raise TodoError(
+                    f"cannot complete {item_id!r}: model assertion requires a current workspace fingerprint",
+                    code=E_VERIFY_GATE,
+                )
             else:
                 for seq, _command, _expected in verification_definition:
                     result, _output = self.run_verification(item_id, seq)
@@ -1583,6 +1636,7 @@ class TodoTracker:
         with self.database.transaction():
             self.database.verify_audit()
             item = self._validate_completion_state(item_id)
+            validate_claim(item)
             current_verifications = self._completion_verifications(item_id)
             current_definition = [(row["seq"], row["command"], row["expected"]) for row in current_verifications]
             if current_definition != verification_definition:
@@ -1597,6 +1651,18 @@ class TodoTracker:
                         f"{', '.join(map(str, failed))}",
                         code=E_VERIFY_GATE,
                     )
+                if verified_workspace_fingerprint is not None:
+                    stale = [
+                        row["seq"]
+                        for row in current_verifications
+                        if row["workspace_fingerprint"] != verified_workspace_fingerprint
+                    ]
+                    if stale:
+                        raise TodoError(
+                            f"cannot complete {item_id!r}: verification attestation changed: "
+                            f"{', '.join(map(str, stale))}",
+                            code=E_VERIFY_GATE,
+                        )
             self._transition(item, "done")
             self.connection.execute(
                 "UPDATE items SET completed_at = ?, completed_pr = ?, claimed_by = NULL, claimed_at = NULL, "
@@ -1655,11 +1721,23 @@ class TodoTracker:
             self.connection.execute("UPDATE items SET blocked_reason = NULL WHERE id = ?", (item_id,))
             self._event("unblock", item_id)
 
-    def rebaseline_scope(self, item_id: str, new_baseline: str, reason: str) -> None:
+    def rebaseline_scope(
+        self,
+        item_id: str,
+        new_baseline: str,
+        reason: str,
+        *,
+        claim_token: str | None = None,
+    ) -> None:
         if not reason.strip():
             raise TodoError("rebaseline reason is required")
         with self.database.transaction():
             item = self._require_item(item_id)
+            if item["claimed_by"] != self.actor:
+                raise TodoError(f"{item_id!r} is not claimed by actor {self.actor!r}")
+            current_token = item["claim_token"] if "claim_token" in item.keys() else None
+            if current_token and claim_token != current_token:
+                raise TodoError(f"claim token mismatch on {item_id!r}: E_CLAIM_STALE", code="E_CLAIM_STALE")
             old_baseline = item["git_baseline"] if "git_baseline" in item.keys() else None
             self.connection.execute("UPDATE items SET git_baseline = ? WHERE id = ?", (new_baseline, item_id))
             self._event(
@@ -1824,7 +1902,7 @@ class TodoTracker:
         item = self.get_item(item_id)
         return self.lint_item(item)
 
-    def run_verification(self, item_id: str, seq: int) -> tuple[str, str]:
+    def run_verification(self, item_id: str, seq: int, *, cwd: Path | None = None) -> tuple[str, str]:
         if self.database.is_hosted and os.environ.get("TODO_DB_ALLOW_HOSTED_VERIFY_RUN") != "1":
             raise TodoError(
                 "refusing to execute a stored verification command from a hosted database: "
@@ -1846,6 +1924,7 @@ class TodoTracker:
             capture_output=True,
             text=True,
             env=_sanitized_verify_env(),
+            cwd=cwd,
             check=False,
         )
         output = (proc.stdout or "") + (proc.stderr or "")
@@ -1858,6 +1937,10 @@ class TodoTracker:
             output = f"{head}\n... [truncated: {omitted} bytes omitted] ...\n{tail}"
         result = "pass" if proc.returncode == 0 else "fail"
         with self.database.transaction():
+            self.connection.execute(
+                "UPDATE verifications SET workspace_fingerprint = NULL WHERE item_id = ?",
+                (item_id,),
+            )
             self.connection.execute(
                 "UPDATE verifications SET last_run = ?, last_result = ? WHERE item_id = ? AND seq = ?",
                 (utc_now(), result, item_id, seq),

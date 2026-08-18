@@ -1,9 +1,9 @@
-import type { Theme } from "./types.js";
+import type { ThemeLike } from "./types.js";
 
 export function renderToolResult(
   result: any,
   options: { expanded: boolean; isPartial: boolean },
-  theme: Theme
+  theme: ThemeLike
 ): string[] {
   const details = result.details || {};
   const lines: string[] = [];

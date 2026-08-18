@@ -1,205 +1,98 @@
-import { findProjectRoot, runTodoDb } from "./client.js";
+import { Type } from "typebox";
+import { agentArgs, findProjectRoot, runTodoDb } from "./client.js";
 import { SerializedQueue } from "./queue.js";
 import type { ExtensionContext, TodoDBParams } from "./types.js";
 
-export const todoDbToolSchema = {
-  type: "object",
-  properties: {
-    action: {
-      type: "string",
-      enum: ["next", "take", "context", "progress", "finish", "claims", "adopt", "release"],
-      description: "Lifecycle action to perform",
-    },
-    id: {
-      type: "string",
-      description: "Target item identifier",
-    },
-    wid: {
-      type: "string",
-      description: "Work unit identifier (e.g. w0)",
-    },
-    evidence: {
-      type: "string",
-      description: "Evidence of completed work unit (required for progress)",
-    },
-    notes: {
-      type: "string",
-      description: "Optional notes for work unit progress",
-    },
-    claim_token: {
-      type: "string",
-      description: "Claim generation token",
-    },
-    fields: {
-      type: "string",
-      description: "Comma-separated list of fields to project for context",
-    },
-    unit_limit: {
-      type: "number",
-      description: "Max work units to return in context",
-    },
-    session: {
-      type: "string",
-      description: "Session identifier for claim adoption",
-    },
-    model_assert: {
-      type: "boolean",
-      description: "Assert verifications passed for model finish (no shell commands executed)",
-    },
-    pr: {
-      type: "number",
-      description: "Pull request number upon completion",
-    },
-  },
-  required: ["action"],
-  additionalProperties: false,
-};
+const Section = Type.Union([
+  Type.Literal("work_units"), Type.Literal("scope"), Type.Literal("preserves"), Type.Literal("anti_patterns"),
+  Type.Literal("verifications"), Type.Literal("item_dependencies"), Type.Literal("open_deferrals"), Type.Literal("prior_art"),
+]);
+
+export const todoDbToolSchema = Type.Object({
+  action: Type.Union([
+    Type.Literal("next"), Type.Literal("take"), Type.Literal("context"),
+    Type.Literal("progress"), Type.Literal("finish"), Type.Literal("release"),
+  ], { description: "Lifecycle action" }),
+  id: Type.Optional(Type.String({ description: "Target item identifier" })),
+  wid: Type.Optional(Type.String({ description: "Work unit identifier" })),
+  evidence: Type.Optional(Type.String({ description: "Evidence for progress" })),
+  notes: Type.Optional(Type.String({ description: "Optional progress notes" })),
+  claim_token: Type.Optional(Type.String({ description: "Current claim generation token" })),
+  fields: Type.Optional(Type.String({ description: "Comma-separated context fields" })),
+  section: Type.Optional(Section),
+  cursor: Type.Optional(Type.Integer({ minimum: 0 })),
+  limit: Type.Optional(Type.Integer({ minimum: 0, maximum: 100 })),
+  pr: Type.Optional(Type.Integer({ minimum: 1 })),
+}, { additionalProperties: false });
 
 const mutationQueue = new SerializedQueue();
+
+function toolError(code: string, error: string): any {
+  const details = { code, error };
+  return { content: [{ type: "text", text: JSON.stringify(details) }], details, isError: true };
+}
 
 export async function executeTodoDbTool(
   params: TodoDBParams,
   ctx?: ExtensionContext,
   signal?: AbortSignal
 ): Promise<any> {
-  const cwd = ctx?.cwd || process.cwd();
-  const projectRoot = findProjectRoot(cwd);
-
-  if (!projectRoot) {
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify(
-            {
-              error: "No .todo-db project boundary discovered in repository. Run todo-db init-project first.",
-              code: "E_NO_PROJECT",
-            },
-            null,
-            2
-          ),
-        },
-      ],
-      details: { error: "E_NO_PROJECT" },
-    };
-  }
-
-  const isMutation = ["take", "progress", "finish", "adopt", "release"].includes(params.action);
+  if (!ctx?.isProjectTrusted()) return toolError("E_UNTRUSTED_PROJECT", "todo-db is disabled until this project is trusted");
+  const projectRoot = findProjectRoot(ctx.cwd);
+  if (!projectRoot) return toolError("E_NO_PROJECT", "No valid .todo-db project boundary was discovered");
+  const isMutation = ["take", "progress", "finish", "release"].includes(params.action);
 
   const runAction = async () => {
-    const cliArgs: string[] = ["agent", params.action];
-
-    if (params.action === "next") {
-      // no id argument
-    } else if (params.action === "take") {
-      if (params.id) cliArgs.push(params.id);
-      if (params.session || ctx?.session?.id) {
-        cliArgs.push("--session", params.session || ctx!.session!.id);
-      }
-      if (params.worktree) cliArgs.push("--worktree", params.worktree);
-      if (params.branch) cliArgs.push("--branch", params.branch);
+    const args: string[] = [params.action];
+    if (params.action === "take") {
+      if (params.id) args.push(params.id);
+      args.push("--session", ctx.sessionManager.getSessionId());
     } else if (params.action === "context") {
-      if (!params.id) {
-        return {
-          content: [{ type: "text", text: JSON.stringify({ error: "id is required for context action" }, null, 2) }],
-          details: { error: "id is required for context action" },
-          isError: true,
-        };
-      }
-      cliArgs.push(params.id);
-      if (params.fields) cliArgs.push("--fields", params.fields);
-      if (params.unit_limit !== undefined) cliArgs.push("--unit-limit", String(params.unit_limit));
+      if (!params.id) return toolError("E_ARGUMENT", "id is required for context");
+      args.push(params.id);
+      if (params.fields) args.push("--fields", params.fields);
+      if (params.section) args.push("--section", params.section);
+      if (params.cursor !== undefined) args.push("--cursor", String(params.cursor));
+      if (params.limit !== undefined) args.push("--limit", String(params.limit));
     } else if (params.action === "progress") {
-      if (!params.id || !params.wid || !params.evidence) {
-        return {
-          content: [{ type: "text", text: JSON.stringify({ error: "id, wid, and evidence are required for progress action" }, null, 2) }],
-          details: { error: "id, wid, and evidence are required for progress action" },
-          isError: true,
-        };
+      if (!params.id || !params.wid || !params.evidence || !params.claim_token) {
+        return toolError("E_ARGUMENT", "id, wid, evidence, and claim_token are required for progress");
       }
-      cliArgs.push(params.id, params.wid, "--evidence", params.evidence);
-      if (params.claim_token) cliArgs.push("--claim-token", params.claim_token);
-      if (params.notes) cliArgs.push("--notes", params.notes);
+      args.push(params.id, params.wid, "--evidence", params.evidence, "--claim-token", params.claim_token);
+      if (params.notes) args.push("--notes", params.notes);
     } else if (params.action === "finish") {
-      if (!params.id) {
-        return {
-          content: [{ type: "text", text: JSON.stringify({ error: "id is required for finish action" }, null, 2) }],
-          details: { error: "id is required for finish action" },
-          isError: true,
-        };
-      }
-      cliArgs.push(params.id);
-      if (params.claim_token) cliArgs.push("--claim-token", params.claim_token);
-      if (params.run_verifications) {
-        cliArgs.push("--run-verifications");
-      } else {
-        cliArgs.push("--model-assert");
-      }
-      if (params.pr !== undefined) cliArgs.push("--pr", String(params.pr));
-      if (params.override_verifications) cliArgs.push("--override-verifications", params.override_verifications);
-    } else if (params.action === "claims") {
-      // no id argument
-    } else if (params.action === "adopt") {
-      if (!params.id) {
-        return {
-          content: [{ type: "text", text: JSON.stringify({ error: "id is required for adopt action" }, null, 2) }],
-          details: { error: "id is required for adopt action" },
-          isError: true,
-        };
-      }
-      const session = params.session || ctx?.session?.id || "default";
-      cliArgs.push(params.id, "--session", session);
+      if (!params.id || !params.claim_token) return toolError("E_ARGUMENT", "id and claim_token are required for finish");
+      args.push(params.id, "--claim-token", params.claim_token, "--model-assert");
+      if (params.pr !== undefined) args.push("--pr", String(params.pr));
     } else if (params.action === "release") {
-      if (!params.id) {
-        return {
-          content: [{ type: "text", text: JSON.stringify({ error: "id is required for release action" }, null, 2) }],
-          details: { error: "id is required for release action" },
-          isError: true,
-        };
-      }
-      cliArgs.push(params.id);
+      if (!params.id || !params.claim_token) return toolError("E_ARGUMENT", "id and claim_token are required for release");
+      args.push(params.id, "--claim-token", params.claim_token);
     }
 
     try {
-      const result = await runTodoDb(projectRoot, cliArgs, { signal });
+      const result = await runTodoDb(projectRoot, agentArgs(args), { signal, byteCap: 16 * 1024 });
+      if (result.stdoutTruncated || result.stderrTruncated) {
+        return toolError("E_OUTPUT_TRUNCATED", "todo-db exceeded the bounded adapter output; request a smaller page");
+      }
       if (result.exitCode === 0) {
-        let parsed: any;
         try {
-          parsed = JSON.parse(result.stdout);
+          const details = JSON.parse(result.stdout);
+          return { content: [{ type: "text", text: JSON.stringify(details) }], details };
         } catch {
-          parsed = { output: result.stdout };
+          return toolError("E_PROTOCOL", "todo-db returned non-JSON output");
         }
-        return {
-          content: [{ type: "text", text: result.stdout || JSON.stringify(parsed, null, 2) }],
-          details: parsed,
-        };
       }
-
-      let errorObj: any;
       try {
-        errorObj = JSON.parse(result.stderr || result.stdout);
+        const details = JSON.parse(result.stderr || result.stdout);
+        const gate = result.exitCode === 1;
+        return { content: [{ type: "text", text: JSON.stringify(details) }], details, isError: !gate };
       } catch {
-        errorObj = {
-          error: result.stderr || result.stdout,
-          exitCode: result.exitCode,
-        };
+        return toolError("E_PROTOCOL", result.stderr || result.stdout || `todo-db exited ${result.exitCode}`);
       }
-      return {
-        content: [{ type: "text", text: JSON.stringify(errorObj, null, 2) }],
-        details: errorObj,
-        isError: true,
-      };
-    } catch (err: any) {
-      return {
-        content: [{ type: "text", text: JSON.stringify({ error: err.message }, null, 2) }],
-        details: { error: err.message },
-        isError: true,
-      };
+    } catch (error: any) {
+      return toolError("E_SUBPROCESS", error.message);
     }
   };
 
-  if (isMutation) {
-    return mutationQueue.enqueue(runAction);
-  }
-  return runAction();
+  return isMutation ? mutationQueue.enqueue(runAction) : runAction();
 }

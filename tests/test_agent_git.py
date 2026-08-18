@@ -99,9 +99,12 @@ def test_tracker_rebaseline_scope_audit_event(tmp_path: Path) -> None:
         priority="high",
         description="Testing rebaseline operation",
     )
-    tracker.claim("item-base", git_baseline="oldsha123")
+    claim = tracker.claim("item-base", git_baseline="oldsha123")
+    token = claim["claim_token"]
 
-    tracker.rebaseline_scope("item-base", new_baseline="newsha456", reason="Rebased onto main branch")
+    tracker.rebaseline_scope(
+        "item-base", new_baseline="newsha456", reason="Rebased onto main branch", claim_token=token
+    )
     item = tracker.get_item("item-base")
     assert item["git_baseline"] == "newsha456"
 

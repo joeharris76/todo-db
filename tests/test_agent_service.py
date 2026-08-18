@@ -148,11 +148,12 @@ def test_agent_workflow_progress_and_finish(tmp_path: Path) -> None:
         assert p_ctx["work_units"][0]["status"] == "done"
         assert p_ctx["next_action"]["action"] == "finish"
 
-        # Run verification step
+        # Run and attest verification against the current workspace.
         res, _ = tracker.run_verification("item-flow", 1)
         assert res == "pass"
+        tracker.attest_verifications("item-flow", workflow.git_engine.workspace_fingerprint())
 
-        # Model assert finish (verifications passed, completes)
+        # Model assert finish accepts only the matching attestation.
         fin = workflow.finish("item-flow", claim_token=token, model_assert=True)
         assert fin["status"] == "completed"
         assert tracker.get_item("item-flow")["state"] == "done"
@@ -178,7 +179,7 @@ def test_agent_workflow_finish_gates_and_remediation(tmp_path: Path) -> None:
         workflow.progress("item-gates", "w0", "Done step 0", claim_token=token)
 
         # 1. Model assert fails when verification not run / not passing
-        with pytest.raises(TodoError, match="verifications not passed"):
+        with pytest.raises(TodoError, match="not attested"):
             workflow.finish("item-gates", claim_token=token, model_assert=True)
 
         # Claim must still be held (not released on code/verification failure)
@@ -267,6 +268,147 @@ def test_adopt_rotates_token_and_refreshes_lease(tmp_path: Path) -> None:
         other_workflow = AgentWorkflow(other_tracker, repo_root=tmp_path)
         with pytest.raises(TodoError, match="not an active claim held by actor 'intruder'"):
             other_workflow.adopt("item-adopt", session="sess-evil")
+    finally:
+        db.close()
+
+
+def test_finish_runs_verification_once_and_rejects_stale_attestation(tmp_path: Path) -> None:
+    db, tracker, workflow = _setup_db(tmp_path)
+    try:
+        (tmp_path / "src").mkdir()
+        counter = tmp_path.parent / f"{tmp_path.name}-counter.txt"
+        command = (
+            f"python -c \"from pathlib import Path; p=Path(r'{counter}'); "
+            "p.write_text(str(int(p.read_text())+1) if p.exists() else '1')\""
+        )
+        tracker.create_item(
+            item_id="item-once",
+            title="Single verification execution",
+            worktree="todo-db",
+            priority="medium",
+            description="Prove finish executes the ladder exactly once",
+            work=[{"id": "w0", "summary": "Complete implementation"}],
+            scope={"only_modify": ["src/**"]},
+            verifications=[{"description": "increment", "command": command}],
+        )
+        context = workflow.take("item-once")
+        token = context["claim_token"]
+        workflow.progress("item-once", "w0", "done", claim_token=token)
+        workflow.finish("item-once", claim_token=token, run_verifications=True)
+        assert counter.read_text() == "1"
+        counter.unlink()
+
+        tracker.create_item(
+            item_id="item-mutating-check",
+            title="Reject mutating verification",
+            worktree="todo-db",
+            priority="medium",
+            description="Prevent post-check changes and second-run scope bypasses",
+            work=[{"id": "w0", "summary": "Complete implementation"}],
+            scope={"only_modify": ["src/**"]},
+            verifications=[
+                {"description": "mutates source", "command": "printf changed > src/generated.txt"}
+            ],
+        )
+        mutating = workflow.take("item-mutating-check")
+        mutating_token = mutating["claim_token"]
+        workflow.progress("item-mutating-check", "w0", "done", claim_token=mutating_token)
+        with pytest.raises(TodoError, match="modified the Git workspace"):
+            workflow.finish("item-mutating-check", claim_token=mutating_token, run_verifications=True)
+        (tmp_path / "src" / "generated.txt").unlink()
+        workflow.release("item-mutating-check", mutating_token)
+
+        tracker.create_item(
+            item_id="item-stale",
+            title="Reject stale verification",
+            worktree="todo-db",
+            priority="medium",
+            description="Prove source changes invalidate a prior verification",
+            work=[{"id": "w0", "summary": "Complete implementation"}],
+            scope={"only_modify": ["src/**"]},
+            verifications=[{"description": "pass", "command": "true"}],
+        )
+        stale = workflow.take("item-stale")
+        stale_token = stale["claim_token"]
+        workflow.progress("item-stale", "w0", "done", claim_token=stale_token)
+        tracker.run_verification("item-stale", 1)
+        tracker.attest_verifications("item-stale", workflow.git_engine.workspace_fingerprint())
+        (tmp_path / "src" / "changed.py").write_text("changed", encoding="utf-8")
+        with pytest.raises(TodoError, match="not attested"):
+            workflow.finish("item-stale", claim_token=stale_token, model_assert=True)
+    finally:
+        db.close()
+
+
+def test_claim_generation_protects_release_and_multiple_claims_fail(tmp_path: Path) -> None:
+    db, tracker, workflow = _setup_db(tmp_path)
+    try:
+        for item_id in ("claim-one", "claim-two"):
+            tracker.create_item(
+                item_id=item_id,
+                title=f"Claim item {item_id}",
+                worktree="todo-db",
+                priority="medium",
+                description="Exercise claim generation and conflict handling",
+            )
+        first = workflow.take("claim-one", session="old")
+        old_token = first["claim_token"]
+        adopted = workflow.adopt("claim-one", "new")
+        with pytest.raises(TodoError, match="E_CLAIM_STALE"):
+            workflow.release("claim-one", old_token)
+        workflow.release("claim-one", adopted["claim_token"])
+
+        tracker.claim("claim-one")
+        tracker.claim("claim-two")
+        with pytest.raises(TodoError) as exc:
+            workflow.current_claim()
+        assert exc.value.code == "E_MULTIPLE_CLAIMS"
+    finally:
+        db.close()
+
+
+def test_structural_finish_gate_releases_claim_with_remediation(tmp_path: Path) -> None:
+    db, tracker, workflow = _setup_db(tmp_path)
+    try:
+        tracker.create_item(
+            item_id="item-structural",
+            title="Malformed structural item",
+            worktree="todo-db",
+            priority="high",
+            description="Missing required scope rules for lint gate coverage",
+            work=[{"id": "w0", "summary": "Complete implementation"}],
+        )
+        context = workflow.take("item-structural")
+        token = context["claim_token"]
+        workflow.progress("item-structural", "w0", "done", claim_token=token)
+        with pytest.raises(TodoError, match="claim released; run `todo lint item-structural`"):
+            workflow.finish("item-structural", claim_token=token, model_assert=True)
+        assert tracker.get_item("item-structural")["claimed_by"] is None
+    finally:
+        db.close()
+
+
+def test_context_pagination_and_blocked_remediation(tmp_path: Path) -> None:
+    db, tracker, workflow = _setup_db(tmp_path)
+    try:
+        tracker.create_item(
+            item_id="item-pages",
+            title="Paged safety context",
+            worktree="todo-db",
+            priority="medium",
+            description="Exercise recoverable context pagination and blockers",
+            work=[{"id": f"w{i}", "summary": f"Work unit number {i}"} for i in range(3)],
+            preserves=["one", "two", "three"],
+        )
+        tracker.block("item-pages", "human decision needed")
+        first = workflow.context("item-pages", section="preserves", limit=2)
+        assert first["completeness"]["preserves"]["complete"] is False
+        assert first["completeness"]["preserves"]["next_cursor"] == 2
+        second = workflow.context("item-pages", section="preserves", cursor=2, limit=2)
+        assert second["preserves"] == ["two"]
+        assert second["completeness"]["preserves"]["complete"] is True
+        assert first["blocked_reason"] == "human decision needed"
+        assert first["next_action"]["command"] == "todo unblock item-pages"
     finally:
         db.close()
 

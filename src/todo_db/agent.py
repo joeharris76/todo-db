@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,6 +13,7 @@ from .errors import (
     E_BASE_UNREACHABLE,
     E_CLAIM_STALE,
     E_LINT_GATE,
+    E_MULTIPLE_CLAIMS,
     E_SCOPE_GATE,
     E_VERIFY_GATE,
     TodoError,
@@ -69,7 +72,7 @@ class GitScopeEngine:
         )
         if proc.returncode != 0:
             return ""
-        return proc.stdout.decode("utf-8", errors="replace")
+        return os.fsdecode(proc.stdout)
 
     def is_git_repo(self) -> bool:
         return (self.repo_root / ".git").exists()
@@ -138,21 +141,20 @@ class GitScopeEngine:
             if not parts[i]:
                 i += 1
                 continue
-            status_code = parts[i].decode("utf-8", errors="replace")
+            status_code = os.fsdecode(parts[i])
             i += 1
             if not status_code:
                 continue
-            if status_code.startswith("R") or status_code.startswith("C"):
+            if status_code.startswith(("R", "C")):
                 if i < len(parts) and parts[i]:
-                    out.add(parts[i].decode("utf-8", errors="replace"))
+                    out.add(os.fsdecode(parts[i]))
                     i += 1
                 if i < len(parts) and parts[i]:
-                    out.add(parts[i].decode("utf-8", errors="replace"))
+                    out.add(os.fsdecode(parts[i]))
                     i += 1
-            else:
-                if i < len(parts) and parts[i]:
-                    out.add(parts[i].decode("utf-8", errors="replace"))
-                    i += 1
+            elif i < len(parts) and parts[i]:
+                out.add(os.fsdecode(parts[i]))
+                i += 1
 
     def _parse_status_z(self, data: bytes, out: set[str]) -> None:
         parts = data.split(b"\x00")
@@ -165,14 +167,33 @@ class GitScopeEngine:
             i += 1
             if len(entry) < 3:
                 continue
-            status_tag = entry[:2].decode("utf-8", errors="replace")
-            path1 = entry[3:].decode("utf-8", errors="replace")
-            out.add(path1)
-            if "R" in status_tag or "C" in status_tag:
-                if i < len(parts) and parts[i]:
-                    path2 = parts[i].decode("utf-8", errors="replace")
-                    out.add(path2)
-                    i += 1
+            status_tag = os.fsdecode(entry[:2])
+            out.add(os.fsdecode(entry[3:]))
+            if ("R" in status_tag or "C" in status_tag) and i < len(parts) and parts[i]:
+                out.add(os.fsdecode(parts[i]))
+                i += 1
+
+    def workspace_fingerprint(self) -> str:
+        """Hash HEAD plus tracked/index/worktree diffs and untracked file contents."""
+        if not self.is_git_repo():
+            raise TodoError(f"not a git repository: {self.repo_root}", code=E_SCOPE_GATE)
+        digest = hashlib.sha256()
+        head = self._run_bytes(["rev-parse", "--verify", "HEAD"]) if self.capture_state().head_sha else b"<unborn>"
+        digest.update(b"HEAD\0" + head)
+        if head != b"<unborn>":
+            digest.update(b"WORKTREE\0" + self._run_bytes(["diff", "--binary", "HEAD", "--"]))
+            digest.update(b"INDEX\0" + self._run_bytes(["diff", "--cached", "--binary", "HEAD", "--"]))
+        untracked = self._run_bytes(["ls-files", "-z", "--others", "--exclude-standard", "--full-name"])
+        for raw_path in sorted(path for path in untracked.split(b"\x00") if path):
+            digest.update(b"UNTRACKED\0" + raw_path + b"\0")
+            path = self.repo_root / os.fsdecode(raw_path)
+            if path.is_symlink():
+                digest.update(b"SYMLINK\0" + os.fsencode(os.readlink(path)))
+            elif path.is_file():
+                digest.update(b"FILE\0" + path.read_bytes())
+            else:
+                digest.update(b"OTHER\0")
+        return digest.hexdigest()
 
 
 class AgentWorkflow:
@@ -185,7 +206,7 @@ class AgentWorkflow:
 
     def current_claim(self, principal: str | None = None) -> dict[str, Any] | None:
         p = principal or self.tracker.actor
-        row = self.database.connection.execute(
+        rows = self.database.connection.execute(
             """
             SELECT * FROM items
             WHERE claimed_by = ? AND state = 'active'
@@ -196,36 +217,23 @@ class AgentWorkflow:
                 WHEN 'medium' THEN 4
                 WHEN 'low' THEN 5
                 ELSE 6
-            END
-            LIMIT 1
+            END, id
+            LIMIT 2
             """,
             (p,),
-        ).fetchone()
-        if row is None:
-            return None
-        return dict(row)
+        ).fetchall()
+        if len(rows) > 1:
+            raise TodoError(
+                f"principal {p!r} holds multiple active claims; release all but one with `todo agent release <id> --claim-token <token>`",
+                code=E_MULTIPLE_CLAIMS,
+            )
+        return dict(rows[0]) if rows else None
 
     def next(self, principal: str | None = None) -> dict[str, Any]:
         claim = self.current_claim(principal)
         if claim:
             item_id = claim["id"]
-            order = self.tracker.work_order(item_id)
-            ready_units = order.get("ready_units", [])
-            if ready_units:
-                next_u = ready_units[0]
-                next_action = {
-                    "action": "progress",
-                    "item_id": item_id,
-                    "wid": next_u["wid"],
-                    "summary": next_u["summary"],
-                    "command": f"todo agent progress {item_id} {next_u['wid']} --evidence '<evidence>'",
-                }
-            else:
-                next_action = {
-                    "action": "finish",
-                    "item_id": item_id,
-                    "command": f"todo agent finish {item_id}",
-                }
+            context = self.context(item_id, fields=["work_units"])
             return {
                 "status": "claimed",
                 "item": {
@@ -234,10 +242,10 @@ class AgentWorkflow:
                     "priority": claim["priority"],
                     "worktree": claim["worktree"],
                     "claimed_at": claim["claimed_at"],
-                    "claim_token": claim.get("claim_token"),
+                    "claim_token": claim.get("claim_token") if claim.get("claimed_by") == self.tracker.actor else None,
                     "git_baseline": claim.get("git_baseline"),
                 },
-                "next_action": next_action,
+                "next_action": context["next_action"],
             }
 
         ready = self.tracker.ready_items()
@@ -267,28 +275,31 @@ class AgentWorkflow:
             },
         }
 
+    def _adopt_internal(self, item_id: str, session: str) -> None:
+        item = dict(self.tracker._require_item(item_id))
+        if item["state"] != "active" or item.get("claimed_by") != self.tracker.actor:
+            raise TodoError(
+                f"cannot adopt {item_id!r}: not an active claim held by actor {self.tracker.actor!r}; "
+                f"use `todo agent take {item_id}` instead"
+            )
+        new_token = uuid4().hex
+        now = utc_now()
+        self.database.connection.execute(
+            "UPDATE items SET claimed_session = ?, claim_token = ?, claimed_at = ? WHERE id = ? AND claimed_by = ?",
+            (session.strip(), new_token, now, item_id, self.tracker.actor),
+        )
+        self.tracker._event(
+            "adopt",
+            item_id,
+            {"session": session.strip(), "previous_session": item.get("claimed_session")},
+        )
+
     def adopt(self, item_id: str, session: str) -> dict[str, Any]:
         """Adopt an active claim for the current principal with a new session id and rotated claim token."""
         if not session or not session.strip():
             raise TodoError("session is required for claim adoption")
         with self.database.transaction():
-            item = dict(self.tracker._require_item(item_id))
-            if item["state"] != "active" or item.get("claimed_by") != self.tracker.actor:
-                raise TodoError(
-                    f"cannot adopt {item_id!r}: not an active claim held by actor {self.tracker.actor!r}; "
-                    f"use `todo agent take {item_id}` instead"
-                )
-            new_token = uuid4().hex
-            now = utc_now()
-            self.database.connection.execute(
-                "UPDATE items SET claimed_session = ?, claim_token = ?, claimed_at = ? WHERE id = ?",
-                (session.strip(), new_token, now, item_id),
-            )
-            self.tracker._event(
-                "claim",
-                item_id,
-                {"session": session.strip(), "claim_token": new_token, "adoption": True},
-            )
+            self._adopt_internal(item_id, session)
         return self.context(item_id)
 
     def take(
@@ -315,10 +326,7 @@ class AgentWorkflow:
                         f"release it first with `todo agent release {existing['id']}` before taking {item_id!r}"
                     )
                 if session and existing.get("claimed_session") != session:
-                    self.database.connection.execute(
-                        "UPDATE items SET claimed_session = ? WHERE id = ?",
-                        (session, existing["id"]),
-                    )
+                    self._adopt_internal(existing["id"], session)
                 target_id = existing["id"]
             else:
                 target_id = item_id if item_id is not None else ""
@@ -344,152 +352,209 @@ class AgentWorkflow:
         *,
         fields: list[str] | None = None,
         unit_limit: int | None = None,
+        section: str | None = None,
+        cursor: int = 0,
+        limit: int = 20,
     ) -> dict[str, Any]:
-        """Return bounded agent projection with mandatory guardrails."""
+        """Return bounded, recoverable context with mandatory planning guardrails."""
+        allowed_sections = {
+            "work_units",
+            "scope",
+            "preserves",
+            "anti_patterns",
+            "verifications",
+            "item_dependencies",
+            "open_deferrals",
+            "prior_art",
+        }
+        if section is not None and section not in allowed_sections:
+            raise TodoError(f"unknown context section {section!r}")
+        if cursor < 0 or limit < 0 or limit > 100:
+            raise TodoError("context cursor must be non-negative and limit must be between 0 and 100")
+        if unit_limit is not None:
+            if unit_limit < 0:
+                raise TodoError(f"--unit-limit must be non-negative, got {unit_limit}")
+            limit = min(unit_limit, 100)
+            section = section or "work_units"
+
         row = self.database.connection.execute("SELECT * FROM items WHERE id = ?", (item_id,)).fetchone()
         if row is None:
             raise TodoError(f"item not found: {item_id!r}")
-        item_dict = dict(row)
+        item = dict(row)
 
-        units_rows = self.database.connection.execute(
-            "SELECT wid, summary, status, evidence, notes FROM work_units WHERE item_id = ? ORDER BY wid",
-            (item_id,),
+        unit_rows = self.database.connection.execute(
+            "SELECT wid, summary, status FROM work_units WHERE item_id = ? ORDER BY wid", (item_id,)
         ).fetchall()
-        needs_rows = self.database.connection.execute(
-            "SELECT wid, needs_wid FROM work_needs WHERE item_id = ?",
-            (item_id,),
+        need_rows = self.database.connection.execute(
+            "SELECT wid, needs_wid FROM work_needs WHERE item_id = ? ORDER BY wid, needs_wid", (item_id,)
         ).fetchall()
         needs_by_wid: dict[str, list[str]] = {}
-        for r in needs_rows:
-            needs_by_wid.setdefault(r["wid"], []).append(r["needs_wid"])
-
-        done_wids = {r["wid"] for r in units_rows if r["status"] == "done"}
-        work_units: list[dict[str, Any]] = []
-        for u in units_rows:
-            w_needs = sorted(needs_by_wid.get(u["wid"], []))
-            is_ready = u["status"] != "done" and all(n in done_wids for n in w_needs)
-            work_units.append(
-                {
-                    "id": u["wid"],
-                    "summary": u["summary"],
-                    "status": u["status"],
-                    "evidence": u["evidence"],
-                    "needs": w_needs,
-                    "ready": is_ready,
-                }
-            )
-
-        total_units = len(work_units)
-        if unit_limit is not None and unit_limit < 0:
-            raise TodoError(f"--unit-limit must be non-negative, got {unit_limit}")
-        if unit_limit is not None:
-            displayed_units = work_units[:unit_limit]
-        else:
-            displayed_units = work_units
-
-        scope_rows = self.database.connection.execute(
-            "SELECT kind, path_glob FROM scope_rules WHERE item_id = ? ORDER BY kind, path_glob",
-            (item_id,),
-        ).fetchall()
-        scope = [{"kind": r["kind"], "path_glob": r["path_glob"]} for r in scope_rows]
-
-        preserves_rows = self.database.connection.execute(
-            "SELECT behavior FROM preserves WHERE item_id = ? ORDER BY behavior",
-            (item_id,),
-        ).fetchall()
-        preserves = [r["behavior"] for r in preserves_rows]
-
-        anti_rows = self.database.connection.execute(
-            "SELECT dont, why, instead FROM anti_patterns WHERE item_id = ? ORDER BY dont",
-            (item_id,),
-        ).fetchall()
-        anti_patterns = [{"dont": r["dont"], "why": r["why"], "instead": r["instead"]} for r in anti_rows]
-
-        verif_rows = self.database.connection.execute(
-            "SELECT seq, description, expected, last_run, last_result FROM verifications WHERE item_id = ? ORDER BY seq",
-            (item_id,),
-        ).fetchall()
-        verifications = [
+        for need in need_rows:
+            needs_by_wid.setdefault(need["wid"], []).append(need["needs_wid"])
+        done = {row["wid"] for row in unit_rows if row["status"] == "done"}
+        work_units = [
             {
-                "seq": r["seq"],
-                "description": r["description"],
-                "expected": r["expected"],
-                "last_run": r["last_run"],
-                "last_result": r["last_result"],
+                "id": row["wid"],
+                "summary": row["summary"],
+                "status": row["status"],
+                "needs": sorted(needs_by_wid.get(row["wid"], [])),
+                "ready": row["status"] != "done"
+                and all(need in done for need in needs_by_wid.get(row["wid"], [])),
             }
-            for r in verif_rows
+            for row in unit_rows
         ]
+        sections: dict[str, list[Any]] = {
+            "work_units": work_units,
+            "scope": [
+                {"kind": row["kind"], "path_glob": row["path_glob"]}
+                for row in self.database.connection.execute(
+                    "SELECT kind, path_glob FROM scope_rules WHERE item_id = ? ORDER BY kind, path_glob", (item_id,)
+                )
+            ],
+            "preserves": [
+                row["behavior"]
+                for row in self.database.connection.execute(
+                    "SELECT behavior FROM preserves WHERE item_id = ? ORDER BY behavior", (item_id,)
+                )
+            ],
+            "anti_patterns": [
+                {"dont": row["dont"], "why": row["why"], "instead": row["instead"]}
+                for row in self.database.connection.execute(
+                    "SELECT dont, why, instead FROM anti_patterns WHERE item_id = ? ORDER BY dont", (item_id,)
+                )
+            ],
+            "verifications": [
+                {
+                    "seq": row["seq"],
+                    "description": row["description"],
+                    "expected": row["expected"],
+                    "last_run": row["last_run"],
+                    "last_result": row["last_result"],
+                }
+                for row in self.database.connection.execute(
+                    "SELECT seq, description, expected, last_run, last_result FROM verifications "
+                    "WHERE item_id = ? ORDER BY seq",
+                    (item_id,),
+                )
+            ],
+            "item_dependencies": [
+                {"id": row["needs_item"], "state": row["state"]}
+                for row in self.database.connection.execute(
+                    "SELECT d.needs_item, i.state FROM item_deps d JOIN items i ON i.id = d.needs_item "
+                    "WHERE d.item_id = ? ORDER BY d.needs_item",
+                    (item_id,),
+                )
+            ],
+            "open_deferrals": [
+                {"id": row["id"], "summary": row["summary"], "reason": row["reason"]}
+                for row in self.database.connection.execute(
+                    "SELECT id, summary, reason FROM deferrals WHERE from_item = ? AND resolution = 'open' ORDER BY id",
+                    (item_id,),
+                )
+            ],
+            "prior_art": [
+                {"path": row["path"], "concept": row["concept"], "decision": row["decision"]}
+                for row in self.database.connection.execute(
+                    "SELECT path, concept, decision FROM prior_art WHERE item_id = ? ORDER BY path, concept", (item_id,)
+                )
+            ],
+        }
 
-        git_state = self.git_engine.capture_state()
+        completeness: dict[str, Any] = {}
+        displayed: dict[str, list[Any]] = {}
+        for name, entries in sections.items():
+            start = cursor if section == name else 0
+            page = entries[start : start + limit]
+            next_cursor = start + len(page) if start + len(page) < len(entries) else None
+            displayed[name] = page
+            completeness[name] = {
+                "complete": next_cursor is None,
+                "returned": len(page),
+                "total": len(entries),
+                "next_cursor": next_cursor,
+            }
+        completeness["work_units_total"] = len(work_units)
+        completeness["work_units_shown"] = len(displayed["work_units"])
 
-        ready_units = [u for u in work_units if u["ready"]]
-        if ready_units:
+        ready_units = [unit for unit in work_units if unit["ready"]]
+        unfinished = [unit for unit in work_units if unit["status"] != "done"]
+        unmet_items = [dep["id"] for dep in sections["item_dependencies"] if dep["state"] != "done"]
+        if item["state"] in {"done", "dropped"}:
+            next_action = {"action": "terminal", "details": f"item is {item['state']}"}
+        elif item.get("claimed_by") not in {None, self.tracker.actor}:
+            next_action = {"action": "wait", "details": f"claimed by {item['claimed_by']}"}
+        elif item.get("blocked_reason"):
+            next_action = {
+                "action": "human_action_required",
+                "details": item["blocked_reason"],
+                "command": f"todo unblock {item_id}",
+            }
+        elif sections["open_deferrals"]:
+            next_action = {
+                "action": "human_action_required",
+                "details": "resolve every open deferral",
+                "commands": [f"todo dismiss {entry['id']} --reason '<reason>'" for entry in sections["open_deferrals"]],
+            }
+        elif unmet_items:
+            next_action = {"action": "wait", "details": f"unmet item dependencies: {', '.join(unmet_items)}"}
+        elif item.get("claimed_by") is None:
+            next_action = {"action": "take", "item_id": item_id, "command": f"todo agent take {item_id}"}
+        elif not item.get("claim_token"):
+            next_action = {
+                "action": "take",
+                "item_id": item_id,
+                "details": "adopt this legacy claim to create a generation token before mutation",
+                "command": f"todo agent take {item_id} --session <session-id>",
+            }
+        elif ready_units:
+            unit = ready_units[0]
             next_action = {
                 "action": "progress",
                 "item_id": item_id,
-                "wid": ready_units[0]["id"],
-                "summary": ready_units[0]["summary"],
-                "command": f"todo agent progress {item_id} {ready_units[0]['id']} --evidence '<evidence>'",
+                "wid": unit["id"],
+                "summary": unit["summary"],
+                "command": f"todo agent progress {item_id} {unit['id']} --evidence '<evidence>'",
+            }
+        elif unfinished:
+            next_action = {
+                "action": "human_action_required",
+                "details": "unfinished work units have no executable dependency order; repair the plan",
+                "command": f"todo show {item_id} --json",
             }
         else:
             next_action = {
                 "action": "finish",
                 "item_id": item_id,
-                "command": f"todo agent finish {item_id}",
+                "command": f"todo agent finish {item_id} --claim-token <claim-token>",
             }
 
-        # Redact claim_token if caller is not the active claim holder
-        claim_token = (
-            item_dict.get("claim_token")
-            if item_dict.get("claimed_by") == self.tracker.actor
-            else None
-        )
-
+        git_state = self.git_engine.capture_state()
         ctx = {
-            "id": item_dict["id"],
-            "title": item_dict["title"],
-            "priority": item_dict["priority"],
-            "state": item_dict["state"],
-            "worktree": item_dict["worktree"],
-            "description": item_dict["description"],
-            "approach": item_dict.get("approach"),
-            "claimed_by": item_dict.get("claimed_by"),
-            "claimed_at": item_dict.get("claimed_at"),
-            "claimed_session": item_dict.get("claimed_session"),
-            "claim_token": claim_token,
-            "git_baseline": item_dict.get("git_baseline"),
-            "work_units": displayed_units,
-            "scope": scope,
-            "preserves": preserves,
-            "anti_patterns": anti_patterns,
-            "verifications": verifications,
-            "git_state": {
-                "branch": git_state.branch,
-                "head_sha": git_state.head_sha,
-                "is_clean": git_state.is_clean,
-            },
-            "completeness": {
-                "work_units_total": total_units,
-                "work_units_shown": len(displayed_units),
-            },
+            "id": item["id"],
+            "title": item["title"],
+            "priority": item["priority"],
+            "state": item["state"],
+            "worktree": item["worktree"],
+            "description": item["description"],
+            "approach": item.get("approach"),
+            "blocked_reason": item.get("blocked_reason"),
+            "claimed_by": item.get("claimed_by"),
+            "claimed_at": item.get("claimed_at"),
+            "claimed_session": item.get("claimed_session"),
+            "claim_token": item.get("claim_token") if item.get("claimed_by") == self.tracker.actor else None,
+            "git_baseline": item.get("git_baseline"),
+            **displayed,
+            "git_state": {"branch": git_state.branch, "head_sha": git_state.head_sha, "is_clean": git_state.is_clean},
+            "completeness": completeness,
             "next_action": next_action,
         }
-
         if fields:
-            selected_fields = [f.strip() for f in fields if f.strip()]
-            always_present = {
-                "id",
-                "title",
-                "state",
-                "scope",
-                "preserves",
-                "anti_patterns",
-                "next_action",
-                "completeness",
+            always = {
+                "id", "title", "state", "blocked_reason", "scope", "preserves", "anti_patterns",
+                "item_dependencies", "open_deferrals", "next_action", "completeness",
             }
-            keep = set(selected_fields) | always_present
-            return {k: v for k, v in ctx.items() if k in keep}
-
+            keep = {field.strip() for field in fields if field.strip()} | always
+            return {key: value for key, value in ctx.items() if key in keep}
         return ctx
 
     def progress(
@@ -556,10 +621,23 @@ class AgentWorkflow:
             if tok != claim_token:
                 raise TodoError(f"claim token mismatch on {item_id!r}: E_CLAIM_STALE", code=E_CLAIM_STALE)
 
+        structural_commands: list[str] = []
+        if item.get("blocked_reason"):
+            structural_commands.append(f"todo unblock {item_id}")
+        structural_commands.extend(
+            f"todo dismiss {entry['id']} --reason '<reason>'"
+            for entry in item.get("deferrals", [])
+            if entry.get("resolution") == "open"
+        )
         lint_issues = self.tracker.lint(item_id)
         if lint_issues:
+            structural_commands.insert(0, f"todo lint {item_id}")
+        if lint_issues or structural_commands:
+            self.release(item_id, claim_token)
+            details = "; ".join(lint_issues) if lint_issues else "structural blockers remain"
+            commands = "; then ".join(structural_commands)
             raise TodoError(
-                f"cannot finish {item_id!r}: lint findings detected: {'; '.join(lint_issues)}",
+                f"cannot finish {item_id!r}: {details}; streamlined claim released; run `{commands}`",
                 code=E_LINT_GATE,
             )
 
@@ -579,18 +657,30 @@ class AgentWorkflow:
                 code=E_SCOPE_GATE,
             )
 
+        if verification_override_reason is not None:
+            raise TodoError("agent finish does not permit verification overrides; use the explicit human complete command")
+
         if run_verifications:
+            stable_fingerprint = self.git_engine.workspace_fingerprint()
             verifs = self.database.connection.execute(
                 "SELECT seq FROM verifications WHERE item_id = ? ORDER BY seq", (item_id,)
             ).fetchall()
-            for v in verifs:
-                res, out = self.tracker.run_verification(item_id, v["seq"])
-                if res != "pass":
+            for verification in verifs:
+                result, output = self.tracker.run_verification(
+                    item_id, verification["seq"], cwd=self.git_engine.repo_root
+                )
+                if result != "pass":
                     raise TodoError(
-                        f"cannot finish {item_id!r}: verification seq {v['seq']} failed: {out.strip()[:200]}",
+                        f"cannot finish {item_id!r}: verification seq {verification['seq']} failed: "
+                        f"{output.strip()[:200]}",
                         code=E_VERIFY_GATE,
                     )
-            # Re-check scope after verification commands ran
+                if self.git_engine.workspace_fingerprint() != stable_fingerprint:
+                    raise TodoError(
+                        f"cannot finish {item_id!r}: verification seq {verification['seq']} modified the Git workspace; "
+                        "review the change and rerun the full ladder",
+                        code=E_VERIFY_GATE,
+                    )
             post_changed = self.git_engine.changed_files(base=base)
             post_scope = self.tracker.check_scope(item_id, post_changed)
             if post_scope:
@@ -598,12 +688,35 @@ class AgentWorkflow:
                     f"cannot finish {item_id!r}: post-verification scope violations: {'; '.join(post_scope)}",
                     code=E_SCOPE_GATE,
                 )
+            fingerprint = self.git_engine.workspace_fingerprint()
+            self.tracker.attest_verifications(item_id, fingerprint)
+        else:
+            fingerprint = self.git_engine.workspace_fingerprint()
 
         self.tracker.complete(
             item_id,
             pr=pr,
-            verification_override_reason=verification_override_reason,
-            model_assert=model_assert and not run_verifications,
+            model_assert=model_assert,
+            verified_workspace_fingerprint=fingerprint,
+            expected_claimed_by=self.tracker.actor,
+            expected_claim_token=claim_token,
+            enforce_claim_generation=True,
         )
-
         return {"id": item_id, "state": "done", "status": "completed"}
+
+    def release(self, item_id: str, claim_token: str | None) -> dict[str, Any]:
+        self.tracker.release(item_id, claim_token=claim_token, require_claim_token=True)
+        return {"id": item_id, "status": "released"}
+
+    def rebaseline(self, item_id: str, reason: str, claim_token: str | None, new_baseline: str | None = None) -> dict[str, Any]:
+        state = self.git_engine.capture_state()
+        if not state.is_clean:
+            raise TodoError("rebaseline requires a clean worktree")
+        baseline = new_baseline or state.head_sha
+        if baseline and baseline.startswith("-"):
+            raise TodoError("rebaseline commit must not begin with '-'")
+        if not baseline:
+            raise TodoError("rebaseline requires a reachable commit")
+        self.git_engine._run_bytes(["rev-parse", "--verify", f"{baseline}^{{commit}}"])
+        self.tracker.rebaseline_scope(item_id, baseline, reason, claim_token=claim_token)
+        return self.context(item_id)

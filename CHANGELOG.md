@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Require Pi project trust before resolving or executing project wrappers, and compile the adapter against Pi's real extension API.
+- Execute human agent verification ladders exactly once and bind no-shell completion to the current workspace fingerprint.
+- Recheck claim generation during completion and require it for streamlined release/rebaseline mutations.
+- Replace false hosted certification with an honest two-connection Turso race whose skipped result is non-passing.
+- Add recoverable bounded context pages, blocker/deferral projections, compact claim receipts, and lossless Git filename decoding.
+
 ## [0.4.0] - 2026-08-18
 
 ### Added

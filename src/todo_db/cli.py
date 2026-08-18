@@ -36,7 +36,7 @@ FINDING_OFFLINE_SUBCOMMANDS = frozenset({"create", "candidates"})
 FINDING_MUTATING_SUBCOMMANDS = frozenset({"sync", "dismiss", "triage", "link", "promote"})
 
 AGENT_OFFLINE_SUBCOMMANDS = frozenset({"instructions"})
-AGENT_MUTATING_SUBCOMMANDS = frozenset({"take", "progress", "finish", "adopt", "release"})
+AGENT_MUTATING_SUBCOMMANDS = frozenset({"take", "progress", "finish", "adopt", "release", "rebaseline"})
 
 CONFIG_DIRNAME = ".todo-db"
 CONFIG_FILENAME = "config.json"
@@ -510,7 +510,13 @@ def _parser() -> argparse.ArgumentParser:
 
     agent_context = agent_sub.add_parser("context", help="bounded item projection with guardrails", parents=[compact_parser])
     agent_context.add_argument("id", help="item id")
-    agent_context.add_argument("--unit-limit", type=int, default=None, help="max work units to include")
+    agent_context.add_argument("--unit-limit", type=int, default=None, help="deprecated alias for a work-unit page limit")
+    agent_context.add_argument(
+        "--section",
+        choices=("work_units", "scope", "preserves", "anti_patterns", "verifications", "item_dependencies", "open_deferrals", "prior_art"),
+        help="section to continue when using --cursor",
+    )
+    agent_context.add_argument("--cursor", type=int, default=0, help="zero-based cursor for --section")
     _identity_args(agent_context)
 
     agent_progress = agent_sub.add_parser("progress", help="mark work unit done and refresh lease", parents=[compact_parser])
@@ -527,7 +533,6 @@ def _parser() -> argparse.ArgumentParser:
     agent_finish.add_argument("--model-assert", action="store_true", help="assert verifications passed without executing shell commands")
     agent_finish.add_argument("--run-verifications", action="store_true", help="explicit human run: preview and run verifications")
     agent_finish.add_argument("--pr", type=int, help="pull request number")
-    agent_finish.add_argument("--override-verifications", help="verification override reason")
     _identity_args(agent_finish)
 
     agent_claims = agent_sub.add_parser("claims", help="list active claims", parents=[compact_parser])
@@ -539,9 +544,17 @@ def _parser() -> argparse.ArgumentParser:
     agent_adopt.add_argument("--session", required=True, help="new session id")
     _identity_args(agent_adopt)
 
-    agent_release = agent_sub.add_parser("release", help="release active claim")
+    agent_release = agent_sub.add_parser("release", help="release active claim generation")
     agent_release.add_argument("id", help="item id")
+    agent_release.add_argument("--claim-token", help="current claim generation token (required for tokenized claims)")
     _identity_args(agent_release)
+
+    agent_rebaseline = agent_sub.add_parser("rebaseline", help="human-only audited clean-worktree rebaseline")
+    agent_rebaseline.add_argument("id", help="item id")
+    agent_rebaseline.add_argument("--reason", required=True, help="audited reason for changing the baseline")
+    agent_rebaseline.add_argument("--claim-token", required=True, help="current claim generation token")
+    agent_rebaseline.add_argument("--new-baseline", help="commit to use (default: current HEAD)")
+    _identity_args(agent_rebaseline)
 
     return parser
 
@@ -1338,12 +1351,14 @@ def _agent_offline(args: argparse.Namespace) -> int:
             "   `todo agent context <id>`\n\n"
             "4. Execute work units sequentially and record progress:\n"
             "   `todo agent progress <id> <wid> --evidence '<description of completed unit>'`\n\n"
-            "5. Run finish gate assertion to verify and complete work:\n"
-            "   `todo agent finish <id> --model-assert`\n\n"
+            "5. Ask the no-shell finish gate to require a current verification attestation:\n"
+            "   `todo agent finish <id> --claim-token <token> --model-assert`\n\n"
+            "6. If verification is stale, a human reviews the printed commands and runs:\n"
+            "   `todo agent finish <id> --claim-token <token> --run-verifications`\n\n"
             "Notes:\n"
             "- A single active claim is enforced per principal.\n"
-            "- Scope rules (only_modify, do_not_modify) are checked at completion.\n"
-            "- Structural failures allow claim retention while correcting work.\n"
+            "- Scope rules are checked before and after the single verification run.\n"
+            "- Diverged baselines require `todo agent rebaseline` from a clean worktree.\n"
         )
         return 0
     raise TodoError(f"unsupported offline agent command: {args.agent_command}")
@@ -1373,7 +1388,14 @@ def _run_agent(database: TodoDatabase, args: argparse.Namespace) -> int:
 
     if cmd == "context":
         fields = [f.strip() for f in args.fields.split(",")] if getattr(args, "fields", None) else None
-        res = workflow.context(args.id, fields=fields, unit_limit=args.unit_limit)
+        res = workflow.context(
+            args.id,
+            fields=fields,
+            unit_limit=args.unit_limit,
+            section=args.section,
+            cursor=args.cursor,
+            limit=args.limit if getattr(args, "limit", None) is not None else 20,
+        )
         _output(json.dumps(res, indent=2, sort_keys=True), args)
         return 0
 
@@ -1390,20 +1412,27 @@ def _run_agent(database: TodoDatabase, args: argparse.Namespace) -> int:
 
     if cmd == "finish":
         try:
+            if args.run_verifications:
+                commands = database.connection.execute(
+                    "SELECT seq, command FROM verifications WHERE item_id = ? ORDER BY seq", (args.id,)
+                ).fetchall()
+                print("Verification commands to execute once:", file=sys.stderr)
+                for command in commands:
+                    print(f"  [{command['seq']}] {command['command']}", file=sys.stderr)
             res = workflow.finish(
                 args.id,
                 claim_token=args.claim_token,
                 model_assert=args.model_assert,
                 run_verifications=args.run_verifications,
                 pr=args.pr,
-                verification_override_reason=args.override_verifications,
             )
             _output(json.dumps(res, indent=2, sort_keys=True), args)
             return 0
         except TodoError as exc:
             code = getattr(exc, "code", None)
             msg = str(exc)
-            if code or "lint findings detected" in msg or "scope violations detected" in msg or "verifications not passed" in msg:
+            gate_codes = {"E_LINT_GATE", "E_SCOPE_GATE", "E_VERIFY_GATE"}
+            if code in gate_codes or "lint findings detected" in msg or "scope violations detected" in msg or "verifications not passed" in msg:
                 err_code = code or ("E_LINT_GATE" if "lint findings" in msg else ("E_SCOPE_GATE" if "scope violations" in msg else "E_VERIFY_GATE"))
                 print(json.dumps({"error": msg, "code": err_code}, indent=2, sort_keys=True), file=sys.stderr)
                 return 1
@@ -1420,11 +1449,16 @@ def _run_agent(database: TodoDatabase, args: argparse.Namespace) -> int:
                 ELSE 6
             END
         """
-        principal = args.principal
+        principal = args.principal or tracker.actor
+        claim_limit = args.limit if getattr(args, "limit", None) is not None else 10
+        if claim_limit < 0 or claim_limit > 100:
+            raise TodoError("agent claims --limit must be between 0 and 100")
         if principal:
             rows = database.connection.execute(
-                f"SELECT * FROM items WHERE claimed_by = ? AND state = 'active' ORDER BY {priority_case}",
-                (principal,),
+                f"SELECT id, title, priority, state, claimed_by, claimed_at, claimed_session, claim_token, "
+                f"claimed_branch, claimed_worktree, git_baseline FROM items "
+                f"WHERE claimed_by = ? AND state = 'active' ORDER BY {priority_case} LIMIT ?",
+                (principal, claim_limit),
             ).fetchall()
         else:
             rows = database.connection.execute(
@@ -1433,7 +1467,7 @@ def _run_agent(database: TodoDatabase, args: argparse.Namespace) -> int:
         claims = []
         for r in rows:
             d = dict(r)
-            if d.get("claimed_by") != args.actor:
+            if d.get("claimed_by") != tracker.actor:
                 d["claim_token"] = None
             claims.append(d)
         _output(json.dumps(claims, indent=2, sort_keys=True), args)
@@ -1445,8 +1479,13 @@ def _run_agent(database: TodoDatabase, args: argparse.Namespace) -> int:
         return 0
 
     if cmd == "release":
-        tracker.release(args.id)
-        _output(json.dumps({"id": args.id, "status": "released"}, indent=2, sort_keys=True), args)
+        res = workflow.release(args.id, args.claim_token)
+        _output(json.dumps(res, indent=2, sort_keys=True), args)
+        return 0
+
+    if cmd == "rebaseline":
+        res = workflow.rebaseline(args.id, args.reason, args.claim_token, args.new_baseline)
+        _output(json.dumps(res, indent=2, sort_keys=True), args)
         return 0
 
     raise TodoError(f"unsupported agent subcommand: {cmd}")

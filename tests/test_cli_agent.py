@@ -46,6 +46,33 @@ def test_agent_instructions_offline(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     assert "todo agent next" in out
 
 
+def test_agent_cli_rebaseline_and_generation_checked_release(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _init_repo(tmp_path, monkeypatch)
+    assert main([
+        "create", "claim-cli-item", "--title", "Claim CLI item", "--worktree", "todo-db",
+        "--priority", "medium", "--description", "Exercise rebaseline and release generation",
+    ]) == 0
+    capsys.readouterr()
+    assert main(["agent", "take", "claim-cli-item", "--session", "first"]) == 0
+    first = json.loads(capsys.readouterr().out)
+    old_token = first["claim_token"]
+    assert main([
+        "agent", "rebaseline", "claim-cli-item", "--reason", "confirm current clean head",
+        "--claim-token", old_token,
+    ]) == 0
+    capsys.readouterr()
+    assert main(["agent", "adopt", "claim-cli-item", "--session", "second"]) == 0
+    adopted = json.loads(capsys.readouterr().out)
+    new_token = adopted["claim_token"]
+    assert new_token != old_token
+    assert main(["agent", "release", "claim-cli-item", "--claim-token", old_token]) == 2
+    capsys.readouterr()
+    assert main(["agent", "release", "claim-cli-item", "--claim-token", new_token]) == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "released"
+
+
 def test_agent_cli_full_flow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     _init_repo(tmp_path, monkeypatch)
 

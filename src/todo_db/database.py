@@ -31,7 +31,7 @@ from .errors import (
 from .models import CredentialMode, DatabaseConfig, ProjectIdentity
 
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 try:
     TOOL_VERSION = metadata.version("todo-db")
 except metadata.PackageNotFoundError:  # running from an unbuilt source tree
@@ -114,7 +114,16 @@ RESTORE_TABLE_COLUMNS = {
     "work_needs": ("item_id", "wid", "needs_wid"),
     "item_deps": ("item_id", "needs_item"),
     "scope_rules": ("item_id", "kind", "path_glob"),
-    "verifications": ("item_id", "seq", "description", "command", "expected", "last_run", "last_result"),
+    "verifications": (
+        "item_id",
+        "seq",
+        "description",
+        "command",
+        "expected",
+        "last_run",
+        "last_result",
+        "workspace_fingerprint",
+    ),
     "preserves": ("item_id", "behavior"),
     "anti_patterns": ("item_id", "dont", "why", "instead"),
     "prior_art": ("item_id", "path", "concept", "decision"),

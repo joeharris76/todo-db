@@ -5,7 +5,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { execSync } from "node:child_process";
 
-import { findProjectRoot, getSanitizedEnv } from "../src/client.js";
+import { findProjectRoot, getSanitizedEnv, runTodoDb } from "../src/client.js";
 import { SerializedQueue } from "../src/queue.js";
 import { executeTodoDbTool, todoDbToolSchema } from "../src/tool.js";
 import { renderToolResult } from "../src/render.js";
@@ -43,10 +43,14 @@ describe("Pi Adapter Core", () => {
     process.env.LD_PRELOAD = "/evil.so";
     process.env.DYLD_INSERT_LIBRARIES = "/evil.dylib";
     process.env.TODO_DB_AUTH_TOKEN = "valid-token";
+    process.env.GITHUB_TOKEN = "must-not-pass";
+    process.env.PI_SESSION_FILE = "/secret/session.jsonl";
     const clean = getSanitizedEnv();
     assert.strictEqual(clean.LD_PRELOAD, undefined);
     assert.strictEqual(clean.DYLD_INSERT_LIBRARIES, undefined);
     assert.strictEqual(clean.TODO_DB_AUTH_TOKEN, "valid-token");
+    assert.strictEqual(clean.GITHUB_TOKEN, undefined);
+    assert.strictEqual(clean.PI_SESSION_FILE, undefined);
     delete process.env.LD_PRELOAD;
     delete process.env.DYLD_INSERT_LIBRARIES;
     delete process.env.TODO_DB_AUTH_TOKEN;
@@ -71,31 +75,47 @@ describe("Pi Adapter Core", () => {
   it("validates todo_db tool schema", () => {
     assert.strictEqual(todoDbToolSchema.type, "object");
     assert.deepStrictEqual(todoDbToolSchema.required, ["action"]);
-    assert.ok(todoDbToolSchema.properties.action.enum.includes("next"));
-    assert.ok(todoDbToolSchema.properties.action.enum.includes("progress"));
-    assert.ok(todoDbToolSchema.properties.action.enum.includes("finish"));
+    const variants = todoDbToolSchema.properties.action.anyOf.map((entry: any) => entry.const);
+    assert.ok(variants.includes("next"));
+    assert.ok(variants.includes("progress"));
+    assert.ok(variants.includes("finish"));
+    assert.ok(!variants.includes("adopt"));
   });
 
   it("returns E_NO_PROJECT when project boundary is missing", async () => {
     const emptyDir = fs.mkdtempSync(path.join(os.tmpdir(), "empty-no-project-"));
-    const res = await executeTodoDbTool({ action: "next" }, { cwd: emptyDir } as any);
-    assert.strictEqual(res.details.error, "E_NO_PROJECT");
+    const res = await executeTodoDbTool(
+      { action: "next" },
+      { cwd: emptyDir, isProjectTrusted: () => true, sessionManager: { getSessionId: () => "s1" } } as any
+    );
+    assert.strictEqual(res.details.code, "E_NO_PROJECT");
     fs.rmSync(emptyDir, { recursive: true, force: true });
   });
 
   it("validates required action parameters before running CLI", async () => {
     // Progress missing wid/evidence
-    const pRes = await executeTodoDbTool({ action: "progress", id: "i1" }, { cwd: tmpDir } as any);
+    const ctx = { cwd: tmpDir, isProjectTrusted: () => true, sessionManager: { getSessionId: () => "s1" } } as any;
+    const pRes = await executeTodoDbTool({ action: "progress", id: "i1" }, ctx);
     assert.strictEqual(pRes.isError, true);
     assert.ok(pRes.details.error.includes("required"));
 
     // Finish missing id
-    const fRes = await executeTodoDbTool({ action: "finish" }, { cwd: tmpDir } as any);
+    const fRes = await executeTodoDbTool({ action: "finish" }, ctx);
     assert.strictEqual(fRes.isError, true);
 
-    // Adopt missing id
-    const aRes = await executeTodoDbTool({ action: "adopt" }, { cwd: tmpDir } as any);
-    assert.strictEqual(aRes.isError, true);
+    const untrusted = await executeTodoDbTool({ action: "next" }, { cwd: tmpDir, isProjectTrusted: () => false } as any);
+    assert.strictEqual(untrusted.details.code, "E_UNTRUSTED_PROJECT");
+  });
+
+  it("enforces exact subprocess byte bounds", async () => {
+    const wrapperDir = path.join(tmpDir, "_project", "scripts");
+    fs.mkdirSync(wrapperDir, { recursive: true });
+    const wrapper = path.join(wrapperDir, "todo");
+    fs.writeFileSync(wrapper, "#!/bin/sh\npython3 -c \"print('x' * 100000)\"\n");
+    fs.chmodSync(wrapper, 0o755);
+    const result = await runTodoDb(tmpDir, ["agent", "next"], { byteCap: 1024 });
+    assert.strictEqual(result.stdoutTruncated, true);
+    assert.ok(Buffer.byteLength(result.stdout) <= 1024);
   });
 
   it("renders custom tool results", () => {

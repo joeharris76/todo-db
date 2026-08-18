@@ -1,7 +1,12 @@
-import { findProjectRoot, runTodoDb } from "./client.js";
-import type { ExtensionContext, Theme } from "./types.js";
+import { agentArgs, findProjectRoot, runTodoDb } from "./client.js";
+import type { ExtensionContext, ThemeLike } from "./types.js";
 
 export async function updateTodoStatusWidget(ctx: ExtensionContext): Promise<void> {
+  if (!ctx.isProjectTrusted()) {
+    ctx.ui.setStatus("todo-db", undefined);
+    ctx.ui.setWidget("todo-db", undefined);
+    return;
+  }
   const projectRoot = findProjectRoot(ctx.cwd);
   if (!projectRoot) {
     ctx.ui.setStatus("todo-db", undefined);
@@ -10,7 +15,7 @@ export async function updateTodoStatusWidget(ctx: ExtensionContext): Promise<voi
   }
 
   try {
-    const claimsRes = await runTodoDb(projectRoot, ["agent", "claims"]);
+    const claimsRes = await runTodoDb(projectRoot, agentArgs(["claims", "--limit", "10"]));
     if (claimsRes.exitCode !== 0) {
       return;
     }
@@ -18,7 +23,7 @@ export async function updateTodoStatusWidget(ctx: ExtensionContext): Promise<voi
 
     if (claims.length === 0) {
       // Check ready queue
-      const nextRes = await runTodoDb(projectRoot, ["agent", "next"]);
+      const nextRes = await runTodoDb(projectRoot, agentArgs(["next"]));
       if (nextRes.exitCode === 0) {
         const nextData = JSON.parse(nextRes.stdout);
         if (nextData.status === "ready" && nextData.item) {
@@ -74,13 +79,17 @@ export async function updateTodoStatusWidget(ctx: ExtensionContext): Promise<voi
 
 export class TodoPanelComponent {
   private data: any;
-  private theme: Theme;
+  private theme: ThemeLike;
   private onClose: () => void;
 
-  constructor(data: any, theme: Theme, onClose: () => void) {
+  constructor(data: any, theme: ThemeLike, onClose: () => void) {
     this.data = data;
     this.theme = theme;
     this.onClose = onClose;
+  }
+
+  invalidate(): void {
+    // Static panel; Pi calls render again when needed.
   }
 
   handleInput(data: string): void {

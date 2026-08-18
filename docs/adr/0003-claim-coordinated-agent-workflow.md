@@ -23,7 +23,7 @@ This architecture decision record establishes the contract for the streamlined, 
 
 ### 2.2 Same-Principal Adoption vs. Audited Cross-Principal Takeover
 - **Same-Principal Adoption**: If an agent restarts with the same stable principal (`claimed_by`), it can adopt or resume its active claim without releasing or re-queuing.
-- **Cross-Principal Takeover**: If a lease is expired (`_lease_expired` is True) or forced by an authorized operator, acquiring the item by a different principal emits an audited `claim` event detailing the previous holder.
+- **Cross-Principal Takeover**: A different principal may acquire only an expired lease; the audited `claim` event records the previous holder. v1 has no forced model or agent takeover surface.
 
 ### 2.3 One Live Claim per Agent Workflow
 - An agent workflow instance is constrained to hold at most **one active claim** at any time.
@@ -31,7 +31,8 @@ This architecture decision record establishes the contract for the streamlined, 
 
 ### 2.4 Verification Execution and Model Trust Boundary
 - Stored verification commands in a shared database represent untrusted shell execution.
-- Models may assert readiness (`agent finish --model-assert`), but stored shell commands (`verify --run`) must not be triggered implicitly by untrusted model tools on hosted databases unless explicitly authorized by human configuration (`TODO_DB_ALLOW_HOSTED_VERIFY_RUN=1`).
+- Model finish is no-shell and accepts only a passing verification ladder attested to the current deterministic workspace fingerprint. A prior pass from another workspace state is stale.
+- Stored shell commands run only through an explicit human CLI path that previews each command. Hosted execution still requires deliberate human configuration (`TODO_DB_ALLOW_HOSTED_VERIFY_RUN=1`).
 - The agent finish gate verifies:
   1. Clean linter results.
   2. Verified work units.
@@ -57,7 +58,7 @@ This architecture decision record establishes the contract for the streamlined, 
 
 ### 2.9 Local vs. Hosted Support Matrix
 - **Local Embedded SQLite**: Full support for single-user workflows and worktree concurrency.
-- **Direct Hosted Primary (LibSQL / Turso)**: Full support for transactional operations (`BEGIN IMMEDIATE`, audit chaining, direct primary mutations).
+- **Direct Hosted Primary (LibSQL / Turso)**: Experimental for agent mutations. The opt-in real-primary harness must demonstrate a two-connection one-winner claim, and hosted support must not be certified until commit-outcome fault behavior is also measured. A skipped harness (exit 77) is not passing evidence.
 
 ### 2.10 JSON Patch Stop Decision
 - **Decision**: Stop (No separate JSON patch command).
@@ -69,7 +70,7 @@ This architecture decision record establishes the contract for the streamlined, 
 
 - **Positive**:
   - Deterministic agent lifecycle with single-command `take`, `context`, `progress`, `finish`.
-  - Zero possibility of agent hoard-locking multiple items.
+  - The streamlined agent surface prevents new multiple claims and reports legacy/direct-command multiple claims explicitly.
   - Safe restart and crash recovery without orphaned lockouts.
 - **Negative**:
   - Requires schema migration for `claimed_session` and `claim_token` on `items` table.
