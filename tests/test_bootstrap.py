@@ -422,3 +422,45 @@ def test_scaffolded_gitignore_ignores_databases_but_keeps_config_tracked(tmp_pat
         ["git", "status", "--porcelain"], cwd=tmp_path, capture_output=True, text=True, check=True
     ).stdout
     assert ".todo-db/" in status
+
+
+def test_discovery_ceiling_stops_at_git_root_and_does_not_hijack_subproject(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from todo_db.cli import _discover_repo_config
+
+    # Ancestor has a .todo-db/config.json
+    ancestor = tmp_path / "workspace"
+    ancestor.mkdir()
+    _write_config(ancestor, {"project_id": "ancestor-proj", "repository": "repo"})
+
+    # Child is a separate git repo without a config
+    child_repo = ancestor / "child-repo"
+    child_repo.mkdir()
+    subprocess.run(["git", "init", "--quiet"], cwd=child_repo, check=True)
+    monkeypatch.chdir(child_repo)
+
+    # Config discovery must stop at git root and return None
+    assert _discover_repo_config() is None
+
+
+def test_custom_wrapper_depth_derives_correct_repo_root(tmp_path: Path) -> None:
+    from todo_db.cli import main
+
+    assert (
+        main(
+            [
+                "init-project",
+                "--project-id",
+                "custom-wrapper",
+                "--repository",
+                "todo-db",
+                "--wrapper",
+                "scripts/nested/deep/todo",
+            ]
+        )
+        == 0
+    )
+    wrapper = tmp_path / "scripts" / "nested" / "deep" / "todo"
+    content = wrapper.read_text(encoding="utf-8")
+    assert 'REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)"' in content

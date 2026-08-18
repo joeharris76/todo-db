@@ -69,6 +69,16 @@ def _load_repo_config(path: Path) -> dict[str, Any]:
     return payload
 
 
+def _git_root(path: Path) -> Path | None:
+    probe = path.resolve()
+    while True:
+        if (probe / ".git").exists():
+            return probe
+        if probe.parent == probe:
+            return None
+        probe = probe.parent
+
+
 def _discover_repo_config() -> tuple[Path, dict[str, Any]] | None:
     """Find `.todo-db/config.json` like git discovery: TODO_DB_CONFIG, else walk up from cwd."""
 
@@ -78,11 +88,17 @@ def _discover_repo_config() -> tuple[Path, dict[str, Any]] | None:
         if not path.is_file():
             raise TodoError(f"TODO_DB_CONFIG points to a missing file: {path}")
         return path, _load_repo_config(path)
-    current = Path.cwd()
+    current = Path.cwd().resolve()
+    git_root = _git_root(current)
+    home = Path.home().resolve()
     for candidate in (current, *current.parents):
         path = candidate / CONFIG_DIRNAME / CONFIG_FILENAME
         if path.is_file():
             return path, _load_repo_config(path)
+        if git_root is not None and candidate == git_root:
+            break
+        if candidate == home:
+            break
     return None
 
 
@@ -809,7 +825,9 @@ def _print_finding(finding: dict[str, Any]) -> None:
         print(f"link: {link['kind']} -> {target}")
 
 
-def _wrapper_script(project_id: str) -> str:
+def _wrapper_script(project_id: str, wrapper_rel_path: str = DEFAULT_WRAPPER_RELATIVE) -> str:
+    parts = Path(wrapper_rel_path).parent.parts
+    upward = "/".join(".." for _ in parts) if parts else "."
     return f"""#!/usr/bin/env bash
 #
 # {project_id} TODO tracker entry point. Routes every subcommand to the
@@ -829,7 +847,7 @@ def _wrapper_script(project_id: str) -> str:
 #
 set -euo pipefail
 
-REPO_ROOT="$(cd -- "$(dirname -- "${{BASH_SOURCE[0]}}")/../.." && pwd)"
+REPO_ROOT="$(cd -- "$(dirname -- "${{BASH_SOURCE[0]}}")/{upward}" && pwd)"
 export TODO_DB_CONFIG="${{TODO_DB_CONFIG:-$REPO_ROOT/.todo-db/config.json}}"
 
 run_todo_db() {{
@@ -964,7 +982,7 @@ def _init_project(args: argparse.Namespace, identity: ProjectIdentity, raw_db: s
     print(f"wrote {gitignore_path}")
     if wrapper_path is not None:
         wrapper_path.parent.mkdir(parents=True, exist_ok=True)
-        wrapper_path.write_text(_wrapper_script(identity.project_id), encoding="utf-8")
+        wrapper_path.write_text(_wrapper_script(identity.project_id, wrapper_rel_path=args.wrapper), encoding="utf-8")
         wrapper_path.chmod(wrapper_path.stat().st_mode | 0o111)
         print(f"wrote {wrapper_path} (executable)")
     _warn_if_git_ignored(config_path, root)
