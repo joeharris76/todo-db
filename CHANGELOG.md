@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Define the hosted credential lifecycle in ADR 0004 and an operations
+  runbook: externally injected database-scoped tokens, explicit bounded RO/RW
+  profiles, named rotation ownership, and coordinated database-wide compromise
+  response.
+
 ### Fixed
 
 - Require Pi project trust before resolving or executing project wrappers, and compile the adapter against Pi's real extension API.
