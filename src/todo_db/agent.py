@@ -471,6 +471,7 @@ class AgentWorkflow:
         *,
         claim_token: str | None = None,
         model_assert: bool = False,
+        run_verifications: bool = False,
         pr: int | None = None,
         verification_override_reason: str | None = None,
     ) -> dict[str, Any]:
@@ -484,6 +485,24 @@ class AgentWorkflow:
         if claim_token and tok and tok != claim_token:
             raise TodoError(f"claim token mismatch on {item_id!r}: E_CLAIM_STALE")
 
+        work_units = self.database.connection.execute(
+            "SELECT wid, status FROM work_units WHERE item_id = ?", (item_id,)
+        ).fetchall()
+        unfinished = [u["wid"] for u in work_units if u["status"] != "done"]
+        if unfinished:
+            raise TodoError(f"cannot finish {item_id!r}: work units not done: {', '.join(unfinished)}")
+
+        if run_verifications:
+            verifs = self.database.connection.execute(
+                "SELECT seq FROM verifications WHERE item_id = ? ORDER BY seq", (item_id,)
+            ).fetchall()
+            for v in verifs:
+                res, out = self.tracker.run_verification(item_id, v["seq"])
+                if res != "pass":
+                    raise TodoError(
+                        f"cannot finish {item_id!r}: verification seq {v['seq']} failed: {out.strip()[:200]}"
+                    )
+
         base = item.get("git_baseline")
         changed_files = self.git_engine.changed_files(base=base)
         scope_violations = self.tracker.check_scope(item_id, changed_files)
@@ -492,14 +511,7 @@ class AgentWorkflow:
                 f"cannot finish {item_id!r}: scope violations detected: {'; '.join(scope_violations)}"
             )
 
-        work_units = self.database.connection.execute(
-            "SELECT wid, status FROM work_units WHERE item_id = ?", (item_id,)
-        ).fetchall()
-        unfinished = [u["wid"] for u in work_units if u["status"] != "done"]
-        if unfinished:
-            raise TodoError(f"cannot finish {item_id!r}: work units not done: {', '.join(unfinished)}")
-
-        if model_assert:
+        if model_assert or run_verifications:
             verifs = self.database.connection.execute(
                 "SELECT seq, last_result FROM verifications WHERE item_id = ?", (item_id,)
             ).fetchall()
@@ -522,7 +534,7 @@ class AgentWorkflow:
                 self.tracker._event(
                     "complete",
                     item_id,
-                    {"pr": pr, "model_assert": True, "verification": {"result": "pass"}},
+                    {"pr": pr, "model_assert": model_assert, "verification": {"result": "pass"}},
                 )
         else:
             self.tracker.complete(item_id, pr=pr, verification_override_reason=verification_override_reason)

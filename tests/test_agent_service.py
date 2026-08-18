@@ -6,8 +6,18 @@ from todo_db.agent import AgentWorkflow
 from todo_db.errors import TodoError
 
 
+import subprocess
+
 def _setup_db(tmp_path: Path) -> tuple[TodoDatabase, TodoTracker, AgentWorkflow]:
-    db_path = tmp_path / "agent_svc.sqlite"
+    subprocess.run(["git", "init", "--quiet"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True)
+    (tmp_path / ".gitignore").write_text(".todo-db/\n*.sqlite*\n", encoding="utf-8")
+    subprocess.run(["git", "add", ".gitignore"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=tmp_path, check=True)
+    db_dir = tmp_path / ".todo-db"
+    db_dir.mkdir(parents=True, exist_ok=True)
+    db_path = db_dir / "agent_svc.sqlite"
     config = DatabaseConfig(
         path=db_path,
         identity=ProjectIdentity(project_id="agent-svc-test", repository="todo-db"),
@@ -146,5 +156,50 @@ def test_agent_workflow_progress_and_finish(tmp_path: Path) -> None:
         fin = workflow.finish("item-flow", claim_token=token, model_assert=True)
         assert fin["status"] == "completed"
         assert tracker.get_item("item-flow")["state"] == "done"
+    finally:
+        db.close()
+
+
+def test_agent_workflow_finish_gates_and_remediation(tmp_path: Path) -> None:
+    db, tracker, workflow = _setup_db(tmp_path)
+    try:
+        tracker.create_item(
+            item_id="item-gates",
+            title="Gates Item",
+            worktree="todo-db",
+            priority="high",
+            description="Testing finish gate remediation",
+            work=[{"id": "w0", "summary": "Step 0"}],
+            scope={"only_modify": ["src/**"]},
+            verifications=[{"description": "failing step", "command": "false", "expected": ""}],
+        )
+        ctx = workflow.take("item-gates")
+        token = ctx["claim_token"]
+        workflow.progress("item-gates", "w0", "Done step 0", claim_token=token)
+
+        # 1. Model assert fails when verification not run / not passing
+        with pytest.raises(TodoError, match="verifications not passed"):
+            workflow.finish("item-gates", claim_token=token, model_assert=True)
+
+        # Claim must still be held (not released on code/verification failure)
+        assert tracker.get_item("item-gates")["claimed_by"] == "agent-tester"
+
+        # 2. Human run_verifications fails with verification failure error
+        with pytest.raises(TodoError, match="verification seq 1 failed"):
+            workflow.finish("item-gates", claim_token=token, run_verifications=True)
+
+        # 3. Scope violation failure retains claim
+        (tmp_path / "out_of_scope.txt").write_text("evil", encoding="utf-8")
+        # Update verification to pass
+        tracker.update_item(
+            "item-gates",
+            drop_verify=[1],
+            add_verify=[{"description": "passing", "command": "true", "expected": ""}],
+            reason="Update verification command to pass",
+        )
+        with pytest.raises(TodoError, match="scope violations detected"):
+            workflow.finish("item-gates", claim_token=token, run_verifications=True)
+
+        assert tracker.get_item("item-gates")["claimed_by"] == "agent-tester"
     finally:
         db.close()
