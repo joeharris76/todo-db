@@ -177,3 +177,87 @@ def test_cli_yaml_import_requires_explicit_source_and_preserves_items(tmp_path: 
     assert "yaml-item" in capsys.readouterr().out
     assert main([*common, "show", "yaml-item", "--json"]) == 0
     assert '"id": "yaml-item"' in capsys.readouterr().out
+
+
+def test_cli_fields_limit_and_max_bytes_compact_contracts(tmp_path: Path, capsys) -> None:
+    from todo_db.cli import main
+
+    db_path = tmp_path / "compact.sqlite"
+    common = ["--db", str(db_path), "--project-id", "compact-test", "--repository", "todo-db"]
+    assert main([*common, "init"]) == 0
+
+    for i in range(5):
+        assert (
+            main(
+                [
+                    *common,
+                    "create",
+                    f"item-{i:02d}",
+                    "--title",
+                    f"Item {i}",
+                    "--worktree",
+                    "todo-db",
+                    "--priority",
+                    "high",
+                    "--description",
+                    f"Description {i}",
+                ]
+            )
+            == 0
+        )
+    capsys.readouterr()
+
+    # Test --limit
+    assert main([*common, "--limit", "2", "list"]) == 0
+    out = capsys.readouterr().out.strip().splitlines()
+    assert len(out) == 2
+
+    # Test --fields on list
+    assert main([*common, "--fields", "id,priority", "list"]) == 0
+    out = capsys.readouterr().out.strip().splitlines()
+    assert out[0] == "item-00 high"
+
+    # Test --fields on show --json
+    assert main([*common, "--fields", "id,title", "show", "item-00", "--json"]) == 0
+    item_json = json.loads(capsys.readouterr().out)
+    assert set(item_json.keys()) == {"id", "title"}
+
+    # Test --max-bytes truncation
+    assert main([*common, "--max-bytes", "30", "list"]) == 0
+    out = capsys.readouterr().out
+    assert "... [truncated:" in out
+
+
+def test_cli_verification_output_is_bounded(tmp_path: Path, capsys) -> None:
+    from todo_db.cli import main
+
+    db_path = tmp_path / "verify_bounded.sqlite"
+    common = ["--db", str(db_path), "--project-id", "verify-test", "--repository", "todo-db"]
+    assert main([*common, "init"]) == 0
+
+    assert (
+        main(
+            [
+                *common,
+                "create",
+                "large-verify",
+                "--title",
+                "Large verify output",
+                "--worktree",
+                "todo-db",
+                "--priority",
+                "high",
+                "--description",
+                "Produces >4KB output",
+                "--verify",
+                "loud::python3 -c \"print('A' * 6000)\"",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+
+    assert main([*common, "verify", "large-verify", "--run", "1"]) == 0
+    out = capsys.readouterr().out
+    assert "seq 1: pass" in out
+    assert "... [truncated:" in out

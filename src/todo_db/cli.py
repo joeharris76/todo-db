@@ -151,6 +151,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--actor", help="audit actor identity")
     parser.add_argument("--project-id", default=argparse.SUPPRESS)
     parser.add_argument("--repository", default=argparse.SUPPRESS)
+    parser.add_argument("--fields", help="comma-separated list of fields to project for list, ready, and show")
+    parser.add_argument("--limit", type=int, default=None, help="maximum number of items to return")
+    parser.add_argument(
+        "--max-bytes", type=int, default=None, help="maximum bytes for command output with truncation marker"
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     init = sub.add_parser("init", help="create or validate the schema")
@@ -618,6 +623,28 @@ def _load_payload(args: argparse.Namespace) -> dict[str, Any]:
         "verifications": _parse_verify(args.verify),
         "preserves": args.preserve,
     }
+
+
+def _project_fields(item: dict[str, Any], fields_str: str | None) -> dict[str, Any]:
+    if not fields_str:
+        return item
+    fields = [f.strip() for f in fields_str.split(",") if f.strip()]
+    if not fields:
+        return item
+    return {k: item[k] for k in fields if k in item}
+
+
+def _output(text: str, args: argparse.Namespace) -> None:
+    max_bytes = getattr(args, "max_bytes", None)
+    if max_bytes is not None and max_bytes > 0:
+        encoded = text.encode("utf-8")
+        if len(encoded) > max_bytes:
+            marker = "\n... [truncated]"
+            cutoff = max(0, max_bytes - len(marker.encode("utf-8")))
+            truncated_text = encoded[:cutoff].decode("utf-8", errors="ignore")
+            omitted = len(encoded) - len(truncated_text.encode("utf-8"))
+            text = f"{truncated_text}\n... [truncated: {omitted} bytes omitted]"
+    print(text)
 
 
 def _print_work_order(order: dict[str, Any]) -> None:
@@ -1243,7 +1270,10 @@ def _main(argv: list[str] | None = None) -> int:
                 print(f"updated {args.id} ({', '.join(sorted(key for key in detail if key != 'reason'))})")
             elif command == "show":
                 if args.json:
-                    print(json.dumps(tracker.get_item(args.id), indent=2, sort_keys=True))
+                    item = tracker.get_item(args.id)
+                    if args.fields:
+                        item = _project_fields(item, args.fields)
+                    _output(json.dumps(item, indent=2, sort_keys=True), args)
                 else:
                     _print_work_order(tracker.work_order(args.id))
             elif command == "claim":
@@ -1289,25 +1319,46 @@ def _main(argv: list[str] | None = None) -> int:
                 print(f"{args.id} blocked")
             elif command == "list":
                 items = tracker.list_items(state=args.state, worktree=args.worktree, priority=args.priority)
-                print(
-                    json.dumps(items, indent=2, sort_keys=True)
-                    if args.json
-                    else "\n".join(
-                        f"{item['id']} {item['state']} {item['priority']} {item['worktree']}" for item in items
-                    )
-                )
+                if args.limit is not None and args.limit > 0:
+                    items = items[: args.limit]
+                if args.fields:
+                    items = [_project_fields(item, args.fields) for item in items]
+                if args.json:
+                    _output(json.dumps(items, indent=2, sort_keys=True), args)
+                else:
+                    if args.fields:
+                        fields_list = [f.strip() for f in args.fields.split(",") if f.strip()]
+                        _output("\n".join(" ".join(str(item.get(f, "")) for f in fields_list) for item in items), args)
+                    else:
+                        _output(
+                            "\n".join(
+                                f"{item['id']} {item['state']} {item['priority']} {item['worktree']}" for item in items
+                            ),
+                            args,
+                        )
             elif command == "ready":
                 items = tracker.ready_items()
+                if args.limit is not None and args.limit > 0:
+                    items = items[: args.limit]
+                if args.fields:
+                    items = [_project_fields(item, args.fields) for item in items]
                 if args.json:
-                    print(json.dumps(items, indent=2, sort_keys=True))
+                    _output(json.dumps(items, indent=2, sort_keys=True), args)
                 else:
-                    print("\n".join(f"{item['id']} {item['priority']} {item['worktree']}" for item in items))
-                    open_findings = FindingsTracker(database, actor=args.actor).open_count()
-                    drafts = count_unsynced_drafts(_drafts_dir(args, project_id))
-                    if open_findings or drafts:
-                        print(
-                            f"{open_findings} open finding(s), {drafts} unsynced draft(s) -- todo-db finding candidates"
+                    if args.fields:
+                        fields_list = [f.strip() for f in args.fields.split(",") if f.strip()]
+                        _output("\n".join(" ".join(str(item.get(f, "")) for f in fields_list) for item in items), args)
+                    else:
+                        _output(
+                            "\n".join(f"{item['id']} {item['priority']} {item['worktree']}" for item in items), args
                         )
+                        open_findings = FindingsTracker(database, actor=args.actor).open_count()
+                        drafts = count_unsynced_drafts(_drafts_dir(args, project_id))
+                        if open_findings or drafts:
+                            _output(
+                                f"{open_findings} open finding(s), {drafts} unsynced draft(s) -- todo-db finding candidates",
+                                args,
+                            )
             elif command == "stats":
                 stats = {
                     **tracker.stats(),

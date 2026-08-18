@@ -116,7 +116,11 @@ def test_hosted_transport_counter(sql_trace: SQLTrace, tmp_path: Path, monkeypat
     assert sql_trace.total_statements >= 1
 
 
-def test_output_metrics_recording(sql_trace: SQLTrace) -> None:
+def test_output_metrics_recording(
+    sql_trace: SQLTrace, seeded_db: TodoDatabase, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from todo_db.cli import main
+
     sql_trace.reset()
     sample_out = "item-01 high Feature 1\nitem-02 medium Feature 2\n"
     sample_err = "warning: 1 draft finding pending\n"
@@ -125,6 +129,29 @@ def test_output_metrics_recording(sql_trace: SQLTrace) -> None:
     assert sql_trace.stdout_bytes == len(sample_out.encode("utf-8"))
     assert sql_trace.stderr_bytes == len(sample_err.encode("utf-8"))
     assert sql_trace.estimated_tokens == (len(sample_out) + len(sample_err) + 3) // 4
+
+    # Budget tests for compact output commands
+    db_path = seeded_db._config.path
+    common = [
+        "--db",
+        str(db_path),
+        "--project-id",
+        seeded_db.project_identity.project_id,
+        "--repository",
+        seeded_db.project_identity.repository,
+    ]
+
+    # 1. Projected list
+    assert main([*common, "--fields", "id,priority", "--limit", "5", "list"]) == 0
+    out = capsys.readouterr().out
+    sql_trace.record_output(stdout=out)
+    assert sql_trace.stdout_bytes < 200
+    assert sql_trace.estimated_tokens < 60
+
+    # 2. Bounded max-bytes
+    assert main([*common, "--max-bytes", "100", "list"]) == 0
+    out = capsys.readouterr().out
+    assert len(out.encode("utf-8")) <= 160
 
 
 def test_tool_invocations_lifecycle_counter(sql_trace: SQLTrace, tmp_path: Path) -> None:

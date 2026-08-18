@@ -1686,6 +1686,13 @@ class TodoTracker:
             raise TodoError(f"verification seq={seq} on {item_id!r} has no command")
         proc = subprocess.run(row["command"], shell=True, capture_output=True, text=True, check=False)
         output = (proc.stdout or "") + (proc.stderr or "")
+        byte_cap = 4096
+        output_bytes = output.encode("utf-8")
+        if len(output_bytes) > byte_cap:
+            head = output_bytes[:1024].decode("utf-8", errors="ignore")
+            tail = output_bytes[-2048:].decode("utf-8", errors="ignore")
+            omitted = len(output_bytes) - len(head.encode("utf-8")) - len(tail.encode("utf-8"))
+            output = f"{head}\n... [truncated: {omitted} bytes omitted] ...\n{tail}"
         result = "pass" if proc.returncode == 0 else "fail"
         with self.database.transaction():
             self.connection.execute(
