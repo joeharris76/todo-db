@@ -37,21 +37,36 @@ export async function updateTodoStatusWidget(ctx: ExtensionContext): Promise<voi
 
     if (claims.length === 1) {
       const c = claims[0];
+      const branchTag = c.claimed_branch ? ` (${c.claimed_branch})` : "";
       ctx.ui.setStatus("todo-db", `todo: ${c.id}`);
       ctx.ui.setWidget("todo-db", [
         `todo-db [Active Claim]`,
         `== ${c.id} [${c.priority}] ${c.title}`,
-        `Claimed by ${c.claimed_by} (${c.claimed_branch || "main"})`,
+        `Claimed by ${c.claimed_by}${branchTag}`,
       ]);
       return;
     }
 
-    // Multiple claims detected -> conflict warning
-    ctx.ui.setStatus("todo-db", `todo: ${claims.length} claims (conflict)`);
-    ctx.ui.setWidget("todo-db", [
-      `todo-db: ⚠️ Multiple active claims detected (${claims.length})`,
-      ...claims.map((c) => `• ${c.id} (${c.claimed_by})`),
-    ]);
+    // Multiple claims: check if same principal holds multiple claims (conflict)
+    const principalCounts: Record<string, number> = {};
+    for (const c of claims) {
+      principalCounts[c.claimed_by] = (principalCounts[c.claimed_by] || 0) + 1;
+    }
+    const hasSamePrincipalConflict = Object.values(principalCounts).some((cnt) => cnt > 1);
+
+    if (hasSamePrincipalConflict) {
+      ctx.ui.setStatus("todo-db", `todo: ${claims.length} claims (conflict)`);
+      ctx.ui.setWidget("todo-db", [
+        `todo-db: ⚠️ Multiple active claims held by same principal (${claims.length})`,
+        ...claims.map((c) => `• ${c.id} (${c.claimed_by})`),
+      ]);
+    } else {
+      ctx.ui.setStatus("todo-db", `todo: ${claims.length} active claims`);
+      ctx.ui.setWidget("todo-db", [
+        `todo-db: Active Claims (${claims.length})`,
+        ...claims.map((c) => `• ${c.id} [${c.priority}] (${c.claimed_by})`),
+      ]);
+    }
   } catch {
     // UI failure does not affect core execution
   }

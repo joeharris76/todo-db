@@ -20,7 +20,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Iterable
 
 from .database import TodoDatabase
-from .errors import TodoError
+from .errors import E_VERIFY_GATE, TodoError
 
 try:
     import tomllib
@@ -1513,7 +1513,7 @@ class TodoTracker:
     def _completion_verifications(self, item_id: str) -> list[Any]:
         return list(
             self.connection.execute(
-                "SELECT seq, command, expected, last_result FROM verifications WHERE item_id = ? ORDER BY seq",
+                "SELECT seq, command, expected, last_run, last_result FROM verifications WHERE item_id = ? ORDER BY seq",
                 (item_id,),
             )
         )
@@ -1548,6 +1548,7 @@ class TodoTracker:
         pr: int | None = None,
         *,
         verification_override_reason: str | None = None,
+        model_assert: bool = False,
     ) -> None:
         override_reason = verification_override_reason.strip() if verification_override_reason is not None else None
         if verification_override_reason is not None and not override_reason:
@@ -1559,13 +1560,23 @@ class TodoTracker:
         verification_definition = [(row["seq"], row["command"], row["expected"]) for row in initial_verifications]
 
         if override_reason is None:
-            for seq, _command, _expected in verification_definition:
-                result, _output = self.run_verification(item_id, seq)
-                if result != "pass":
-                    raise TodoError(
-                        f"cannot complete {item_id!r}: verification seq={seq} failed; "
-                        f"inspect it with `todo-db verify {item_id}`"
-                    )
+            if model_assert:
+                for row in initial_verifications:
+                    if row["last_result"] != "pass" or not row["last_run"]:
+                        raise TodoError(
+                            f"cannot complete {item_id!r}: verifications not passed: seq={row['seq']} not passing or unexecuted; "
+                            f"run `todo-db verify {item_id}`",
+                            code=E_VERIFY_GATE,
+                        )
+            else:
+                for seq, _command, _expected in verification_definition:
+                    result, _output = self.run_verification(item_id, seq)
+                    if result != "pass":
+                        raise TodoError(
+                            f"cannot complete {item_id!r}: verification seq={seq} failed; "
+                            f"inspect it with `todo-db verify {item_id}`",
+                            code=E_VERIFY_GATE,
+                        )
         elif not verification_definition:
             raise TodoError(f"cannot override verification for {item_id!r}: the item has no verification steps")
 
@@ -1583,7 +1594,8 @@ class TodoTracker:
                 if failed:
                     raise TodoError(
                         f"cannot complete {item_id!r}: verification results are not passing: "
-                        f"{', '.join(map(str, failed))}"
+                        f"{', '.join(map(str, failed))}",
+                        code=E_VERIFY_GATE,
                     )
             self._transition(item, "done")
             self.connection.execute(
@@ -1604,7 +1616,10 @@ class TodoTracker:
                         "sequences": [row["seq"] for row in current_verifications],
                     }
                 }
-            self._event("complete", item_id, {"pr": pr, **verification_detail})
+            payload = {"pr": pr, **verification_detail}
+            if model_assert:
+                payload["model_assert"] = True
+            self._event("complete", item_id, payload)
 
     def drop(self, item_id: str, reason: str) -> None:
         if not reason.strip():
@@ -1823,6 +1838,8 @@ class TodoTracker:
         ).fetchone()
         if row is None:
             raise TodoError(f"no verification seq={seq} on {item_id!r}")
+        if not row["command"] or not str(row["command"]).strip():
+            raise TodoError(f"verification seq={seq} on {item_id!r} has no command")
         proc = subprocess.run(
             row["command"],
             shell=True,

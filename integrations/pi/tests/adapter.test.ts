@@ -40,13 +40,16 @@ describe("Pi Adapter Core", () => {
   });
 
   it("sanitizes process environment", () => {
-    process.env.TODO_DB_AUTH_TOKEN = "secret-auth-token";
-    process.env.AWS_SECRET_ACCESS_KEY = "secret-aws-key";
+    process.env.LD_PRELOAD = "/evil.so";
+    process.env.DYLD_INSERT_LIBRARIES = "/evil.dylib";
+    process.env.TODO_DB_AUTH_TOKEN = "valid-token";
     const clean = getSanitizedEnv();
-    assert.strictEqual(clean.TODO_DB_AUTH_TOKEN, undefined);
-    assert.strictEqual(clean.AWS_SECRET_ACCESS_KEY, undefined);
+    assert.strictEqual(clean.LD_PRELOAD, undefined);
+    assert.strictEqual(clean.DYLD_INSERT_LIBRARIES, undefined);
+    assert.strictEqual(clean.TODO_DB_AUTH_TOKEN, "valid-token");
+    delete process.env.LD_PRELOAD;
+    delete process.env.DYLD_INSERT_LIBRARIES;
     delete process.env.TODO_DB_AUTH_TOKEN;
-    delete process.env.AWS_SECRET_ACCESS_KEY;
   });
 
   it("serializes queue execution", async () => {
@@ -78,6 +81,21 @@ describe("Pi Adapter Core", () => {
     const res = await executeTodoDbTool({ action: "next" }, { cwd: emptyDir } as any);
     assert.strictEqual(res.details.error, "E_NO_PROJECT");
     fs.rmSync(emptyDir, { recursive: true, force: true });
+  });
+
+  it("validates required action parameters before running CLI", async () => {
+    // Progress missing wid/evidence
+    const pRes = await executeTodoDbTool({ action: "progress", id: "i1" }, { cwd: tmpDir } as any);
+    assert.strictEqual(pRes.isError, true);
+    assert.ok(pRes.details.error.includes("required"));
+
+    // Finish missing id
+    const fRes = await executeTodoDbTool({ action: "finish" }, { cwd: tmpDir } as any);
+    assert.strictEqual(fRes.isError, true);
+
+    // Adopt missing id
+    const aRes = await executeTodoDbTool({ action: "adopt" }, { cwd: tmpDir } as any);
+    assert.strictEqual(aRes.isError, true);
   });
 
   it("renders custom tool results", () => {

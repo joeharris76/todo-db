@@ -2,7 +2,7 @@ from pathlib import Path
 import pytest
 
 from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase, TodoTracker
-from todo_db.agent import AgentWorkflow
+from todo_db.agent import AgentWorkflow, GitScopeEngine
 from todo_db.errors import TodoError
 
 
@@ -201,5 +201,96 @@ def test_agent_workflow_finish_gates_and_remediation(tmp_path: Path) -> None:
             workflow.finish("item-gates", claim_token=token, run_verifications=True)
 
         assert tracker.get_item("item-gates")["claimed_by"] == "agent-tester"
+    finally:
+        db.close()
+
+
+def test_non_holder_cannot_finish_or_progress(tmp_path: Path) -> None:
+    db, tracker, workflow = _setup_db(tmp_path)
+    try:
+        tracker.create_item(
+            item_id="item-auth",
+            title="Auth Item",
+            worktree="todo-db",
+            priority="high",
+            description="Testing ownership gates",
+            work=[{"id": "w0", "summary": "Step 0"}],
+            scope={"only_modify": ["src/**"]},
+            verifications=[{"description": "smoke", "command": "true", "expected": ""}],
+        )
+        ctx = workflow.take("item-auth")
+        token = ctx["claim_token"]
+
+        # Other actor workflow
+        other_tracker = TodoTracker(db, actor="other-agent")
+        other_workflow = AgentWorkflow(other_tracker, repo_root=tmp_path)
+
+        # 1. Non-holder cannot progress
+        with pytest.raises(TodoError, match="is not claimed by actor 'other-agent'"):
+            other_workflow.progress("item-auth", "w0", "evidence", claim_token=token)
+
+        # 2. Non-holder cannot finish
+        with pytest.raises(TodoError, match="is not claimed by actor 'other-agent'"):
+            other_workflow.finish("item-auth", claim_token=token, model_assert=True)
+
+        # 3. Context redacts claim token for non-holder
+        other_ctx = other_workflow.context("item-auth")
+        assert other_ctx["claim_token"] is None
+        holder_ctx = workflow.context("item-auth")
+        assert holder_ctx["claim_token"] == token
+    finally:
+        db.close()
+
+
+def test_adopt_rotates_token_and_refreshes_lease(tmp_path: Path) -> None:
+    db, tracker, workflow = _setup_db(tmp_path)
+    try:
+        tracker.create_item(
+            item_id="item-adopt",
+            title="Adopt Item",
+            worktree="todo-db",
+            priority="high",
+            description="Testing claim adoption",
+            work=[{"id": "w0", "summary": "Step 0"}],
+            scope={"only_modify": ["src/**"]},
+        )
+        ctx1 = workflow.take("item-adopt", session="sess-1")
+        token1 = ctx1["claim_token"]
+
+        ctx2 = workflow.adopt("item-adopt", session="sess-2")
+        token2 = ctx2["claim_token"]
+        assert token1 != token2
+        assert ctx2["claimed_session"] == "sess-2"
+
+        # Non-holder cannot adopt
+        other_tracker = TodoTracker(db, actor="intruder")
+        other_workflow = AgentWorkflow(other_tracker, repo_root=tmp_path)
+        with pytest.raises(TodoError, match="not an active claim held by actor 'intruder'"):
+            other_workflow.adopt("item-adopt", session="sess-evil")
+    finally:
+        db.close()
+
+
+def test_empty_verification_command_and_nogit_scope(tmp_path: Path) -> None:
+    db, tracker, workflow = _setup_db(tmp_path)
+    try:
+        tracker.create_item(
+            item_id="item-empty-verif",
+            title="Empty Verif",
+            worktree="todo-db",
+            priority="high",
+            description="Testing empty verif command",
+            verifications=[{"description": "empty command", "command": "", "expected": ""}],
+        )
+        with pytest.raises(TodoError, match="has no command"):
+            tracker.run_verification("item-empty-verif", 1)
+
+        # Scope engine fails closed on non-git dir
+        nogit = tmp_path / "nogit_dir"
+        nogit.mkdir()
+        engine = GitScopeEngine(nogit)
+        assert engine.is_git_repo() is False
+        with pytest.raises(TodoError, match="not a git repository"):
+            engine.changed_files()
     finally:
         db.close()

@@ -34,22 +34,48 @@ export function findProjectRoot(startDir: string): string | null {
 
 export function getSanitizedEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };
-  const sensitiveKeys = [
-    "TODO_DB_AUTH_TOKEN",
-    "TODO_DB_RO_AUTH_TOKEN",
-    "TODO_DB_URL",
-    "TODO_DB_CONFIG",
-    "TODO_DB_TOOL",
-    "AWS_SECRET_ACCESS_KEY",
-    "GITHUB_TOKEN",
-    "TURSO_AUTH_TOKEN",
+  const hostileKeys = [
     "DYLD_INSERT_LIBRARIES",
+    "DYLD_LIBRARY_PATH",
     "LD_PRELOAD",
+    "LD_LIBRARY_PATH",
   ];
-  for (const key of sensitiveKeys) {
+  for (const key of hostileKeys) {
     delete env[key];
   }
   return env;
+}
+
+export function resolveWrapperPath(projectRoot: string): string | null {
+  const candidates = [
+    path.join(projectRoot, "_project", "scripts", "todo"),
+    path.join(projectRoot, "scripts", "todo"),
+    path.join(projectRoot, "todo"),
+  ];
+
+  const configPath = path.join(projectRoot, ".todo-db", "config.json");
+  if (fs.existsSync(configPath)) {
+    try {
+      const cfg = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+      if (cfg.wrapper) {
+        candidates.unshift(path.resolve(projectRoot, cfg.wrapper));
+      }
+    } catch {
+      // Ignore JSON parse errors in config
+    }
+  }
+
+  for (const cand of candidates) {
+    if (fs.existsSync(cand)) {
+      try {
+        fs.accessSync(cand, fs.constants.X_OK);
+        return cand;
+      } catch {
+        // Not executable
+      }
+    }
+  }
+  return null;
 }
 
 export async function runTodoDb(
@@ -58,20 +84,12 @@ export async function runTodoDb(
   options?: { timeoutMs?: number; signal?: AbortSignal; envOverride?: NodeJS.ProcessEnv }
 ): Promise<ExecResult> {
   const timeoutMs = options?.timeoutMs ?? 30000;
-  const wrapperPath = path.join(projectRoot, "_project", "scripts", "todo");
-  let cmd = "todo-db";
-  let cmdArgs = args;
-
-  if (fs.existsSync(wrapperPath)) {
-    try {
-      fs.accessSync(wrapperPath, fs.constants.X_OK);
-      cmd = wrapperPath;
-    } catch {
-      cmd = "todo-db";
-    }
-  }
+  const wrapper = resolveWrapperPath(projectRoot);
+  const cmd = wrapper || "todo-db";
+  const cmdArgs = args;
 
   return new Promise<ExecResult>((resolve, reject) => {
+    let completed = false;
     const env = options?.envOverride ?? getSanitizedEnv();
     const proc = spawn(cmd, cmdArgs, {
       cwd: projectRoot,
@@ -85,34 +103,51 @@ export async function runTodoDb(
     const byteCap = 64 * 1024;
 
     const timer = setTimeout(() => {
-      proc.kill("SIGTERM");
-      reject(new Error(`Command timed out after ${timeoutMs}ms: ${cmd} ${cmdArgs.join(" ")}`));
+      if (!completed) {
+        proc.kill("SIGTERM");
+        const killTimer = setTimeout(() => {
+          if (!completed) {
+            proc.kill("SIGKILL");
+          }
+        }, 2000);
+        killTimer.unref();
+        completed = true;
+        reject(new Error(`Command timed out after ${timeoutMs}ms: ${cmd} ${cmdArgs.join(" ")}`));
+      }
     }, timeoutMs);
 
     proc.stdout?.on("data", (chunk: Buffer) => {
-      if (stdout.length < byteCap) {
+      const currentBytes = Buffer.byteLength(stdout, "utf-8");
+      if (currentBytes < byteCap) {
         stdout += chunk.toString("utf-8");
       }
     });
 
     proc.stderr?.on("data", (chunk: Buffer) => {
-      if (stderr.length < byteCap) {
+      const currentBytes = Buffer.byteLength(stderr, "utf-8");
+      if (currentBytes < byteCap) {
         stderr += chunk.toString("utf-8");
       }
     });
 
     proc.on("error", (err) => {
-      clearTimeout(timer);
-      reject(err);
+      if (!completed) {
+        completed = true;
+        clearTimeout(timer);
+        reject(err);
+      }
     });
 
     proc.on("close", (code) => {
-      clearTimeout(timer);
-      resolve({
-        exitCode: code ?? 0,
-        stdout: stdout.trim(),
-        stderr: stderr.trim(),
-      });
+      if (!completed) {
+        completed = true;
+        clearTimeout(timer);
+        resolve({
+          exitCode: code ?? 0,
+          stdout: stdout.trim(),
+          stderr: stderr.trim(),
+        });
+      }
     });
   });
 }

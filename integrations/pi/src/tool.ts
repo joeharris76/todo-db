@@ -87,33 +87,77 @@ export async function executeTodoDbTool(
   const isMutation = ["take", "progress", "finish", "adopt", "release"].includes(params.action);
 
   const runAction = async () => {
-    const cliArgs = ["agent", params.action];
+    const cliArgs: string[] = ["agent", params.action];
 
-    if (params.id) cliArgs.push(params.id);
-    if (params.wid) cliArgs.push(params.wid);
-    if (params.evidence) {
-      cliArgs.push("--evidence", params.evidence);
-    }
-    if (params.notes) {
-      cliArgs.push("--notes", params.notes);
-    }
-    if (params.claim_token) {
-      cliArgs.push("--claim-token", params.claim_token);
-    }
-    if (params.fields) {
-      cliArgs.push("--fields", params.fields);
-    }
-    if (params.unit_limit !== undefined) {
-      cliArgs.push("--unit-limit", String(params.unit_limit));
-    }
-    if (params.session || (params.action === "take" && ctx?.session?.id)) {
-      cliArgs.push("--session", params.session || ctx!.session!.id);
-    }
-    if (params.model_assert || params.action === "finish") {
-      cliArgs.push("--model-assert");
-    }
-    if (params.pr !== undefined) {
-      cliArgs.push("--pr", String(params.pr));
+    if (params.action === "next") {
+      // no id argument
+    } else if (params.action === "take") {
+      if (params.id) cliArgs.push(params.id);
+      if (params.session || ctx?.session?.id) {
+        cliArgs.push("--session", params.session || ctx!.session!.id);
+      }
+      if (params.worktree) cliArgs.push("--worktree", params.worktree);
+      if (params.branch) cliArgs.push("--branch", params.branch);
+    } else if (params.action === "context") {
+      if (!params.id) {
+        return {
+          content: [{ type: "text", text: JSON.stringify({ error: "id is required for context action" }, null, 2) }],
+          details: { error: "id is required for context action" },
+          isError: true,
+        };
+      }
+      cliArgs.push(params.id);
+      if (params.fields) cliArgs.push("--fields", params.fields);
+      if (params.unit_limit !== undefined) cliArgs.push("--unit-limit", String(params.unit_limit));
+    } else if (params.action === "progress") {
+      if (!params.id || !params.wid || !params.evidence) {
+        return {
+          content: [{ type: "text", text: JSON.stringify({ error: "id, wid, and evidence are required for progress action" }, null, 2) }],
+          details: { error: "id, wid, and evidence are required for progress action" },
+          isError: true,
+        };
+      }
+      cliArgs.push(params.id, params.wid, "--evidence", params.evidence);
+      if (params.claim_token) cliArgs.push("--claim-token", params.claim_token);
+      if (params.notes) cliArgs.push("--notes", params.notes);
+    } else if (params.action === "finish") {
+      if (!params.id) {
+        return {
+          content: [{ type: "text", text: JSON.stringify({ error: "id is required for finish action" }, null, 2) }],
+          details: { error: "id is required for finish action" },
+          isError: true,
+        };
+      }
+      cliArgs.push(params.id);
+      if (params.claim_token) cliArgs.push("--claim-token", params.claim_token);
+      if (params.run_verifications) {
+        cliArgs.push("--run-verifications");
+      } else {
+        cliArgs.push("--model-assert");
+      }
+      if (params.pr !== undefined) cliArgs.push("--pr", String(params.pr));
+      if (params.override_verifications) cliArgs.push("--override-verifications", params.override_verifications);
+    } else if (params.action === "claims") {
+      // no id argument
+    } else if (params.action === "adopt") {
+      if (!params.id) {
+        return {
+          content: [{ type: "text", text: JSON.stringify({ error: "id is required for adopt action" }, null, 2) }],
+          details: { error: "id is required for adopt action" },
+          isError: true,
+        };
+      }
+      const session = params.session || ctx?.session?.id || "default";
+      cliArgs.push(params.id, "--session", session);
+    } else if (params.action === "release") {
+      if (!params.id) {
+        return {
+          content: [{ type: "text", text: JSON.stringify({ error: "id is required for release action" }, null, 2) }],
+          details: { error: "id is required for release action" },
+          isError: true,
+        };
+      }
+      cliArgs.push(params.id);
     }
 
     try {

@@ -1,13 +1,20 @@
-"""Claim-coordinated agent workflow service, projections, and Git scope engine."""
-
 from __future__ import annotations
 
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
-from .errors import TodoError
+from .errors import (
+    E_BASE_DIVERGED,
+    E_BASE_UNREACHABLE,
+    E_CLAIM_STALE,
+    E_LINT_GATE,
+    E_SCOPE_GATE,
+    E_VERIFY_GATE,
+    TodoError,
+)
 from .tracker import TodoTracker, utc_now
 
 
@@ -36,6 +43,13 @@ class GitScopeEngine:
             probe = probe.parent
 
     def capture_state(self) -> GitState:
+        if not self.is_git_repo():
+            return GitState(
+                root=self.repo_root,
+                head_sha=None,
+                branch=None,
+                is_clean=False,
+            )
         head = self._run(["rev-parse", "HEAD"])
         branch = self._run(["branch", "--show-current"])
         status = self._run(["status", "--porcelain"])
@@ -58,11 +72,11 @@ class GitScopeEngine:
         return proc.stdout.decode("utf-8", errors="replace")
 
     def is_git_repo(self) -> bool:
-        return (self.repo_root / ".git").exists() or (self.repo_root / ".git").is_file()
+        return (self.repo_root / ".git").exists()
 
     def _run_bytes(self, args: list[str]) -> bytes:
         if not self.is_git_repo():
-            return b""
+            raise TodoError(f"not a git repository: {self.repo_root}", code=E_SCOPE_GATE)
         proc = subprocess.run(
             ["git", "-C", str(self.repo_root), *args],
             capture_output=True,
@@ -71,14 +85,20 @@ class GitScopeEngine:
         )
         if proc.returncode != 0:
             err = proc.stderr.decode("utf-8", errors="replace")
-            raise TodoError(f"git command failed ({' '.join(args)}): {err.strip()}")
+            raise TodoError(f"git command failed ({' '.join(args)}): {err.strip()}", code=E_SCOPE_GATE)
         return proc.stdout
 
     def changed_files(self, base: str | None = None) -> list[str]:
         """Return root-relative changed, added, deleted, renamed, and untracked files."""
+        if not self.is_git_repo():
+            raise TodoError(f"not a git repository: {self.repo_root}", code=E_SCOPE_GATE)
+
         changed: set[str] = set()
 
         if base:
+            if base.startswith("-"):
+                raise TodoError(f"invalid git baseline {base!r}: E_BASE_UNREACHABLE", code=E_BASE_UNREACHABLE)
+
             # Check baseline reachability
             proc = subprocess.run(
                 ["git", "-C", str(self.repo_root), "rev-parse", "--verify", f"{base}^{{commit}}"],
@@ -86,7 +106,7 @@ class GitScopeEngine:
                 check=False,
             )
             if proc.returncode != 0:
-                raise TodoError(f"baseline commit {base!r} unreachable: E_BASE_UNREACHABLE")
+                raise TodoError(f"baseline commit {base!r} unreachable: E_BASE_UNREACHABLE", code=E_BASE_UNREACHABLE)
 
             # Check ancestor relationship
             anc_proc = subprocess.run(
@@ -97,7 +117,8 @@ class GitScopeEngine:
             if anc_proc.returncode != 0:
                 raise TodoError(
                     f"baseline commit {base!r} has diverged from HEAD: E_BASE_DIVERGED; "
-                    "audited human rebaseline required"
+                    "audited human rebaseline required",
+                    code=E_BASE_DIVERGED,
                 )
 
             # Diff between baseline and HEAD
@@ -165,7 +186,19 @@ class AgentWorkflow:
     def current_claim(self, principal: str | None = None) -> dict[str, Any] | None:
         p = principal or self.tracker.actor
         row = self.database.connection.execute(
-            "SELECT * FROM items WHERE claimed_by = ? AND state = 'active' ORDER BY priority LIMIT 1",
+            """
+            SELECT * FROM items
+            WHERE claimed_by = ? AND state = 'active'
+            ORDER BY CASE priority
+                WHEN 'critical' THEN 1
+                WHEN 'high' THEN 2
+                WHEN 'medium-high' THEN 3
+                WHEN 'medium' THEN 4
+                WHEN 'low' THEN 5
+                ELSE 6
+            END
+            LIMIT 1
+            """,
             (p,),
         ).fetchone()
         if row is None:
@@ -234,6 +267,30 @@ class AgentWorkflow:
             },
         }
 
+    def adopt(self, item_id: str, session: str) -> dict[str, Any]:
+        """Adopt an active claim for the current principal with a new session id and rotated claim token."""
+        if not session or not session.strip():
+            raise TodoError("session is required for claim adoption")
+        with self.database.transaction():
+            item = dict(self.tracker._require_item(item_id))
+            if item["state"] != "active" or item.get("claimed_by") != self.tracker.actor:
+                raise TodoError(
+                    f"cannot adopt {item_id!r}: not an active claim held by actor {self.tracker.actor!r}; "
+                    f"use `todo agent take {item_id}` instead"
+                )
+            new_token = uuid4().hex
+            now = utc_now()
+            self.database.connection.execute(
+                "UPDATE items SET claimed_session = ?, claim_token = ?, claimed_at = ? WHERE id = ?",
+                (session.strip(), new_token, now, item_id),
+            )
+            self.tracker._event(
+                "claim",
+                item_id,
+                {"session": session.strip(), "claim_token": new_token, "adoption": True},
+            )
+        return self.context(item_id)
+
     def take(
         self,
         item_id: str | None = None,
@@ -248,6 +305,7 @@ class AgentWorkflow:
         eff_branch = branch or git_state.branch
         git_baseline = git_state.head_sha
 
+        target_id: str
         with self.database.transaction():
             existing = self.current_claim()
             if existing:
@@ -261,22 +319,22 @@ class AgentWorkflow:
                         "UPDATE items SET claimed_session = ? WHERE id = ?",
                         (session, existing["id"]),
                     )
-                return self.context(existing["id"])
+                target_id = existing["id"]
+            else:
+                target_id = item_id if item_id is not None else ""
+                if not target_id:
+                    ready = self.tracker.ready_items()
+                    if not ready:
+                        raise TodoError("cannot take item: no ready items in queue")
+                    target_id = ready[0]["id"]
 
-            target_id = item_id
-            if target_id is None:
-                ready = self.tracker.ready_items()
-                if not ready:
-                    raise TodoError("cannot take item: no ready items in queue")
-                target_id = ready[0]["id"]
-
-            self.tracker._claim_internal(
-                target_id,
-                session=session,
-                branch=eff_branch,
-                worktree=eff_worktree,
-                git_baseline=git_baseline,
-            )
+                self.tracker._claim_internal(
+                    target_id,
+                    session=session,
+                    branch=eff_branch,
+                    worktree=eff_worktree,
+                    git_baseline=git_baseline,
+                )
 
         return self.context(target_id)
 
@@ -322,7 +380,9 @@ class AgentWorkflow:
             )
 
         total_units = len(work_units)
-        if unit_limit is not None and unit_limit >= 0:
+        if unit_limit is not None and unit_limit < 0:
+            raise TodoError(f"--unit-limit must be non-negative, got {unit_limit}")
+        if unit_limit is not None:
             displayed_units = work_units[:unit_limit]
         else:
             displayed_units = work_units
@@ -378,6 +438,13 @@ class AgentWorkflow:
                 "command": f"todo agent finish {item_id}",
             }
 
+        # Redact claim_token if caller is not the active claim holder
+        claim_token = (
+            item_dict.get("claim_token")
+            if item_dict.get("claimed_by") == self.tracker.actor
+            else None
+        )
+
         ctx = {
             "id": item_dict["id"],
             "title": item_dict["title"],
@@ -389,7 +456,7 @@ class AgentWorkflow:
             "claimed_by": item_dict.get("claimed_by"),
             "claimed_at": item_dict.get("claimed_at"),
             "claimed_session": item_dict.get("claimed_session"),
-            "claim_token": item_dict.get("claim_token"),
+            "claim_token": claim_token,
             "git_baseline": item_dict.get("git_baseline"),
             "work_units": displayed_units,
             "scope": scope,
@@ -439,12 +506,15 @@ class AgentWorkflow:
             raise TodoError("evidence is required to mark a work unit done")
 
         with self.database.transaction():
-            item = self.tracker._require_item(item_id)
+            item = dict(self.tracker._require_item(item_id))
             if item["claimed_by"] != self.tracker.actor:
                 raise TodoError(f"{item_id!r} is not claimed by actor {self.tracker.actor!r}")
-            tok = item["claim_token"] if "claim_token" in item.keys() else None
-            if claim_token and tok and tok != claim_token:
-                raise TodoError(f"claim token mismatch on {item_id!r}: E_CLAIM_STALE")
+            tok = item.get("claim_token")
+            if tok:
+                if not claim_token:
+                    raise TodoError(f"claim token required on {item_id!r}: E_CLAIM_STALE", code=E_CLAIM_STALE)
+                if tok != claim_token:
+                    raise TodoError(f"claim token mismatch on {item_id!r}: E_CLAIM_STALE", code=E_CLAIM_STALE)
 
             unit = self.tracker._require_unit(item_id, wid)
             if unit["status"] == "done":
@@ -474,15 +544,24 @@ class AgentWorkflow:
         pr: int | None = None,
         verification_override_reason: str | None = None,
     ) -> dict[str, Any]:
-        """Finish gate composing lint, scope check, verification validation, and audit verification."""
+        """Finish gate composing ownership, lint, scope check, verification validation, and audit verification."""
+        item = self.tracker.get_item(item_id)
+        if item.get("claimed_by") != self.tracker.actor:
+            raise TodoError(f"{item_id!r} is not claimed by actor {self.tracker.actor!r}")
+
+        tok = item.get("claim_token")
+        if tok:
+            if not claim_token:
+                raise TodoError(f"claim token required on {item_id!r}: E_CLAIM_STALE", code=E_CLAIM_STALE)
+            if tok != claim_token:
+                raise TodoError(f"claim token mismatch on {item_id!r}: E_CLAIM_STALE", code=E_CLAIM_STALE)
+
         lint_issues = self.tracker.lint(item_id)
         if lint_issues:
-            raise TodoError(f"cannot finish {item_id!r}: lint findings detected: {'; '.join(lint_issues)}")
-
-        item = self.tracker.get_item(item_id)
-        tok = item.get("claim_token")
-        if claim_token and tok and tok != claim_token:
-            raise TodoError(f"claim token mismatch on {item_id!r}: E_CLAIM_STALE")
+            raise TodoError(
+                f"cannot finish {item_id!r}: lint findings detected: {'; '.join(lint_issues)}",
+                code=E_LINT_GATE,
+            )
 
         work_units = self.database.connection.execute(
             "SELECT wid, status FROM work_units WHERE item_id = ?", (item_id,)
@@ -490,6 +569,15 @@ class AgentWorkflow:
         unfinished = [u["wid"] for u in work_units if u["status"] != "done"]
         if unfinished:
             raise TodoError(f"cannot finish {item_id!r}: work units not done: {', '.join(unfinished)}")
+
+        base = item.get("git_baseline")
+        changed_files = self.git_engine.changed_files(base=base)
+        scope_violations = self.tracker.check_scope(item_id, changed_files)
+        if scope_violations:
+            raise TodoError(
+                f"cannot finish {item_id!r}: scope violations detected: {'; '.join(scope_violations)}",
+                code=E_SCOPE_GATE,
+            )
 
         if run_verifications:
             verifs = self.database.connection.execute(
@@ -499,43 +587,23 @@ class AgentWorkflow:
                 res, out = self.tracker.run_verification(item_id, v["seq"])
                 if res != "pass":
                     raise TodoError(
-                        f"cannot finish {item_id!r}: verification seq {v['seq']} failed: {out.strip()[:200]}"
+                        f"cannot finish {item_id!r}: verification seq {v['seq']} failed: {out.strip()[:200]}",
+                        code=E_VERIFY_GATE,
                     )
-
-        base = item.get("git_baseline")
-        changed_files = self.git_engine.changed_files(base=base)
-        scope_violations = self.tracker.check_scope(item_id, changed_files)
-        if scope_violations:
-            raise TodoError(
-                f"cannot finish {item_id!r}: scope violations detected: {'; '.join(scope_violations)}"
-            )
-
-        if model_assert or run_verifications:
-            verifs = self.database.connection.execute(
-                "SELECT seq, last_result FROM verifications WHERE item_id = ?", (item_id,)
-            ).fetchall()
-            failed = [v["seq"] for v in verifs if v["last_result"] != "pass"]
-            if failed and verification_override_reason is None:
+            # Re-check scope after verification commands ran
+            post_changed = self.git_engine.changed_files(base=base)
+            post_scope = self.tracker.check_scope(item_id, post_changed)
+            if post_scope:
                 raise TodoError(
-                    f"cannot finish {item_id!r}: verifications not passed: {', '.join(map(str, failed))}; "
-                    f"run `todo verify {item_id} --run` to execute verifications"
+                    f"cannot finish {item_id!r}: post-verification scope violations: {'; '.join(post_scope)}",
+                    code=E_SCOPE_GATE,
                 )
 
-            with self.database.transaction():
-                self.database.verify_audit()
-                self.tracker._transition(item, "done")
-                self.database.connection.execute(
-                    "UPDATE items SET completed_at = ?, completed_pr = ?, claimed_by = NULL, claimed_at = NULL, "
-                    "claimed_session = NULL, claim_token = NULL, claimed_branch = NULL, claimed_worktree = NULL, "
-                    "git_baseline = NULL WHERE id = ?",
-                    (utc_now(), pr, item_id),
-                )
-                self.tracker._event(
-                    "complete",
-                    item_id,
-                    {"pr": pr, "model_assert": model_assert, "verification": {"result": "pass"}},
-                )
-        else:
-            self.tracker.complete(item_id, pr=pr, verification_override_reason=verification_override_reason)
+        self.tracker.complete(
+            item_id,
+            pr=pr,
+            verification_override_reason=verification_override_reason,
+            model_assert=model_assert and not run_verifications,
+        )
 
         return {"id": item_id, "state": "done", "status": "completed"}

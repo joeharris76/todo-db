@@ -1401,35 +1401,46 @@ def _run_agent(database: TodoDatabase, args: argparse.Namespace) -> int:
             _output(json.dumps(res, indent=2, sort_keys=True), args)
             return 0
         except TodoError as exc:
+            code = getattr(exc, "code", None)
             msg = str(exc)
-            if "lint findings detected" in msg:
-                print(json.dumps({"error": msg, "code": "E_LINT_GATE"}, indent=2, sort_keys=True), file=sys.stderr)
-                return 1
-            if "scope violations detected" in msg:
-                print(json.dumps({"error": msg, "code": "E_SCOPE_GATE"}, indent=2, sort_keys=True), file=sys.stderr)
-                return 1
-            if "verifications not passed" in msg or "verification seq" in msg:
-                print(json.dumps({"error": msg, "code": "E_VERIFY_GATE"}, indent=2, sort_keys=True), file=sys.stderr)
+            if code or "lint findings detected" in msg or "scope violations detected" in msg or "verifications not passed" in msg:
+                err_code = code or ("E_LINT_GATE" if "lint findings" in msg else ("E_SCOPE_GATE" if "scope violations" in msg else "E_VERIFY_GATE"))
+                print(json.dumps({"error": msg, "code": err_code}, indent=2, sort_keys=True), file=sys.stderr)
                 return 1
             raise
 
     if cmd == "claims":
+        priority_case = """
+            CASE priority
+                WHEN 'critical' THEN 1
+                WHEN 'high' THEN 2
+                WHEN 'medium-high' THEN 3
+                WHEN 'medium' THEN 4
+                WHEN 'low' THEN 5
+                ELSE 6
+            END
+        """
         principal = args.principal
         if principal:
             rows = database.connection.execute(
-                "SELECT * FROM items WHERE claimed_by = ? AND state = 'active' ORDER BY priority",
+                f"SELECT * FROM items WHERE claimed_by = ? AND state = 'active' ORDER BY {priority_case}",
                 (principal,),
             ).fetchall()
         else:
             rows = database.connection.execute(
-                "SELECT * FROM items WHERE claimed_by IS NOT NULL AND state = 'active' ORDER BY priority"
+                f"SELECT * FROM items WHERE claimed_by IS NOT NULL AND state = 'active' ORDER BY {priority_case}"
             ).fetchall()
-        claims = [dict(r) for r in rows]
+        claims = []
+        for r in rows:
+            d = dict(r)
+            if d.get("claimed_by") != args.actor:
+                d["claim_token"] = None
+            claims.append(d)
         _output(json.dumps(claims, indent=2, sort_keys=True), args)
         return 0
 
     if cmd == "adopt":
-        res = workflow.take(args.id, session=args.session)
+        res = workflow.adopt(args.id, session=args.session)
         _output(json.dumps(res, indent=2, sort_keys=True), args)
         return 0
 

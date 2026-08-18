@@ -4,6 +4,10 @@
 class TodoDBError(Exception):
     """Base class for expected tracker errors."""
 
+    def __init__(self, message: str, *, code: str | None = None) -> None:
+        super().__init__(message)
+        self.code = code
+
 
 class TodoError(TodoDBError):
     """Raised when a TODO lifecycle or validation rule is violated."""

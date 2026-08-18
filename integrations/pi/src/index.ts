@@ -37,8 +37,8 @@ export default function (pi: ExtensionAPI): void {
     parameters: todoDbToolSchema,
     async execute(toolCallId, params, signal, _onUpdate, ctx) {
       const result = await executeTodoDbTool(params, ctx, signal);
-      if (ctx) {
-        // Refresh status widget on mutations
+      const isMutation = ["take", "progress", "finish", "adopt", "release"].includes(params.action);
+      if (ctx && isMutation && !result.isError) {
         await updateTodoStatusWidget(ctx);
       }
       return result;
