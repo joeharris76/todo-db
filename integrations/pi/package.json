@@ -1,0 +1,28 @@
+{
+  "name": "@todo-db/pi-adapter",
+  "version": "0.1.0",
+  "description": "Safe, claim-coordinated todo-db extension for Pi",
+  "type": "module",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "files": [
+    "dist/src",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build && node --test dist/tests/*.test.js",
+    "prepare": "npm run build"
+  },
+  "keywords": [
+    "pi",
+    "pi-extension",
+    "todo-db"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  }
+}
