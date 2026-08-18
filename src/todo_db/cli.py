@@ -1242,9 +1242,8 @@ def _main(argv: list[str] | None = None) -> int:
                 )
                 print(f"updated {args.id} ({', '.join(sorted(key for key in detail if key != 'reason'))})")
             elif command == "show":
-                item = tracker.get_item(args.id)
                 if args.json:
-                    print(json.dumps(item, indent=2, sort_keys=True))
+                    print(json.dumps(tracker.get_item(args.id), indent=2, sort_keys=True))
                 else:
                     _print_work_order(tracker.work_order(args.id))
             elif command == "claim":

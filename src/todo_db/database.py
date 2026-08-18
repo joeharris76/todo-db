@@ -266,6 +266,7 @@ class TodoDatabase:
     def __init__(self, connection: Any, config: DatabaseConfig) -> None:
         self._connection = connection
         self._config = config
+        self._project_identity: ProjectIdentity | None = None
 
     @classmethod
     def open(cls, config: DatabaseConfig) -> "TodoDatabase":
@@ -288,12 +289,14 @@ class TodoDatabase:
 
     @property
     def project_identity(self) -> ProjectIdentity:
-        row = self._connection.execute(
-            "SELECT project_id, repository FROM project_identity WHERE singleton = 1"
-        ).fetchone()
-        if row is None:
-            raise ProjectIdentityMismatchError("project identity is missing")
-        return ProjectIdentity(project_id=row["project_id"], repository=row["repository"])
+        if self._project_identity is None:
+            row = self._connection.execute(
+                "SELECT project_id, repository FROM project_identity WHERE singleton = 1"
+            ).fetchone()
+            if row is None:
+                raise ProjectIdentityMismatchError("project identity is missing")
+            self._project_identity = ProjectIdentity(project_id=row["project_id"], repository=row["repository"])
+        return self._project_identity
 
     @property
     def connection(self) -> Any:
@@ -722,6 +725,7 @@ class TodoDatabase:
                     "INSERT INTO project_identity(singleton, project_id, repository) VALUES (1, ?, ?)",
                     (self._config.identity.project_id, self._config.identity.repository),
                 )
+                self._project_identity = self._config.identity
             return
         self._check_identity()
 
