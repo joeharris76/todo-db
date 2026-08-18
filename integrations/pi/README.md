@@ -15,15 +15,17 @@ Trusting a project permits its configured wrapper to execute. Review the checkou
 
 ## Installation
 
-From this repository:
+From the signed/checksummed GitHub release asset:
 
 ```sh
-cd integrations/pi
-npm install
-npm run build
-npm pack
+curl -LO \
+  https://github.com/joeharris76/todo-db/releases/download/v0.4.1/todo-db-pi-adapter-0.1.1.tgz
 pi install ./todo-db-pi-adapter-0.1.1.tgz
 ```
+
+From a source checkout, run `npm ci && npm test && npm pack` in this directory,
+then install the generated tarball. Registry publication uses the same tarball
+when npm scope credentials are configured.
 
 The project must have an initialized tracker:
 

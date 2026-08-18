@@ -8,10 +8,16 @@ existing consumers and is not the generic project TODO router.
 
 ## Install and upgrade
 
+Release artifacts are available from GitHub with published SHA-256 checksums:
+
 ```sh
-uv tool install "todo-db==0.4.1"
-# or: pipx install "todo-db==0.4.1"
+uv tool install \
+  "https://github.com/joeharris76/todo-db/releases/download/v0.4.1/todo_db-0.4.1-py3-none-any.whl"
+# pipx accepts the same wheel URL.
 ```
+
+Registry publication uses the same versioned artifacts when PyPI credentials
+are configured; the GitHub release remains the canonical fallback.
 
 Before upgrading an existing writable tracker, take the normal database/export
 backup. Opening it with `todo-db 0.4.1` applies checksum-verified schema
