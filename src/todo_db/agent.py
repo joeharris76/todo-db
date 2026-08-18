@@ -244,36 +244,41 @@ class AgentWorkflow:
         branch: str | None = None,
     ) -> dict[str, Any]:
         """Atomically adopt existing claim or take highest-priority/specified item."""
-        existing = self.current_claim()
-        if existing:
-            if item_id is not None and existing["id"] != item_id:
-                raise TodoError(
-                    f"actor {self.tracker.actor!r} already holds active claim on {existing['id']!r}; "
-                    f"release it first with `todo agent release {existing['id']}` before taking {item_id!r}"
-                )
-            if session and existing.get("claimed_session") != session:
-                with self.database.transaction():
+        git_state = self.git_engine.capture_state()
+        eff_worktree = worktree or str(git_state.root)
+        eff_branch = branch or git_state.branch
+        git_baseline = git_state.head_sha
+
+        with self.database.transaction():
+            existing = self.current_claim()
+            if existing:
+                if item_id is not None and existing["id"] != item_id:
+                    raise TodoError(
+                        f"actor {self.tracker.actor!r} already holds active claim on {existing['id']!r}; "
+                        f"release it first with `todo agent release {existing['id']}` before taking {item_id!r}"
+                    )
+                if session and existing.get("claimed_session") != session:
                     self.database.connection.execute(
                         "UPDATE items SET claimed_session = ? WHERE id = ?",
                         (session, existing["id"]),
                     )
-            return self.context(existing["id"])
+                return self.context(existing["id"])
 
-        target_id = item_id
-        if target_id is None:
-            ready = self.tracker.ready_items()
-            if not ready:
-                raise TodoError("cannot take item: no ready items in queue")
-            target_id = ready[0]["id"]
+            target_id = item_id
+            if target_id is None:
+                ready = self.tracker.ready_items()
+                if not ready:
+                    raise TodoError("cannot take item: no ready items in queue")
+                target_id = ready[0]["id"]
 
-        git_state = self.git_engine.capture_state()
-        self.tracker.claim(
-            target_id,
-            session=session,
-            branch=branch or git_state.branch,
-            worktree=worktree or str(git_state.root),
-            git_baseline=git_state.head_sha,
-        )
+            self.tracker._claim_internal(
+                target_id,
+                session=session,
+                branch=eff_branch,
+                worktree=eff_worktree,
+                git_baseline=git_baseline,
+            )
+
         return self.context(target_id)
 
     def context(
