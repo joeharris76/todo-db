@@ -1,4 +1,3 @@
-import os
 import subprocess
 from pathlib import Path
 
@@ -107,7 +106,7 @@ def test_tracker_rebaseline_scope_audit_event(tmp_path: Path) -> None:
     assert item["git_baseline"] == "newsha456"
 
     # Audit events must record rebaseline
-    audit = database.verify_audit()
+    database.verify_audit()
     events = database.connection.execute("SELECT action, detail FROM events WHERE action = 'rebaseline'").fetchall()
     assert len(events) == 1
     assert "oldsha123" in events[0]["detail"]
