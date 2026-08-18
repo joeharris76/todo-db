@@ -478,28 +478,32 @@ def test_release_is_holder_only(tmp_path: Path) -> None:
             description="Item used to verify holder-only release.",
         )
         alice.claim("lease-item")
-        assert database.connection.execute("SELECT claimed_by FROM items WHERE id='lease-item'").fetchone()[
-            "claimed_by"
-        ] == "alice"
+        assert (
+            database.connection.execute("SELECT claimed_by FROM items WHERE id='lease-item'").fetchone()["claimed_by"]
+            == "alice"
+        )
 
         # Bob must not be able to release Alice's active claim.
         with pytest.raises(TodoError, match="only the holder can release"):
             bob.release("lease-item")
-        assert database.connection.execute("SELECT claimed_by FROM items WHERE id='lease-item'").fetchone()[
-            "claimed_by"
-        ] == "alice"
+        assert (
+            database.connection.execute("SELECT claimed_by FROM items WHERE id='lease-item'").fetchone()["claimed_by"]
+            == "alice"
+        )
 
         # Holder can release.
         alice.release("lease-item")
-        assert database.connection.execute("SELECT claimed_by FROM items WHERE id='lease-item'").fetchone()[
-            "claimed_by"
-        ] is None
+        assert (
+            database.connection.execute("SELECT claimed_by FROM items WHERE id='lease-item'").fetchone()["claimed_by"]
+            is None
+        )
 
         # Unclaimed release is a no-op (idempotent).
         bob.release("lease-item")
-        assert database.connection.execute("SELECT claimed_by FROM items WHERE id='lease-item'").fetchone()[
-            "claimed_by"
-        ] is None
+        assert (
+            database.connection.execute("SELECT claimed_by FROM items WHERE id='lease-item'").fetchone()["claimed_by"]
+            is None
+        )
 
         # Stale lease is still not releasable by non-holder; takeover is via claim.
         alice.claim("lease-item")
@@ -509,8 +513,9 @@ def test_release_is_holder_only(tmp_path: Path) -> None:
             bob.release("lease-item")
         # Claim takeover of expired lease succeeds.
         bob.claim("lease-item")
-        assert database.connection.execute("SELECT claimed_by FROM items WHERE id='lease-item'").fetchone()[
-            "claimed_by"
-        ] == "bob"
+        assert (
+            database.connection.execute("SELECT claimed_by FROM items WHERE id='lease-item'").fetchone()["claimed_by"]
+            == "bob"
+        )
     finally:
         database.close()

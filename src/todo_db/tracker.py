@@ -1428,24 +1428,27 @@ class TodoTracker:
         return released
 
     def ready_items(self, ttl_hours: float = DEFAULT_LEASE_TTL_HOURS) -> list[dict[str, Any]]:
-        priority_rank = {priority: index for index, priority in enumerate(PRIORITIES)}
-        result = []
-        for row in self.connection.execute(
-            "SELECT * FROM items WHERE state IN ('planning','active') AND blocked_reason IS NULL"
-        ):
-            if (
-                row["claimed_by"]
-                and row["claimed_by"] != self.actor
-                and not _lease_expired(row["claimed_at"], ttl_hours)
-            ):
-                continue
-            unmet = self.connection.execute(
-                "SELECT count(*) AS n FROM item_deps d JOIN items n ON n.id = d.needs_item WHERE d.item_id = ? AND n.state != 'done'",
-                (row["id"],),
-            ).fetchone()["n"]
-            if not unmet:
-                result.append(_dict(row))
-        return sorted(result, key=lambda item: (priority_rank[item["priority"]], item["id"]))
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=ttl_hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        query = (
+            "SELECT id, title, worktree, priority, state, blocked_reason, category, description, approach, "
+            "claimed_by, claimed_at, created_at, completed_at, completed_pr FROM items "
+            "WHERE state IN ('planning','active') AND blocked_reason IS NULL "
+            "AND (claimed_by IS NULL OR claimed_by = ? OR claimed_at IS NULL OR claimed_at < ?) "
+            "AND NOT EXISTS ("
+            "  SELECT 1 FROM item_deps d JOIN items n ON n.id = d.needs_item "
+            "  WHERE d.item_id = items.id AND n.state != 'done'"
+            ") "
+            "ORDER BY "
+            "  CASE priority "
+            "    WHEN 'critical' THEN 0 "
+            "    WHEN 'high' THEN 1 "
+            "    WHEN 'medium-high' THEN 2 "
+            "    WHEN 'medium' THEN 3 "
+            "    WHEN 'low' THEN 4 "
+            "    ELSE 5 "
+            "  END, id"
+        )
+        return [_dict(row) for row in self.connection.execute(query, (self.actor, cutoff))]
 
     def list_items(self, **filters: str | None) -> list[dict[str, Any]]:
         query = "SELECT id, state, priority, worktree, title, claimed_by FROM items WHERE 1=1"

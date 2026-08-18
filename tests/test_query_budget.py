@@ -60,7 +60,7 @@ def test_baseline_counts_per_command(sql_trace: SQLTrace, seeded_db: TodoDatabas
     ready = tracker.ready_items()
     assert len(ready) > 0
     ready_statements = sql_trace.total_statements
-    assert ready_statements >= 1
+    assert ready_statements == 1
 
     # 2. Baseline get_item count
     sql_trace.reset()
