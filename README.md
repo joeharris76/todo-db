@@ -235,7 +235,7 @@ TODO_DB_RO_AUTH_TOKEN=... uv run todo-db \
   --output export.json
 ```
 
-Read-write hosted connections use a per-worktree embedded replica and
+Hosted read-write connections connect directly to the primary with
 `TODO_DB_AUTH_TOKEN`; read-only exports connect with
 `TODO_DB_RO_AUTH_TOKEN`. Plaintext `http://` URLs are refused.
 

@@ -76,29 +76,25 @@ class FakeLibsql(types.ModuleType):
         return connection
 
 
-def test_turso_backend_uses_replica_and_read_write_token(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_turso_backend_connects_directly_with_read_write_token(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase
 
     fake = FakeLibsql(tmp_path / "primary.sqlite")
     monkeypatch.setitem(sys.modules, "libsql", fake)
-    replica = tmp_path / "replica.sqlite"
+    url = "libsql://project.aws-us-east-1.turso.io"
     db = TodoDatabase.open(
         DatabaseConfig(
-            path="libsql://project.aws-us-east-1.turso.io",
+            path=url,
             identity=ProjectIdentity(project_id="project-test", repository="https://example.test/project"),
             auth_token="rw-token",
-            replica_path=replica,
         )
     )
 
     assert db.project_identity.project_id == "project-test"
     assert fake.connect_calls[0] == {
-        "database": str(replica),
-        "sync_url": "libsql://project.aws-us-east-1.turso.io",
+        "database": url,
         "auth_token": "rw-token",
-        "isolation_level": None,
     }
-    assert fake.connections[0].sync_calls == 1
     db.close()
 
 
@@ -135,27 +131,18 @@ def test_turso_backend_rejects_plaintext_urls(monkeypatch: pytest.MonkeyPatch, t
         )
 
 
-def test_hosted_sync_outage_fails_closed_and_redacts_url_and_token(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_hosted_read_write_outage_redacts_url_and_token(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase
     from todo_db.errors import TodoDBError
 
     url = "libsql://sensitive-project.example.test"
     token = "sensitive-write-token"
     fake = FakeLibsql(tmp_path / "primary.sqlite")
-    original_connect = fake.connect
 
-    def connect_with_failed_sync(database, **kwargs):
-        connection = original_connect(database, **kwargs)
+    def failed_connect(database, **kwargs):
+        raise RuntimeError(f"cannot reach {url} using {token}")
 
-        def failed_sync():
-            raise RuntimeError(f"cannot reach {url} using {token}")
-
-        connection.sync = failed_sync
-        return connection
-
-    fake.connect = connect_with_failed_sync
+    fake.connect = failed_connect
     monkeypatch.setitem(sys.modules, "libsql", fake)
     with pytest.raises(TodoDBError) as raised:
         TodoDatabase.open(
@@ -163,19 +150,16 @@ def test_hosted_sync_outage_fails_closed_and_redacts_url_and_token(
                 path=url,
                 identity=ProjectIdentity(project_id="outage-test", repository="todo-db"),
                 auth_token=token,
-                replica_path=tmp_path / "replica.sqlite",
             )
         )
     message = str(raised.value)
-    assert "hosted backend sync failed" in message
+    assert "hosted backend connection failed" in message
     assert url not in message
     assert token not in message
     assert "[REDACTED]" in message
     rendered = "".join(traceback.format_exception(raised.type, raised.value, raised.tb))
     assert url not in rendered
     assert token not in rendered
-    with pytest.raises(sqlite3.ProgrammingError, match="closed database"):
-        fake.connections[0].execute("SELECT 1")
 
 
 def test_hosted_read_only_outage_redacts_url_and_token(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -240,39 +224,6 @@ def test_auth_shaped_connect_failure_raises_hosted_auth_error_with_remediation(
     assert "turso db tokens create" in message and "turso auth login" in message
     assert url not in message and token not in message
     assert "[REDACTED]" in message
-
-
-def test_auth_shaped_sync_failure_raises_hosted_auth_error_and_fails_closed(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase
-    from todo_db.errors import HostedAuthError
-
-    fake = FakeLibsql(tmp_path / "primary.sqlite")
-    original_connect = fake.connect
-
-    def connect_with_expired_sync(database, **kwargs):
-        connection = original_connect(database, **kwargs)
-
-        def unauthorized_sync():
-            raise ValueError("Hrana: api error: status=401, Unauthorized")
-
-        connection.sync = unauthorized_sync
-        return connection
-
-    fake.connect = connect_with_expired_sync
-    monkeypatch.setitem(sys.modules, "libsql", fake)
-    with pytest.raises(HostedAuthError, match="hosted backend sync failed"):
-        TodoDatabase.open(
-            DatabaseConfig(
-                path="libsql://auth-sync.example.test",
-                identity=ProjectIdentity(project_id="auth-sync-test", repository="todo-db"),
-                auth_token="stale-token",
-                replica_path=tmp_path / "replica.sqlite",
-            )
-        )
-    with pytest.raises(sqlite3.ProgrammingError, match="closed database"):
-        fake.connections[0].execute("SELECT 1")
 
 
 def _scrub_cli_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

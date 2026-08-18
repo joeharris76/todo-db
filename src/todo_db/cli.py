@@ -39,7 +39,7 @@ CONFIG_DIRNAME = ".todo-db"
 CONFIG_FILENAME = "config.json"
 DEFAULT_DB_RELATIVE = f"{CONFIG_DIRNAME}/standalone.sqlite"
 DEFAULT_WRAPPER_RELATIVE = "_project/scripts/todo"
-SCAFFOLD_GITIGNORE = "*.sqlite*\nreplica.db*\n*.lock\n!config.json\n"
+SCAFFOLD_GITIGNORE = "*.sqlite*\n*.lock\n!config.json\n"
 
 IDENTITY_SOURCES_HINT = (
     "supply --project-id/--repository, set TODO_DB_PROJECT_ID/TODO_DB_REPOSITORY, "

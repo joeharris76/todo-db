@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import re
 import sqlite3
-from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -173,24 +172,6 @@ def hosted_error(
     return TodoDBError(f"hosted backend {context} failed: {detail}")
 
 
-@contextmanager
-def _replica_lock(path: Path):
-    try:
-        import fcntl
-    except ImportError:  # pragma: no cover - non-POSIX fallback
-        yield
-        return
-    lock_path = path.with_suffix(path.suffix + ".lock")
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    fd = os.open(lock_path, os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0), 0o600)
-    try:
-        fcntl.flock(fd, fcntl.LOCK_EX)
-        yield
-    finally:
-        fcntl.flock(fd, fcntl.LOCK_UN)
-        os.close(fd)
-
-
 def _connect_hosted(config: DatabaseConfig) -> HostedConnection:
     url = _secure_url(str(config.path))
     token = _token(config)
@@ -200,24 +181,10 @@ def _connect_hosted(config: DatabaseConfig) -> HostedConnection:
         raise TodoDBError("hosted backend requires the `todo-db[hosted]` extra") from exc
 
     variable = "TODO_DB_RO_AUTH_TOKEN" if config.credential_mode is CredentialMode.READ_ONLY else "TODO_DB_AUTH_TOKEN"
-    if config.credential_mode is CredentialMode.READ_ONLY:
-        try:
-            return HostedConnection(libsql.connect(url, auth_token=token))
-        except Exception as exc:
-            raise hosted_error(exc, url=url, token=token, context="connection", token_variable=variable) from None
-
-    replica = config.replica_path or Path.cwd() / ".todo-db" / "replica.db"
-    replica.parent.mkdir(parents=True, exist_ok=True)
-    with _replica_lock(replica):
-        try:
-            raw = libsql.connect(str(replica), sync_url=url, auth_token=token, isolation_level=None)
-        except Exception as exc:
-            raise hosted_error(exc, url=url, token=token, context="connection", token_variable=variable) from None
-        connection = HostedConnection(raw)
-        try:
-            connection.sync()
-        except Exception as exc:
-            connection.close()
-            raise hosted_error(exc, url=url, token=token, context="sync", token_variable=variable) from None
+    try:
+        raw = libsql.connect(url, auth_token=token)
+    except Exception as exc:
+        raise hosted_error(exc, url=url, token=token, context="connection", token_variable=variable) from None
+    connection = HostedConnection(raw)
     connection.execute("PRAGMA foreign_keys = ON")
     return connection

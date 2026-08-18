@@ -244,7 +244,7 @@ def test_init_project_scaffolds_config_gitignore_and_wrapper(
     assert (tmp_path / ".todo-db" / "standalone.sqlite").exists()
 
     gitignore = (tmp_path / ".todo-db" / ".gitignore").read_text(encoding="utf-8")
-    assert gitignore == "*.sqlite*\nreplica.db*\n*.lock\n!config.json\n"
+    assert gitignore == "*.sqlite*\n*.lock\n!config.json\n"
 
     wrapper = tmp_path / "_project" / "scripts" / "todo"
     content = wrapper.read_text(encoding="utf-8")
@@ -402,8 +402,7 @@ def test_scaffolded_gitignore_ignores_databases_but_keeps_config_tracked(tmp_pat
 
     subprocess.run(["git", "init", "--quiet"], cwd=tmp_path, check=True)
     assert main(["init-project", "--project-id", "git-test", "--repository", "todo-db"]) == 0
-    (tmp_path / ".todo-db" / "replica.db").write_bytes(b"")
-    (tmp_path / ".todo-db" / "replica.db.lock").write_bytes(b"")
+    (tmp_path / ".todo-db" / "local.lock").write_bytes(b"")
 
     def ignored(path: str) -> bool:
         return (
@@ -415,8 +414,7 @@ def test_scaffolded_gitignore_ignores_databases_but_keeps_config_tracked(tmp_pat
 
     assert ignored(".todo-db/standalone.sqlite")
     assert ignored(".todo-db/standalone.sqlite-wal")
-    assert ignored(".todo-db/replica.db")
-    assert ignored(".todo-db/replica.db.lock")
+    assert ignored(".todo-db/local.lock")
     assert not ignored(".todo-db/config.json")
     status = subprocess.run(
         ["git", "status", "--porcelain"], cwd=tmp_path, capture_output=True, text=True, check=True
