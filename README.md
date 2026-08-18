@@ -11,9 +11,10 @@ existing consumers and is not the generic project TODO router.
 Release artifacts are available from GitHub with published SHA-256 checksums:
 
 ```sh
-uv tool install \
-  "https://github.com/joeharris76/todo-db/releases/download/v0.4.1/todo_db-0.4.1-py3-none-any.whl"
-# pipx accepts the same wheel URL.
+gh release download v0.4.1 --repo joeharris76/todo-db \
+  --pattern 'todo_db-0.4.1-py3-none-any.whl'
+uv tool install ./todo_db-0.4.1-py3-none-any.whl
+# pipx accepts the same downloaded wheel.
 ```
 
 Registry publication uses the same versioned artifacts when PyPI credentials

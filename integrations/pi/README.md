@@ -18,8 +18,8 @@ Trusting a project permits its configured wrapper to execute. Review the checkou
 From the signed/checksummed GitHub release asset:
 
 ```sh
-curl -LO \
-  https://github.com/joeharris76/todo-db/releases/download/v0.4.1/todo-db-pi-adapter-0.1.1.tgz
+gh release download v0.4.1 --repo joeharris76/todo-db \
+  --pattern 'todo-db-pi-adapter-0.1.1.tgz'
 pi install ./todo-db-pi-adapter-0.1.1.tgz
 ```
 
