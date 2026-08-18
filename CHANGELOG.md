@@ -37,6 +37,9 @@ adheres to [Semantic Versioning](https://semver.org/).
 - Add recoverable bounded context pages, blocker/deferral projections, compact
   actor-scoped claim receipts, exact adapter output caps, environment
   allowlists, and lossless Git filename decoding.
+- Constrain the Python source distribution to reviewed project sources and
+  packaging metadata so local agent/tooling directories cannot leak into a
+  published artifact.
 
 ## [0.4.0] - 2026-08-18
 
