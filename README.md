@@ -138,7 +138,7 @@ fails):
 
 ```sh
 turso db create example-project
-turso db tokens create example-project   # export as TODO_DB_AUTH_TOKEN
+turso db tokens create example-project --expiration 90d   # export as TODO_DB_AUTH_TOKEN
 TODO_DB_AUTH_TOKEN=... uv run todo-db \
   init-project --db libsql://example-project.aws-us-east-1.turso.io \
   --project-id example-project \
@@ -238,7 +238,19 @@ TODO_DB_RO_AUTH_TOKEN=... uv run todo-db \
 
 Hosted read-write connections connect directly to the primary with
 `TODO_DB_AUTH_TOKEN`; read-only exports connect with
-`TODO_DB_RO_AUTH_TOKEN`. Plaintext `http://` URLs are refused.
+`TODO_DB_RO_AUTH_TOKEN`. Plaintext `http://` URLs are refused. Provision
+bounded database-scoped credentials outside todo-db:
+
+```sh
+export TODO_DB_AUTH_TOKEN="$(turso db tokens create <db> --expiration 90d)"
+export TODO_DB_RO_AUTH_TOKEN="$(turso db tokens create <db> --read-only --expiration 180d)"
+```
+
+`CredentialMode.READ_ONLY` chooses a credential but does not make an RW token
+read-only. Server-side least privilege requires a token created with
+`--read-only`. ADR 0004 records the lifecycle decision; see
+[`docs/operations/hosted-credentials.md`](docs/operations/hosted-credentials.md)
+for provisioning, routine replacement, and compromise response.
 
 `verify --run` executes a command stored in the database. On a shared hosted
 database those commands are written by other actors, so running one locally
@@ -273,7 +285,7 @@ Hosted connect/sync failures that are auth-shaped (HTTP 401/403,
 `unauthorized`/`forbidden`, token/JWT complaints in the underlying libsql
 error) raise `HostedAuthError` and exit 4; the message keeps the URL and
 token redacted and states the remediation: refresh the token, e.g. `export
-TODO_DB_AUTH_TOKEN=$(turso db tokens create <db>)`, or `turso auth login` if
+TODO_DB_AUTH_TOKEN=$(turso db tokens create <db> --expiration 90d)`, or `turso auth login` if
 the turso CLI itself is logged out. Non-auth hosted failures stay exit 2.
 
 `todo-db doctor` is a read-only preflight (no writes, no replica sync unless
@@ -289,13 +301,10 @@ writability. Exit 0 when healthy (warnings allowed), 4 on any
 auth-classified failure, 2 otherwise. `--json` emits
 `{"checks": [{name, status, detail, remediation?}], "exit": N}`.
 
-The wrapper scaffolded by `init-project --wrapper` auto-remediates: when the
-wrapped command exits 4 against a `libsql://` target and the turso CLI is
-authenticated, it resolves the database name from `turso db list`, mints a
-fresh token with `turso db tokens create`, exports `TODO_DB_AUTH_TOKEN`
-(never echoing it), and retries the command exactly once. When remediation
-is impossible (turso CLI missing or logged out, database name unresolvable,
-or the retry still exits 4) it prints a delimited `TODO-DB AUTH ALERT` block
-to stderr stating that tracker writes are blocked, the two remediation
-commands, and that batch work must not continue until resolved, then exits
-4. Batch drivers should treat exit 4 from the wrapper as a hard stop.
+The wrapper scaffolded by the current release auto-remediates an exit 4 by
+using the authenticated Turso CLI to mint an RW token and retry once. That
+legacy behavior cannot update its parent environment and does not set an
+explicit token lifetime, so ADR 0004 deprecates it. Do not depend on automatic
+recovery: inject a bounded token before invoking the wrapper. The v2 wrapper
+migration removes control-plane calls and retries; until it is installed, an
+authentication alert is a hard stop for batch work.
