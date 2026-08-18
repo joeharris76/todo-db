@@ -59,6 +59,10 @@ This architecture decision record establishes the contract for the streamlined, 
 - **Local Embedded SQLite**: Full support for single-user workflows and worktree concurrency.
 - **Direct Hosted Primary (LibSQL / Turso)**: Full support for transactional operations (`BEGIN IMMEDIATE`, audit chaining, direct primary mutations).
 
+### 2.10 JSON Patch Stop Decision
+- **Decision**: Stop (No separate JSON patch command).
+- **Rationale**: The streamlined agent namespace (`next`, `take`, `context`, `progress`, `finish`) resolves work unit progression with dedicated lifecycle verbs and structured parameters (`agent progress <id> <wid> --evidence <text>`), removing the token overhead and parse error rate of multi-flag `update` calls. Retaining existing CLI flags preserves canonical audit contracts and avoids adding a duplicate mutation surface.
+
 ---
 
 ## 3. Consequences
