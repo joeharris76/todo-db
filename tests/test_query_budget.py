@@ -76,10 +76,19 @@ def test_baseline_counts_per_command(sql_trace: SQLTrace, seeded_db: TodoDatabas
     order_statements = sql_trace.total_statements
     assert order_statements == 10
 
-    # 4. Baseline lint
+    # 4. Baseline lint single item
     sql_trace.reset()
     findings = tracker.lint("item-00")
     assert isinstance(findings, list)
+
+    # 5. Bulk lint_all statement budget (1 query per child table + 1 for config, total 11 queries for ALL items)
+    sql_trace.reset()
+    snapshots = tracker.load_item_snapshots()
+    assert len(snapshots) >= 20
+    configs = tracker.get_all_configs()
+    all_findings = {item_id: tracker.lint_item(snap, configs) for item_id, snap in snapshots.items()}
+    assert len(all_findings) >= 20
+    assert sql_trace.total_statements == 11
 
 
 def test_hosted_transport_counter(sql_trace: SQLTrace, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

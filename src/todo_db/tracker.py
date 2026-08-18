@@ -1127,6 +1127,98 @@ class TodoTracker:
         ]
         return item
 
+    def load_item_snapshots(self, ids: Iterable[str] | None = None) -> dict[str, dict[str, Any]]:
+        id_list = list(ids) if ids is not None else None
+        if id_list is not None and not id_list:
+            return {}
+
+        where_clause = ""
+        params: list[Any] = []
+        if id_list is not None:
+            placeholders = ",".join("?" for _ in id_list)
+            where_clause = f"WHERE id IN ({placeholders})"
+            params = list(id_list)
+
+        items_rows = self.connection.execute(f"SELECT * FROM items {where_clause} ORDER BY id", params).fetchall()
+        snapshots: dict[str, dict[str, Any]] = {}
+        for row in items_rows:
+            snap = _dict(row)
+            snap["work"] = []
+            snap["deps"] = []
+            snap["scope"] = []
+            snap["verifications"] = []
+            snap["preserves"] = []
+            snap["anti_patterns"] = []
+            snap["prior_art"] = []
+            snap["deferrals"] = []
+            snapshots[snap["id"]] = snap
+
+        if not snapshots:
+            return {}
+
+        target_ids = list(snapshots.keys())
+        item_placeholders = ",".join("?" for _ in target_ids)
+
+        work_needs: dict[tuple[str, str], list[str]] = {}
+        for r in self.connection.execute(
+            f"SELECT item_id, wid, needs_wid FROM work_needs WHERE item_id IN ({item_placeholders}) ORDER BY wid, needs_wid",
+            target_ids,
+        ):
+            work_needs.setdefault((r["item_id"], r["wid"]), []).append(r["needs_wid"])
+
+        for row in self.connection.execute(
+            f"SELECT * FROM work_units WHERE item_id IN ({item_placeholders}) ORDER BY wid", target_ids
+        ):
+            unit = _dict(row)
+            unit["needs"] = work_needs.get((row["item_id"], row["wid"]), [])
+            snapshots[row["item_id"]]["work"].append(unit)
+
+        for r in self.connection.execute(
+            f"SELECT item_id, needs_item FROM item_deps WHERE item_id IN ({item_placeholders}) ORDER BY needs_item",
+            target_ids,
+        ):
+            snapshots[r["item_id"]]["deps"].append(r["needs_item"])
+
+        for r in self.connection.execute(
+            f"SELECT item_id, kind, path_glob FROM scope_rules WHERE item_id IN ({item_placeholders}) ORDER BY kind, path_glob",
+            target_ids,
+        ):
+            snapshots[r["item_id"]]["scope"].append({"kind": r["kind"], "path_glob": r["path_glob"]})
+
+        for r in self.connection.execute(
+            f"SELECT * FROM verifications WHERE item_id IN ({item_placeholders}) ORDER BY seq", target_ids
+        ):
+            snapshots[r["item_id"]]["verifications"].append(_dict(r))
+
+        for r in self.connection.execute(
+            f"SELECT item_id, behavior FROM preserves WHERE item_id IN ({item_placeholders}) ORDER BY behavior",
+            target_ids,
+        ):
+            snapshots[r["item_id"]]["preserves"].append(r["behavior"])
+
+        for r in self.connection.execute(
+            f"SELECT item_id, dont, why, instead FROM anti_patterns WHERE item_id IN ({item_placeholders}) ORDER BY dont",
+            target_ids,
+        ):
+            snapshots[r["item_id"]]["anti_patterns"].append(
+                {"dont": r["dont"], "why": r["why"], "instead": r["instead"]}
+            )
+
+        for r in self.connection.execute(
+            f"SELECT item_id, path, concept, decision FROM prior_art WHERE item_id IN ({item_placeholders}) ORDER BY path, concept",
+            target_ids,
+        ):
+            snapshots[r["item_id"]]["prior_art"].append(
+                {"path": r["path"], "concept": r["concept"], "decision": r["decision"]}
+            )
+
+        for r in self.connection.execute(
+            f"SELECT * FROM deferrals WHERE from_item IN ({item_placeholders}) ORDER BY id", target_ids
+        ):
+            snapshots[r["from_item"]]["deferrals"].append(_dict(r))
+
+        return snapshots
+
     def get_item(self, item_id: str) -> dict[str, Any]:
         return self._load_item_full(item_id)
 
@@ -1483,6 +1575,13 @@ class TodoTracker:
             ),
         }
 
+    def get_all_configs(self) -> dict[str, str]:
+        configs = {key: "on" for key in CONFIG_KEYS}
+        for row in self.connection.execute("SELECT key, value FROM meta WHERE key LIKE 'lint.%'"):
+            if row["key"] in CONFIG_KEYS:
+                configs[row["key"]] = row["value"]
+        return configs
+
     def get_config(self, key: str) -> str:
         if key not in CONFIG_KEYS:
             raise TodoError(f"unknown config key {key!r}")
@@ -1515,14 +1614,21 @@ class TodoTracker:
                 violations.append(f"{path}: outside only_modify allowlist")
         return violations
 
-    def lint(self, item_id: str) -> list[str]:
-        item = self.get_item(item_id)
+    def lint_item(self, item: dict[str, Any], configs: dict[str, str] | None = None) -> list[str]:
+        if configs is None:
+            configs = {
+                "lint.require_scope_rules": self.get_config("lint.require_scope_rules"),
+                "lint.require_w0_revalidation": self.get_config("lint.require_w0_revalidation"),
+            }
+        require_scope = configs.get("lint.require_scope_rules", "on") == "on"
+        require_w0 = configs.get("lint.require_w0_revalidation", "on") == "on"
+
         findings: list[str] = []
-        if not item["verifications"]:
+        if not item.get("verifications"):
             findings.append("no verification steps recorded")
-        elif not any(entry["command"] for entry in item["verifications"]):
+        elif not any(entry.get("command") for entry in item.get("verifications", [])):
             findings.append("verification steps exist but none has a runnable command")
-        for entry in item["verifications"]:
+        for entry in item.get("verifications", []):
             project = _uv_project_missing_pytest(entry.get("command") or "")
             if project is not None:
                 findings.append(
@@ -1530,33 +1636,37 @@ class TodoTracker:
                     "but that environment does not declare or inject pytest; use the repository project "
                     "(`uv run -- ...`) or add an explicit `--with pytest`/project dependency"
                 )
-        if self.get_config("lint.require_scope_rules") == "on" and item["work"] and not item["scope"]:
+        if require_scope and item.get("work") and not item.get("scope"):
             findings.append("has work units but no scope rules (only_modify/do_not_modify)")
         if (
-            self.get_config("lint.require_w0_revalidation") == "on"
-            and EVIDENCE_PIN_RE.search(item["description"] or "")
-            and not any(unit["wid"] == "w0" for unit in item["work"])
+            require_w0
+            and EVIDENCE_PIN_RE.search(item.get("description") or "")
+            and not any(unit.get("wid") == "w0" for unit in item.get("work", []))
         ):
             findings.append("description cites point-in-time evidence but has no w0 re-validation unit")
-        if not item["work"] and item["state"] in ("planning", "active"):
+        if not item.get("work") and item.get("state") in ("planning", "active"):
             findings.append("no work breakdown")
         absolute_scope = [
             f"{rule['kind']}:{rule['path_glob']}"
-            for rule in item["scope"]
-            if _is_absolute_scope_glob(rule["path_glob"])
+            for rule in item.get("scope", [])
+            if _is_absolute_scope_glob(rule.get("path_glob", ""))
         ]
         if absolute_scope:
             findings.append(
                 "scope rules must use repository-relative globs; absolute or home-relative rules cannot match "
                 f"repository-relative changed paths: {', '.join(absolute_scope)}"
             )
-        constant_tests = _constant_shell_test_sequences(item["verifications"])
+        constant_tests = _constant_shell_test_sequences(item.get("verifications", []))
         if constant_tests:
             findings.append(
                 f"verification seq {constant_tests} applies test -z/-n to a static literal, so its result is "
                 "constant; assert on a variable, command substitution, file state, or command exit status"
             )
         return findings
+
+    def lint(self, item_id: str) -> list[str]:
+        item = self.get_item(item_id)
+        return self.lint_item(item)
 
     def run_verification(self, item_id: str, seq: int) -> tuple[str, str]:
         if self.database.is_hosted and os.environ.get("TODO_DB_ALLOW_HOSTED_VERIFY_RUN") != "1":

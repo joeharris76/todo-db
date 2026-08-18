@@ -1338,8 +1338,14 @@ def _main(argv: list[str] | None = None) -> int:
             elif command == "lint":
                 if args.id is None and not args.all:
                     raise TodoError("lint requires an item id or --all")
-                ids = [item["id"] for item in tracker.list_items()] if args.all else [args.id]
-                findings = {item_id: tracker.lint(item_id) for item_id in ids}
+                if args.all:
+                    snapshots = tracker.load_item_snapshots()
+                    configs = tracker.get_all_configs()
+                    findings = {item_id: tracker.lint_item(snap, configs) for item_id, snap in snapshots.items()}
+                    ids = list(snapshots.keys())
+                else:
+                    findings = {args.id: tracker.lint(args.id)}
+                    ids = [args.id]
                 total = sum(len(values) for values in findings.values())
                 for item_id, values in findings.items():
                     for finding in values:
