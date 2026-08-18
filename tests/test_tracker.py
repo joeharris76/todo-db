@@ -584,3 +584,38 @@ def test_claim_coordination_metadata_and_clearance(tmp_path: Path) -> None:
         assert row["claim_token"] is None
     finally:
         database.close()
+
+
+def test_sanitized_verify_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase, TodoTracker
+
+    db_path = tmp_path / "verify_env.sqlite"
+    config = DatabaseConfig(
+        path=db_path,
+        identity=ProjectIdentity(project_id="env-test", repository="todo-db"),
+    )
+    database = TodoDatabase.open(config)
+    try:
+        tracker = TodoTracker(database, actor="agent-1")
+        tracker.create_item(
+            item_id="item-env",
+            title="Env Item",
+            worktree="todo-db",
+            priority="high",
+            description="Testing sanitized environment",
+            verifications=[{"description": "check secret", "command": "python -c 'import os; print(os.environ.get(\"TODO_DB_AUTH_TOKEN\", \"NONE\"))'"}],
+        )
+
+        monkeypatch.setenv("TODO_DB_AUTH_TOKEN", "super-secret-token")
+        res, out = tracker.run_verification("item-env", 1)
+        assert res == "pass"
+        assert "NONE" in out
+        assert "super-secret-token" not in out
+
+        # With explicit passthrough
+        monkeypatch.setenv("TODO_DB_VERIFY_ENV_PASSTHROUGH", "TODO_DB_AUTH_TOKEN")
+        res, out = tracker.run_verification("item-env", 1)
+        assert res == "pass"
+        assert "super-secret-token" in out
+    finally:
+        database.close()

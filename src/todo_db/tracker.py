@@ -337,6 +337,31 @@ def _uv_project_missing_pytest(command: str) -> str | None:
     return None
 
 
+def _sanitized_verify_env() -> dict[str, str]:
+    base_env = dict(os.environ)
+    sensitive_keys = {
+        "TODO_DB_AUTH_TOKEN",
+        "TODO_DB_RO_AUTH_TOKEN",
+        "TODO_DB_URL",
+        "TODO_DB_CONFIG",
+        "TODO_DB_TOOL",
+        "AWS_SECRET_ACCESS_KEY",
+        "GITHUB_TOKEN",
+        "TURSO_AUTH_TOKEN",
+        "DYLD_INSERT_LIBRARIES",
+        "LD_PRELOAD",
+    }
+    passthrough = {
+        v.strip()
+        for v in os.environ.get("TODO_DB_VERIFY_ENV_PASSTHROUGH", "").split(",")
+        if v.strip()
+    }
+    for key in list(base_env.keys()):
+        if key in sensitive_keys and key not in passthrough:
+            del base_env[key]
+    return base_env
+
+
 class TodoTracker:
     """Transactional TODO operations over one :class:`TodoDatabase`."""
 
@@ -1798,9 +1823,14 @@ class TodoTracker:
         ).fetchone()
         if row is None:
             raise TodoError(f"no verification seq={seq} on {item_id!r}")
-        if not row["command"]:
-            raise TodoError(f"verification seq={seq} on {item_id!r} has no command")
-        proc = subprocess.run(row["command"], shell=True, capture_output=True, text=True, check=False)
+        proc = subprocess.run(
+            row["command"],
+            shell=True,
+            capture_output=True,
+            text=True,
+            env=_sanitized_verify_env(),
+            check=False,
+        )
         output = (proc.stdout or "") + (proc.stderr or "")
         byte_cap = 4096
         output_bytes = output.encode("utf-8")
