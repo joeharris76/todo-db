@@ -182,9 +182,13 @@ def _connect_hosted(config: DatabaseConfig) -> HostedConnection:
 
     variable = "TODO_DB_RO_AUTH_TOKEN" if config.credential_mode is CredentialMode.READ_ONLY else "TODO_DB_AUTH_TOKEN"
     try:
-        raw = libsql.connect(url, auth_token=token)
+        raw = libsql.connect(url, auth_token=token, isolation_level=None)
     except Exception as exc:
         raise hosted_error(exc, url=url, token=token, context="connection", token_variable=variable) from None
     connection = HostedConnection(raw)
-    connection.execute("PRAGMA foreign_keys = ON")
+    if config.credential_mode is not CredentialMode.READ_ONLY:
+        try:
+            connection.execute("PRAGMA foreign_keys = ON")
+        except Exception:
+            pass
     return connection

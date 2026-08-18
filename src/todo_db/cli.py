@@ -39,7 +39,7 @@ CONFIG_DIRNAME = ".todo-db"
 CONFIG_FILENAME = "config.json"
 DEFAULT_DB_RELATIVE = f"{CONFIG_DIRNAME}/standalone.sqlite"
 DEFAULT_WRAPPER_RELATIVE = "_project/scripts/todo"
-SCAFFOLD_GITIGNORE = "*.sqlite*\n*.lock\n!config.json\n"
+SCAFFOLD_GITIGNORE = "*.sqlite*\nreplica.db*\n*.lock\n!config.json\n"
 
 IDENTITY_SOURCES_HINT = (
     "supply --project-id/--repository, set TODO_DB_PROJECT_ID/TODO_DB_REPOSITORY, "
@@ -156,6 +156,23 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--max-bytes", type=int, default=None, help="maximum bytes for command output with truncation marker"
     )
+
+    compact_parser = argparse.ArgumentParser(add_help=False)
+    compact_parser.add_argument(
+        "--fields",
+        default=argparse.SUPPRESS,
+        help="comma-separated list of fields to project for list, ready, and show",
+    )
+    compact_parser.add_argument(
+        "--limit", type=int, default=argparse.SUPPRESS, help="maximum number of items to return"
+    )
+    compact_parser.add_argument(
+        "--max-bytes",
+        type=int,
+        default=argparse.SUPPRESS,
+        help="maximum bytes for command output with truncation marker",
+    )
+
     sub = parser.add_subparsers(dest="command", required=True)
 
     init = sub.add_parser("init", help="create or validate the schema")
@@ -282,8 +299,12 @@ def _parser() -> argparse.ArgumentParser:
     )
     _identity_args(update)
 
+    show = sub.add_parser("show", help="show one item", parents=[compact_parser])
+    show.add_argument("id")
+    show.add_argument("--json", action="store_true")
+    _identity_args(show)
+
     for name, help_text in (
-        ("show", "show one item"),
         ("claim", "claim an item"),
         ("release", "release a claim"),
         ("deps", "show dependencies"),
@@ -291,8 +312,6 @@ def _parser() -> argparse.ArgumentParser:
     ):
         command = sub.add_parser(name, help=help_text)
         command.add_argument("id")
-        if name == "show":
-            command.add_argument("--json", action="store_true")
         _identity_args(command)
 
     start = sub.add_parser("start", help="start a work unit")
@@ -342,17 +361,20 @@ def _parser() -> argparse.ArgumentParser:
         command.add_argument(f"--{option}", required=True)
         _identity_args(command)
 
-    listing = sub.add_parser("list", help="list items")
+    listing = sub.add_parser("list", help="list items", parents=[compact_parser])
     listing.add_argument("--state", choices=("planning", "active", "done", "dropped"))
     listing.add_argument("--worktree")
     listing.add_argument("--priority", choices=PRIORITIES)
     listing.add_argument("--json", action="store_true")
     _identity_args(listing)
 
-    for name in ("ready", "stats"):
-        command = sub.add_parser(name, help=name)
-        command.add_argument("--json", action="store_true")
-        _identity_args(command)
+    ready = sub.add_parser("ready", help="ready items", parents=[compact_parser])
+    ready.add_argument("--json", action="store_true")
+    _identity_args(ready)
+
+    stats = sub.add_parser("stats", help="stats")
+    stats.add_argument("--json", action="store_true")
+    _identity_args(stats)
 
     scope = sub.add_parser("check-scope", help="check changed files against an item's scope")
     scope.add_argument("id")
@@ -625,25 +647,85 @@ def _load_payload(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+VALID_ITEM_FIELDS = frozenset(
+    {
+        "id",
+        "title",
+        "worktree",
+        "priority",
+        "state",
+        "blocked_reason",
+        "category",
+        "description",
+        "approach",
+        "claimed_by",
+        "claimed_at",
+        "created_at",
+        "completed_at",
+        "completed_pr",
+        "work",
+        "deps",
+        "scope",
+        "verifications",
+        "preserves",
+        "anti_patterns",
+        "prior_art",
+        "deferrals",
+        "ready_units",
+        "blocked_units",
+    }
+)
+
+
 def _project_fields(item: dict[str, Any], fields_str: str | None) -> dict[str, Any]:
     if not fields_str:
         return item
     fields = [f.strip() for f in fields_str.split(",") if f.strip()]
     if not fields:
         return item
+    unknown = [f for f in fields if f not in VALID_ITEM_FIELDS]
+    if unknown:
+        raise TodoError(f"unknown field(s): {', '.join(unknown)}")
     return {k: item[k] for k in fields if k in item}
 
 
 def _output(text: str, args: argparse.Namespace) -> None:
     max_bytes = getattr(args, "max_bytes", None)
-    if max_bytes is not None and max_bytes > 0:
+    if max_bytes is not None:
+        if max_bytes < 20:
+            raise TodoError(f"--max-bytes must be at least 20, got {max_bytes}")
         encoded = text.encode("utf-8")
-        if len(encoded) > max_bytes:
-            marker = "\n... [truncated]"
-            cutoff = max(0, max_bytes - len(marker.encode("utf-8")))
-            truncated_text = encoded[:cutoff].decode("utf-8", errors="ignore")
-            omitted = len(encoded) - len(truncated_text.encode("utf-8"))
-            text = f"{truncated_text}\n... [truncated: {omitted} bytes omitted]"
+        target_bytes = max_bytes - 1
+        if len(encoded) > target_bytes:
+            low = 0
+            high = len(encoded)
+            best_cut = 0
+            best_marker = ""
+            while low <= high:
+                mid = (low + high) // 2
+                chunk = encoded[:mid].decode("utf-8", errors="ignore")
+                omitted = len(encoded) - len(chunk.encode("utf-8"))
+                marker = f"\n... [truncated: {omitted} bytes omitted]"
+                candidate_len = len(chunk.encode("utf-8")) + len(marker.encode("utf-8"))
+                if candidate_len <= target_bytes:
+                    best_cut = mid
+                    best_marker = marker
+                    low = mid + 1
+                else:
+                    high = mid - 1
+
+            if not best_marker:
+                fallback = "\n... [truncated]"
+                fallback_len = len(fallback.encode("utf-8"))
+                if target_bytes >= fallback_len:
+                    cut = target_bytes - fallback_len
+                    truncated_text = encoded[:cut].decode("utf-8", errors="ignore")
+                    text = f"{truncated_text}{fallback}"
+                else:
+                    text = fallback.strip()[:target_bytes]
+            else:
+                truncated_text = encoded[:best_cut].decode("utf-8", errors="ignore")
+                text = f"{truncated_text}{best_marker}"
     print(text)
 
 
@@ -1066,12 +1148,12 @@ def _doctor(args: argparse.Namespace) -> int:
             )
             try:
                 connect(rw_config).close()
-                add("replica-rw", "PASS", "replica open+sync succeeded")
+                add("hosted-rw", "PASS", "hosted direct connection succeeded")
             except HostedAuthError as exc:
                 auth_failure = True
-                add("replica-rw", "FAIL", str(exc))
+                add("hosted-rw", "FAIL", str(exc))
             except (TodoDBError, OSError, ValueError, sqlite3.Error) as exc:
-                add("replica-rw", "FAIL", str(exc))
+                add("hosted-rw", "FAIL", str(exc))
 
     project_hint = identity.project_id if identity is not None else (bound[0] if bound else None)
     if os.environ.get("TODO_DB_FINDING_DRAFTS_DIR") or project_hint:
@@ -1269,11 +1351,16 @@ def _main(argv: list[str] | None = None) -> int:
                 )
                 print(f"updated {args.id} ({', '.join(sorted(key for key in detail if key != 'reason'))})")
             elif command == "show":
-                if args.json:
+                if args.fields:
                     item = tracker.get_item(args.id)
-                    if args.fields:
-                        item = _project_fields(item, args.fields)
-                    _output(json.dumps(item, indent=2, sort_keys=True), args)
+                    projected = _project_fields(item, args.fields)
+                    if args.json:
+                        _output(json.dumps(projected, indent=2, sort_keys=True), args)
+                    else:
+                        fields_list = [f.strip() for f in args.fields.split(",") if f.strip()]
+                        _output(" ".join(str(projected.get(f, "")) for f in fields_list), args)
+                elif args.json:
+                    _output(json.dumps(tracker.get_item(args.id), indent=2, sort_keys=True), args)
                 else:
                     _print_work_order(tracker.work_order(args.id))
             elif command == "claim":
@@ -1319,12 +1406,30 @@ def _main(argv: list[str] | None = None) -> int:
                 print(f"{args.id} blocked")
             elif command == "list":
                 items = tracker.list_items(state=args.state, worktree=args.worktree, priority=args.priority)
-                if args.limit is not None and args.limit > 0:
+                if getattr(args, "limit", None) is not None:
+                    if args.limit < 0:
+                        raise TodoError(f"--limit must be non-negative, got {args.limit}")
                     items = items[: args.limit]
                 if args.fields:
                     items = [_project_fields(item, args.fields) for item in items]
                 if args.json:
-                    _output(json.dumps(items, indent=2, sort_keys=True), args)
+                    if getattr(args, "max_bytes", None) is not None:
+                        max_b = args.max_bytes
+                        if max_b < 20:
+                            raise TodoError(f"--max-bytes must be at least 20, got {max_b}")
+                        out_items = items
+                        emitted = False
+                        while out_items:
+                            payload = json.dumps(out_items, indent=2, sort_keys=True)
+                            if len(payload.encode("utf-8")) + 1 <= max_b:
+                                print(payload)
+                                emitted = True
+                                break
+                            out_items = out_items[:-1]
+                        if not emitted:
+                            print("[]")
+                    else:
+                        print(json.dumps(items, indent=2, sort_keys=True))
                 else:
                     if args.fields:
                         fields_list = [f.strip() for f in args.fields.split(",") if f.strip()]
@@ -1338,12 +1443,30 @@ def _main(argv: list[str] | None = None) -> int:
                         )
             elif command == "ready":
                 items = tracker.ready_items()
-                if args.limit is not None and args.limit > 0:
+                if getattr(args, "limit", None) is not None:
+                    if args.limit < 0:
+                        raise TodoError(f"--limit must be non-negative, got {args.limit}")
                     items = items[: args.limit]
                 if args.fields:
                     items = [_project_fields(item, args.fields) for item in items]
                 if args.json:
-                    _output(json.dumps(items, indent=2, sort_keys=True), args)
+                    if getattr(args, "max_bytes", None) is not None:
+                        max_b = args.max_bytes
+                        if max_b < 20:
+                            raise TodoError(f"--max-bytes must be at least 20, got {max_b}")
+                        out_items = items
+                        emitted = False
+                        while out_items:
+                            payload = json.dumps(out_items, indent=2, sort_keys=True)
+                            if len(payload.encode("utf-8")) + 1 <= max_b:
+                                print(payload)
+                                emitted = True
+                                break
+                            out_items = out_items[:-1]
+                        if not emitted:
+                            print("[]")
+                    else:
+                        print(json.dumps(items, indent=2, sort_keys=True))
                 else:
                     if args.fields:
                         fields_list = [f.strip() for f in args.fields.split(",") if f.strip()]

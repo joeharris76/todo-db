@@ -94,12 +94,13 @@ def test_baseline_counts_per_command(sql_trace: SQLTrace, seeded_db: TodoDatabas
 def test_hosted_transport_counter(sql_trace: SQLTrace, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     primary = tmp_path / "primary.sqlite"
     # Initialize the primary database first
-    TodoDatabase.open(
+    db_init = TodoDatabase.open(
         DatabaseConfig(
             path=primary,
             identity=ProjectIdentity(project_id="test-hosted", repository="https://example.test/hosted"),
         )
     )
+    db_init.close()
 
     fake = FakeLibsql(primary)
     monkeypatch.setitem(sys.modules, "libsql", fake)
@@ -114,6 +115,7 @@ def test_hosted_transport_counter(sql_trace: SQLTrace, tmp_path: Path, monkeypat
     db = TodoDatabase.open(config)
     assert db.project_identity.project_id == "test-hosted"
     assert sql_trace.total_statements >= 1
+    db.close()
 
 
 def test_output_metrics_recording(
@@ -142,16 +144,17 @@ def test_output_metrics_recording(
     ]
 
     # 1. Projected list
-    assert main([*common, "--fields", "id,priority", "--limit", "5", "list"]) == 0
+    assert main([*common, "list", "--fields", "id,priority", "--limit", "5"]) == 0
     out = capsys.readouterr().out
     sql_trace.record_output(stdout=out)
     assert sql_trace.stdout_bytes < 200
     assert sql_trace.estimated_tokens < 60
 
-    # 2. Bounded max-bytes
-    assert main([*common, "--max-bytes", "100", "list"]) == 0
+    # 2. Bounded max-bytes (strict limit)
+    assert main([*common, "list", "--max-bytes", "100"]) == 0
     out = capsys.readouterr().out
-    assert len(out.encode("utf-8")) <= 160
+    assert len(out.encode("utf-8")) <= 100
+    assert "[truncated:" in out
 
 
 def test_tool_invocations_lifecycle_counter(sql_trace: SQLTrace, tmp_path: Path) -> None:

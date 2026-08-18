@@ -242,3 +242,80 @@ def test_verify_audit_rejects_missing_audit_head(tmp_path: Path) -> None:
     with pytest.raises(AuditIntegrityError, match="audit head is missing"):
         unverified_db.verify_audit()
     raw_conn.close()
+
+
+def test_tampered_history_downgrade_to_v1_is_rejected_and_not_laundered(tmp_path: Path) -> None:
+    from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase
+
+    path = tmp_path / "todo_tampered.sqlite"
+    db = _open_database(path)
+    db.record_event(actor="alice", action="create", detail={"n": 1})
+    db.record_event(actor="bob", action="claim", detail={"n": 2})
+    db.record_event(actor="carol", action="complete", detail={"n": 3})
+    db.close()
+
+    # Adversary tries to tamper seq 2 and change hash_version to 1
+    raw = sqlite3.connect(path)
+    raw.execute("UPDATE events SET actor = 'mallory', hash_version = 1 WHERE seq = 2")
+    raw.commit()
+    raw.close()
+
+    # Reopening database with write access must NOT re-hash and launder the tamper
+    config = DatabaseConfig(
+        path=path,
+        identity=ProjectIdentity(project_id="project-test", repository="https://example.test/project"),
+    )
+    with pytest.raises(AuditIntegrityError, match="invalid hash_version in existing audit chain"):
+        TodoDatabase.open(config)
+
+
+def test_complete_gate_enforces_audit_verification(tmp_path: Path) -> None:
+    from todo_db import TodoTracker
+
+    path = tmp_path / "todo_complete.sqlite"
+    db = _open_database(path)
+    tracker = TodoTracker(db, actor="tester")
+    tracker.create_item(
+        item_id="item-comp",
+        title="Complete Gate Test",
+        worktree="todo-db",
+        priority="high",
+        description="Complete gate test",
+        verifications=[{"seq": 1, "description": "v1", "command": "true"}],
+    )
+    tracker.claim("item-comp")
+    tracker.run_verification("item-comp", 1)
+
+    # Tamper a mid-chain event
+    raw = sqlite3.connect(path)
+    raw.execute("UPDATE events SET actor = 'mallory' WHERE seq = 1")
+    raw.commit()
+    raw.close()
+
+    # complete() must fail because verify_audit is mandatory on complete
+    with pytest.raises(AuditIntegrityError, match="audit integrity: event hash mismatch"):
+        tracker.complete("item-comp")
+    db.close()
+
+
+def test_check_audit_head_detects_mid_chain_deletion_on_open(tmp_path: Path) -> None:
+    from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase
+
+    path = tmp_path / "todo_delete.sqlite"
+    db = _open_database(path)
+    db.record_event(actor="alice", action="create", detail={"n": 1})
+    db.record_event(actor="bob", action="claim", detail={"n": 2})
+    db.close()
+
+    # Delete mid-chain row
+    raw = sqlite3.connect(path)
+    raw.execute("DELETE FROM events WHERE seq = 1")
+    raw.commit()
+    raw.close()
+
+    config = DatabaseConfig(
+        path=path,
+        identity=ProjectIdentity(project_id="project-test", repository="https://example.test/project"),
+    )
+    with pytest.raises(AuditIntegrityError, match="audit integrity: head mismatch"):
+        TodoDatabase.open(config)

@@ -1156,66 +1156,117 @@ class TodoTracker:
         if not snapshots:
             return {}
 
-        target_ids = list(snapshots.keys())
-        item_placeholders = ",".join("?" for _ in target_ids)
+        if id_list is None:
+            work_needs: dict[tuple[str, str], list[str]] = {}
+            for r in self.connection.execute("SELECT item_id, wid, needs_wid FROM work_needs ORDER BY wid, needs_wid"):
+                if r["item_id"] in snapshots:
+                    work_needs.setdefault((r["item_id"], r["wid"]), []).append(r["needs_wid"])
 
-        work_needs: dict[tuple[str, str], list[str]] = {}
-        for r in self.connection.execute(
-            f"SELECT item_id, wid, needs_wid FROM work_needs WHERE item_id IN ({item_placeholders}) ORDER BY wid, needs_wid",
-            target_ids,
-        ):
-            work_needs.setdefault((r["item_id"], r["wid"]), []).append(r["needs_wid"])
+            for row in self.connection.execute("SELECT * FROM work_units ORDER BY wid"):
+                if row["item_id"] in snapshots:
+                    unit = _dict(row)
+                    unit["needs"] = work_needs.get((row["item_id"], row["wid"]), [])
+                    snapshots[row["item_id"]]["work"].append(unit)
 
-        for row in self.connection.execute(
-            f"SELECT * FROM work_units WHERE item_id IN ({item_placeholders}) ORDER BY wid", target_ids
-        ):
-            unit = _dict(row)
-            unit["needs"] = work_needs.get((row["item_id"], row["wid"]), [])
-            snapshots[row["item_id"]]["work"].append(unit)
+            for r in self.connection.execute("SELECT item_id, needs_item FROM item_deps ORDER BY needs_item"):
+                if r["item_id"] in snapshots:
+                    snapshots[r["item_id"]]["deps"].append(r["needs_item"])
 
-        for r in self.connection.execute(
-            f"SELECT item_id, needs_item FROM item_deps WHERE item_id IN ({item_placeholders}) ORDER BY needs_item",
-            target_ids,
-        ):
-            snapshots[r["item_id"]]["deps"].append(r["needs_item"])
+            for r in self.connection.execute(
+                "SELECT item_id, kind, path_glob FROM scope_rules ORDER BY kind, path_glob"
+            ):
+                if r["item_id"] in snapshots:
+                    snapshots[r["item_id"]]["scope"].append({"kind": r["kind"], "path_glob": r["path_glob"]})
 
-        for r in self.connection.execute(
-            f"SELECT item_id, kind, path_glob FROM scope_rules WHERE item_id IN ({item_placeholders}) ORDER BY kind, path_glob",
-            target_ids,
-        ):
-            snapshots[r["item_id"]]["scope"].append({"kind": r["kind"], "path_glob": r["path_glob"]})
+            for r in self.connection.execute("SELECT * FROM verifications ORDER BY seq"):
+                if r["item_id"] in snapshots:
+                    snapshots[r["item_id"]]["verifications"].append(_dict(r))
 
-        for r in self.connection.execute(
-            f"SELECT * FROM verifications WHERE item_id IN ({item_placeholders}) ORDER BY seq", target_ids
-        ):
-            snapshots[r["item_id"]]["verifications"].append(_dict(r))
+            for r in self.connection.execute("SELECT item_id, behavior FROM preserves ORDER BY behavior"):
+                if r["item_id"] in snapshots:
+                    snapshots[r["item_id"]]["preserves"].append(r["behavior"])
 
-        for r in self.connection.execute(
-            f"SELECT item_id, behavior FROM preserves WHERE item_id IN ({item_placeholders}) ORDER BY behavior",
-            target_ids,
-        ):
-            snapshots[r["item_id"]]["preserves"].append(r["behavior"])
+            for r in self.connection.execute("SELECT item_id, dont, why, instead FROM anti_patterns ORDER BY dont"):
+                if r["item_id"] in snapshots:
+                    snapshots[r["item_id"]]["anti_patterns"].append(
+                        {"dont": r["dont"], "why": r["why"], "instead": r["instead"]}
+                    )
 
-        for r in self.connection.execute(
-            f"SELECT item_id, dont, why, instead FROM anti_patterns WHERE item_id IN ({item_placeholders}) ORDER BY dont",
-            target_ids,
-        ):
-            snapshots[r["item_id"]]["anti_patterns"].append(
-                {"dont": r["dont"], "why": r["why"], "instead": r["instead"]}
-            )
+            for r in self.connection.execute(
+                "SELECT item_id, path, concept, decision FROM prior_art ORDER BY path, concept"
+            ):
+                if r["item_id"] in snapshots:
+                    snapshots[r["item_id"]]["prior_art"].append(
+                        {"path": r["path"], "concept": r["concept"], "decision": r["decision"]}
+                    )
 
-        for r in self.connection.execute(
-            f"SELECT item_id, path, concept, decision FROM prior_art WHERE item_id IN ({item_placeholders}) ORDER BY path, concept",
-            target_ids,
-        ):
-            snapshots[r["item_id"]]["prior_art"].append(
-                {"path": r["path"], "concept": r["concept"], "decision": r["decision"]}
-            )
+            for r in self.connection.execute("SELECT * FROM deferrals ORDER BY id"):
+                if r["from_item"] in snapshots:
+                    snapshots[r["from_item"]]["deferrals"].append(_dict(r))
+        else:
+            target_ids = list(snapshots.keys())
+            chunk_size = 500
+            for i in range(0, len(target_ids), chunk_size):
+                chunk = target_ids[i : i + chunk_size]
+                item_placeholders = ",".join("?" for _ in chunk)
 
-        for r in self.connection.execute(
-            f"SELECT * FROM deferrals WHERE from_item IN ({item_placeholders}) ORDER BY id", target_ids
-        ):
-            snapshots[r["from_item"]]["deferrals"].append(_dict(r))
+                work_needs = {}
+                for r in self.connection.execute(
+                    f"SELECT item_id, wid, needs_wid FROM work_needs WHERE item_id IN ({item_placeholders}) ORDER BY wid, needs_wid",
+                    chunk,
+                ):
+                    work_needs.setdefault((r["item_id"], r["wid"]), []).append(r["needs_wid"])
+
+                for row in self.connection.execute(
+                    f"SELECT * FROM work_units WHERE item_id IN ({item_placeholders}) ORDER BY wid", chunk
+                ):
+                    unit = _dict(row)
+                    unit["needs"] = work_needs.get((row["item_id"], row["wid"]), [])
+                    snapshots[row["item_id"]]["work"].append(unit)
+
+                for r in self.connection.execute(
+                    f"SELECT item_id, needs_item FROM item_deps WHERE item_id IN ({item_placeholders}) ORDER BY needs_item",
+                    chunk,
+                ):
+                    snapshots[r["item_id"]]["deps"].append(r["needs_item"])
+
+                for r in self.connection.execute(
+                    f"SELECT item_id, kind, path_glob FROM scope_rules WHERE item_id IN ({item_placeholders}) ORDER BY kind, path_glob",
+                    chunk,
+                ):
+                    snapshots[r["item_id"]]["scope"].append({"kind": r["kind"], "path_glob": r["path_glob"]})
+
+                for r in self.connection.execute(
+                    f"SELECT * FROM verifications WHERE item_id IN ({item_placeholders}) ORDER BY seq", chunk
+                ):
+                    snapshots[r["item_id"]]["verifications"].append(_dict(r))
+
+                for r in self.connection.execute(
+                    f"SELECT item_id, behavior FROM preserves WHERE item_id IN ({item_placeholders}) ORDER BY behavior",
+                    chunk,
+                ):
+                    snapshots[r["item_id"]]["preserves"].append(r["behavior"])
+
+                for r in self.connection.execute(
+                    f"SELECT item_id, dont, why, instead FROM anti_patterns WHERE item_id IN ({item_placeholders}) ORDER BY dont",
+                    chunk,
+                ):
+                    snapshots[r["item_id"]]["anti_patterns"].append(
+                        {"dont": r["dont"], "why": r["why"], "instead": r["instead"]}
+                    )
+
+                for r in self.connection.execute(
+                    f"SELECT item_id, path, concept, decision FROM prior_art WHERE item_id IN ({item_placeholders}) ORDER BY path, concept",
+                    chunk,
+                ):
+                    snapshots[r["item_id"]]["prior_art"].append(
+                        {"path": r["path"], "concept": r["concept"], "decision": r["decision"]}
+                    )
+
+                for r in self.connection.execute(
+                    f"SELECT * FROM deferrals WHERE from_item IN ({item_placeholders}) ORDER BY id", chunk
+                ):
+                    snapshots[r["from_item"]]["deferrals"].append(_dict(r))
 
         return snapshots
 
@@ -1258,7 +1309,7 @@ class TodoTracker:
                 raise TodoError(f"{item_id!r} has unmet dependencies: {', '.join(unmet)}")
             self.connection.execute(
                 "UPDATE items SET claimed_by = ?, claimed_at = ?, state = CASE WHEN state = 'planning' THEN 'active' ELSE state END "
-                "WHERE id = ? AND (claimed_by IS NULL OR claimed_by = ? OR claimed_at < ?)",
+                "WHERE id = ? AND (claimed_by IS NULL OR claimed_by = ? OR claimed_at IS NULL OR claimed_at < ? OR claimed_at NOT LIKE '____-__-__T__:__:__Z')",
                 (
                     self.actor,
                     utc_now(),
@@ -1444,6 +1495,7 @@ class TodoTracker:
             raise TodoError(f"cannot override verification for {item_id!r}: the item has no verification steps")
 
         with self.database.transaction():
+            self.database.verify_audit()
             item = self._validate_completion_state(item_id)
             current_verifications = self._completion_verifications(item_id)
             current_definition = [(row["seq"], row["command"], row["expected"]) for row in current_verifications]
@@ -1526,29 +1578,21 @@ class TodoTracker:
 
     def ready_items(self, ttl_hours: float = DEFAULT_LEASE_TTL_HOURS) -> list[dict[str, Any]]:
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=ttl_hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        priority_cases = " ".join(f"WHEN '{p}' THEN {i}" for i, p in enumerate(PRIORITIES))
         query = (
-            "SELECT id, title, worktree, priority, state, blocked_reason, category, description, approach, "
-            "claimed_by, claimed_at, created_at, completed_at, completed_pr FROM items "
+            "SELECT * FROM items "
             "WHERE state IN ('planning','active') AND blocked_reason IS NULL "
-            "AND (claimed_by IS NULL OR claimed_by = ? OR claimed_at IS NULL OR claimed_at < ?) "
+            "AND (claimed_by IS NULL OR claimed_by = ? OR claimed_at IS NULL OR claimed_at < ? OR claimed_at NOT LIKE '____-__-__T__:__:__Z') "
             "AND NOT EXISTS ("
             "  SELECT 1 FROM item_deps d JOIN items n ON n.id = d.needs_item "
             "  WHERE d.item_id = items.id AND n.state != 'done'"
             ") "
-            "ORDER BY "
-            "  CASE priority "
-            "    WHEN 'critical' THEN 0 "
-            "    WHEN 'high' THEN 1 "
-            "    WHEN 'medium-high' THEN 2 "
-            "    WHEN 'medium' THEN 3 "
-            "    WHEN 'low' THEN 4 "
-            "    ELSE 5 "
-            "  END, id"
+            f"ORDER BY CASE priority {priority_cases} ELSE {len(PRIORITIES)} END, id"
         )
         return [_dict(row) for row in self.connection.execute(query, (self.actor, cutoff))]
 
     def list_items(self, **filters: str | None) -> list[dict[str, Any]]:
-        query = "SELECT id, state, priority, worktree, title, claimed_by FROM items WHERE 1=1"
+        query = "SELECT * FROM items WHERE 1=1"
         params: list[str] = []
         for field in ("state", "worktree", "priority"):
             if filters.get(field):

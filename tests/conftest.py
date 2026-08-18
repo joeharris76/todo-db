@@ -193,4 +193,5 @@ def seeded_db(tmp_path: Path) -> TodoDatabase:
             ],
         )
 
-    return db
+    yield db
+    db.close()

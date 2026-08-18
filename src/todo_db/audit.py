@@ -102,8 +102,9 @@ def verify_audit_head(
     head_seq: int,
     head_hash: str | None,
     last_event: Mapping[str, Any] | None,
+    event_count: int | None = None,
 ) -> dict[str, Any]:
-    if last_event is None:
+    if last_event is None or (event_count is not None and event_count == 0):
         if head_seq != 0 or head_hash is not None:
             raise AuditIntegrityError(
                 f"audit integrity: head mismatch; expected (0, None), got ({head_seq}, {head_hash})"
@@ -116,13 +117,14 @@ def verify_audit_head(
         }
     actual_seq = int(last_event["seq"])
     actual_hash = str(last_event["event_hash"])
-    if head_seq != actual_seq or head_hash != actual_hash:
+    count = event_count if event_count is not None else actual_seq
+    if head_seq != actual_seq or head_hash != actual_hash or head_seq != count:
         raise AuditIntegrityError(
-            f"audit integrity: head mismatch; expected ({actual_seq}, {actual_hash}), got ({head_seq}, {head_hash})"
+            f"audit integrity: head mismatch; expected ({count}, {actual_hash}), got ({head_seq}, {head_hash})"
         )
     return {
         "algorithm": AUDIT_HASH_ALGORITHM,
-        "event_count": actual_seq,
+        "event_count": count,
         "head_seq": actual_seq,
         "head_hash": actual_hash,
     }

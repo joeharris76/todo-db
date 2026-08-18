@@ -629,15 +629,15 @@ class TodoDatabase:
         self.restore(converted)
 
     def verify_audit(self) -> dict[str, Any]:
+        head = self._connection.execute("SELECT head_seq, head_hash FROM audit_head WHERE singleton = 1").fetchone()
+        if head is None:
+            raise AuditIntegrityError("audit integrity: audit head is missing")
         rows = [
             dict(row)
             for row in self._connection.execute(
                 "SELECT seq, at, actor, action, detail, prev_hash, event_hash, hash_version FROM events ORDER BY seq"
             )
         ]
-        head = self._connection.execute("SELECT head_seq, head_hash FROM audit_head WHERE singleton = 1").fetchone()
-        if head is None:
-            raise AuditIntegrityError("audit integrity: audit head is missing")
         return verify_event_chain(
             rows,
             identity=self.project_identity,
@@ -646,14 +646,21 @@ class TodoDatabase:
         )
 
     def _check_audit_head(self) -> dict[str, Any]:
-        head = self._connection.execute("SELECT head_seq, head_hash FROM audit_head WHERE singleton = 1").fetchone()
-        if head is None:
+        row = self._connection.execute(
+            "SELECT h.head_seq, h.head_hash, "
+            "(SELECT count(*) FROM events) AS event_count, "
+            "(SELECT seq FROM events ORDER BY seq DESC LIMIT 1) AS last_seq, "
+            "(SELECT event_hash FROM events ORDER BY seq DESC LIMIT 1) AS last_hash "
+            "FROM audit_head h WHERE h.singleton = 1"
+        ).fetchone()
+        if row is None:
             raise AuditIntegrityError("audit integrity: audit head is missing")
-        last_event = self._connection.execute("SELECT seq, event_hash FROM events ORDER BY seq DESC LIMIT 1").fetchone()
+        last_event = {"seq": row["last_seq"], "event_hash": row["last_hash"]} if row["last_seq"] is not None else None
         return verify_audit_head(
-            head_seq=int(head["head_seq"]),
-            head_hash=head["head_hash"],
-            last_event=dict(last_event) if last_event else None,
+            head_seq=int(row["head_seq"]),
+            head_hash=row["head_hash"],
+            last_event=last_event,
+            event_count=int(row["event_count"]),
         )
 
     def close(self) -> None:
@@ -776,14 +783,29 @@ class TodoDatabase:
         ).fetchone()
         if needs_upgrade is None:
             return
+        head = self._connection.execute("SELECT head_seq, head_hash FROM audit_head WHERE singleton = 1").fetchone()
+        if head is not None and int(head["head_seq"]) > 0:
+            raise AuditIntegrityError("audit integrity: invalid hash_version in existing audit chain")
+
         rows = [
             dict(row)
             for row in self._connection.execute(
-                "SELECT seq, at, actor, action, detail, hash_version FROM events ORDER BY seq"
+                "SELECT seq, at, actor, action, detail, prev_hash, event_hash, hash_version FROM events ORDER BY seq"
             )
         ]
         if not rows:
             return
+
+        expected_seq = 1
+        for row in rows:
+            if int(row["seq"]) != expected_seq:
+                raise AuditIntegrityError(f"audit integrity: expected sequence {expected_seq}, got {row['seq']}")
+            expected_seq += 1
+            try:
+                json.loads(row["detail"])
+            except Exception as exc:
+                raise AuditIntegrityError(f"audit integrity: invalid detail JSON at seq {row['seq']}") from exc
+
         identity = self.project_identity
         with self._write_transaction():
             previous_hash: str | None = None

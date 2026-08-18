@@ -37,24 +37,30 @@ jobs:
           TODO_DB_URL: ${{ secrets.TODO_DB_PROD_URL }}
           TODO_DB_RO_AUTH_TOKEN: ${{ secrets.TODO_DB_PROD_RO_TOKEN }}
           TODO_DB_AUDIT_OPEN_POLICY: full
+          TARGET_INPUT: ${{ github.event.inputs.database_target }}
         run: |
-          TARGET="${{ github.event.inputs.database_target }}"
+          TARGET="${TARGET_INPUT:-${TODO_DB_URL}}"
           if [ -z "$TARGET" ]; then
-            TARGET="${TODO_DB_URL:-.todo-db/standalone.sqlite}"
+            if [ -f ".todo-db/standalone.sqlite" ]; then
+              TARGET=".todo-db/standalone.sqlite"
+            else
+              echo "::warning::No target specified and TODO_DB_PROD_URL secret is not configured; skipping audit monitor."
+              exit 0
+            fi
           fi
           echo "Verifying audit chain for target: $TARGET"
-          uv run todo-db --db "$TARGET" export --output /tmp/audit-export.json
-          echo "Audit chain verification passed. Export size: $(wc -c < /tmp/audit-export.json) bytes"
+          uv run todo-db --db "$TARGET" audit verify > /tmp/audit-integrity.txt
+          cat /tmp/audit-integrity.txt
 
-      - name: Upload Verified Export Artifact
-        if: success()
+      - name: Upload Audit Verification Summary
+        if: success() && hashFiles('/tmp/audit-integrity.txt') != ''
         uses: actions/upload-artifact@v4
         with:
-          name: verified-audit-export
-          path: /tmp/audit-export.json
-          retention-days: 30
+          name: audit-integrity-summary
+          path: /tmp/audit-integrity.txt
+          retention-days: 14
 
       - name: Notify on Failure
         if: failure()
         run: |
-          echo "::error::Audit chain integrity failure detected! Investigating potential history tamper."
+          echo "::error::Audit chain verification failed! Check target configuration or inspect database for potential tampering."

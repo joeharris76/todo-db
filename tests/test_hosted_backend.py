@@ -94,6 +94,7 @@ def test_turso_backend_connects_directly_with_read_write_token(monkeypatch: pyte
     assert fake.connect_calls[0] == {
         "database": url,
         "auth_token": "rw-token",
+        "isolation_level": None,
     }
     db.close()
 
@@ -112,7 +113,7 @@ def test_turso_read_only_uses_read_only_token_against_primary(monkeypatch: pytes
     monkeypatch.setenv("TODO_DB_RO_AUTH_TOKEN", "ro-token")
     readonly = TodoDatabase.open(DatabaseConfig(path=url, identity=identity, credential_mode=CredentialMode.READ_ONLY))
 
-    assert fake.connect_calls[-1] == {"database": url, "auth_token": "ro-token"}
+    assert fake.connect_calls[-1] == {"database": url, "auth_token": "ro-token", "isolation_level": None}
     readonly.close()
 
 

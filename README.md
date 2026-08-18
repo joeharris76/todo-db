@@ -139,7 +139,7 @@ fails):
 ```sh
 turso db create example-project
 turso db tokens create example-project   # export as TODO_DB_AUTH_TOKEN
-TODO_DB_AUTH_TOKEN=... uv run todo-db --replica .todo-db/replica.db \
+TODO_DB_AUTH_TOKEN=... uv run todo-db \
   init-project --db libsql://example-project.aws-us-east-1.turso.io \
   --project-id example-project \
   --repository https://example.test/example-project \
@@ -224,7 +224,6 @@ Install the optional adapters and provide credentials through the environment:
 uv sync --extra hosted --extra audit
 TODO_DB_AUTH_TOKEN=... uv run todo-db \
   --db libsql://project.aws-us-east-1.turso.io \
-  --replica .todo-db/replica.db \
   init --project-id example-project \
   --repository https://example.test/example-project
 

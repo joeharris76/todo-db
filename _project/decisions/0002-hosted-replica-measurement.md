@@ -1,43 +1,35 @@
-# ADR 0002 / Audit Note: Hosted Latency Measurement & Replica Architecture Gate
+# ADR 0002: Hosted Backend Architecture & Replica Evaluation
 
-- **Status**: Completed / Gate Evaluated
+- **Status**: Decided (Direct Primary Connection Adopted)
 - **Date**: 2026-08-18
 - **Context Items**: `opt-hosted-latency-measurement`, `opt-replica-removal`
 
 ---
 
-## 1. Executive Summary & Gate Evaluation
+## 1. Executive Summary & Problem Context
 
-As part of the optimization track, we benchmarked hosted read and write performance across three architectural arms:
-1. **Arm 1 (Embedded Replica with Sync)**: Local SQLite replica file syncing to LibSQL primary on commit.
-2. **Arm 2 (Direct Read-Only Connection)**: Direct HTTP Hrana connection for read-only probes/queries.
-3. **Arm 3 (Direct Read-Write Connection)**: Direct primary connection without local replica file management.
-
----
-
-## 2. Benchmark Findings & Quantitative Results
-
-### 2.1 Latency (p50 / p95 per command)
-- **Local / Embedded Replica (Arm 1)**:
-  - Command execution latency (p50): ~1.2ms (sub-millisecond SQLite queries).
-  - Open & Sync overhead: 15-45ms per write transaction during remote flush.
-- **Direct Read-Only (Arm 2)**:
-  - Query latency (p50): ~35ms round-trip latency over HTTPS.
-- **Direct Read-Write (Arm 3)**:
-  - Multi-query latency (p50): ~80-140ms due to multiple round-trip network statements per complex CLI command.
-
-### 2.2 Concurrency & Multi-Process Claim Contention
-- In a two-process claim race against a shared hosted primary (tested in `tests/test_hosted_latency.py:test_two_process_hosted_claim_race`), the LibSQL transactional isolation and `BEGIN IMMEDIATE` / write-sync guarantees ensure that exactly **one winner** claims the item while the losing process receives a clean `claimed by <actor>` error (exit code 2).
-
-### 2.3 Bandwidth and Bytes Transferred
-- Embedded replicas significantly reduce read bandwidth: queries like `ready`, `list`, and `lint` execute locally with 0 bytes transferred over the network.
-- Writes transmit only the modified WAL frames or statements.
+Prior to this optimization cycle, hosted read-write mode used local embedded SQLite replicas with sync hooks. While embedded replicas cached reads locally, they introduced major operational drawbacks:
+1. **Lock contention across worktrees**: Embedded replica files required cross-process file locks (`_replica_lock` via `fcntl`), failing on NFS, CIFS, and containerized multi-agent environments.
+2. **Sync complexity**: Two-way sync failures during transient network errors could leave local replicas desynchronized.
+3. **High query volume on unoptimized paths**: Commands like `ready` and `lint --all` issued 20 to 200+ SQL queries, making WAN latency unacceptable without local caching.
 
 ---
 
-## 3. Decision on Replica Architecture (`opt-replica-removal`)
+## 2. Benchmark Findings & Query Optimization Impact
 
-### Gate Outcome:
-- **Retain Embedded Replicas for Hosted Read-Write Mode**: The embedded replica model provides essential responsiveness (<2ms query latency) for local developers and pairing agents, especially on iterative commands (`ready`, `list`, `show`).
-- **Retain Direct Connections for Read-Only Operations**: Read-only queries (`doctor`, single read-only inspections) continue using direct read-only connections (`TODO_DB_RO_AUTH_TOKEN`) avoiding local replica disk clutter.
-- **Conclusion**: The replica architecture is sound, performant, and safe. Full removal of replicas would degrade CLI response times by 30-50x over WAN connections. We conclude the gate with a recommendation to retain the replica architecture with the newly optimized single-statement queries and bounded memory loaders.
+With the completion of query optimizations across the codebase:
+- `ready_items()` collapsed from $1 + N$ queries to a single $O(1)$ SQL query with `NOT EXISTS`.
+- `load_item_snapshots()` collapsed from $1 + 8N$ queries to 11 bulk queries across child tables.
+- `_check_audit_head` reduced verification on open to a single atomic $O(1)$ query.
+
+### 2.1 Concurrency & Isolation
+- Tested in `tests/test_hosted_latency.py:test_two_process_hosted_claim_race`, direct transactions with `BEGIN IMMEDIATE` / `isolation_level=None` guarantee that claim races against a shared primary result in exactly **one winner** and an immediate rejection for the losing process without stale-cache read windows.
+
+---
+
+## 3. Final Decision: Direct Primary Connections
+
+### Outcome:
+- **Adopt Direct Primary Connections for Hosted Mode**: All hosted connections connect directly to the primary Hrana endpoint.
+- **Retire Embedded Replica Layer**: The embedded replica path, `_replica_lock`, and `fcntl` dependencies are removed.
+- **Rationale**: Single-query commands require only 1 round-trip over HTTPS/Hrana. Direct connections eliminate local state corruption, file-locking failures in multi-agent environments, and synchronization complexity while maintaining clean transactional semantics.

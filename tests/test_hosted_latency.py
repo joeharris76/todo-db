@@ -21,7 +21,7 @@ from todo_db import CredentialMode, DatabaseConfig, ProjectIdentity, TodoDatabas
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
-def _init_primary(path: Path) -> TodoDatabase:
+def _init_primary(path: Path) -> None:
     identity = ProjectIdentity(project_id="latency-test", repository="https://example.test/hosted")
     config = DatabaseConfig(path=path, identity=identity)
     db = TodoDatabase.open(config)
@@ -45,7 +45,6 @@ def _init_primary(path: Path) -> TodoDatabase:
         verifications=[{"description": "v1", "command": "true"}],
     )
     db.close()
-    return db
 
 
 def test_two_process_hosted_claim_race(tmp_path: Path) -> None:
@@ -141,6 +140,7 @@ def test_latency_harness_replica_vs_direct_and_third_arm(tmp_path: Path, monkeyp
     metrics: dict[str, dict[str, Any]] = {}
 
     for arm_name, cfg in arms.items():
+        fake.reset()
         durations: list[float] = []
         bytes_sent_total = 0
         bytes_recv_total = 0
@@ -159,7 +159,7 @@ def test_latency_harness_replica_vs_direct_and_third_arm(tmp_path: Path, monkeyp
         p50 = durations[len(durations) // 2]
         p95 = durations[-1]
 
-        # Aggregate bytes from fake hrana connections
+        # Aggregate bytes from fake hrana connections for this arm
         for conn in fake.connections:
             bytes_sent_total += conn.bytes_sent
             bytes_recv_total += conn.bytes_received
@@ -174,9 +174,10 @@ def test_latency_harness_replica_vs_direct_and_third_arm(tmp_path: Path, monkeyp
     assert "arm1_replica" in metrics
     assert "arm2_direct_ro" in metrics
     assert "arm3_direct_rw" in metrics
-    assert metrics["arm1_replica"]["p50_seconds"] > 0
-    assert metrics["arm2_direct_ro"]["p50_seconds"] > 0
-    assert metrics["arm3_direct_rw"]["p50_seconds"] > 0
+    for arm_name in ("arm1_replica", "arm2_direct_ro", "arm3_direct_rw"):
+        assert metrics[arm_name]["p50_seconds"] > 0
+        assert metrics[arm_name]["bytes_sent"] > 0
+        assert metrics[arm_name]["bytes_received"] > 0
 
 
 def test_read_write_open_overhead_in_isolation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

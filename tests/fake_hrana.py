@@ -11,17 +11,26 @@ from typing import Any
 
 
 class FakeHranaCursor:
-    def __init__(self, cursor: sqlite3.Cursor):
+    def __init__(self, cursor: sqlite3.Cursor, parent_conn: FakeHranaConnection | None = None):
         self._cursor = cursor
+        self._parent = parent_conn
 
     def fetchone(self):
-        return self._cursor.fetchone()
+        row = self._cursor.fetchone()
+        if row is not None and self._parent is not None:
+            self._parent.bytes_received += sum(len(str(v).encode("utf-8")) for v in row)
+        return row
 
     def fetchall(self):
-        return self._cursor.fetchall()
+        rows = self._cursor.fetchall()
+        if rows and self._parent is not None:
+            for row in rows:
+                self._parent.bytes_received += sum(len(str(v).encode("utf-8")) for v in row)
+        return rows
 
     def __iter__(self):
-        return iter(self._cursor.fetchall())
+        for row in self.fetchall():
+            yield row
 
     @property
     def description(self):
@@ -51,7 +60,7 @@ class FakeHranaConnection:
     def execute(self, sql: str, params: Any = ()):
         self.bytes_sent += len(sql.encode("utf-8")) + sum(len(str(p).encode("utf-8")) for p in params)
         try:
-            return FakeHranaCursor(self._connection.execute(sql, tuple(params)))
+            return FakeHranaCursor(self._connection.execute(sql, tuple(params)), self)
         except sqlite3.IntegrityError as exc:
             raise ValueError(f"Hrana: SQLite error: {exc}; code: SQLITE_CONSTRAINT") from None
 
@@ -81,6 +90,10 @@ class FakeHranaModule(types.ModuleType):
         conn = FakeHranaConnection(target, sync_url=kwargs.get("sync_url"), auth_token=kwargs.get("auth_token"))
         self.connections.append(conn)
         return conn
+
+    def reset(self) -> None:
+        self.connect_calls.clear()
+        self.connections.clear()
 
 
 def install_fake_hrana(primary_path: Path | str) -> FakeHranaModule:

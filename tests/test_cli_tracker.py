@@ -225,7 +225,8 @@ def test_cli_fields_limit_and_max_bytes_compact_contracts(tmp_path: Path, capsys
     # Test --max-bytes truncation
     assert main([*common, "--max-bytes", "30", "list"]) == 0
     out = capsys.readouterr().out
-    assert "... [truncated:" in out
+    assert len(out.encode("utf-8")) <= 30
+    assert "... [truncated" in out
 
 
 def test_cli_verification_output_is_bounded(tmp_path: Path, capsys) -> None:
@@ -261,3 +262,93 @@ def test_cli_verification_output_is_bounded(tmp_path: Path, capsys) -> None:
     out = capsys.readouterr().out
     assert "seq 1: pass" in out
     assert "... [truncated:" in out
+
+
+def test_cli_compact_contracts_edge_cases(tmp_path: Path, capsys) -> None:
+    from todo_db.cli import main
+
+    db_path = tmp_path / "compact_edge.sqlite"
+    common = ["--db", str(db_path), "--project-id", "compact-edge", "--repository", "todo-db"]
+    assert main([*common, "init"]) == 0
+    assert (
+        main(
+            [
+                *common,
+                "create",
+                "item-01",
+                "--title",
+                "Test Item",
+                "--worktree",
+                "todo-db",
+                "--priority",
+                "high",
+                "--description",
+                "A full description",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+
+    # 1. Invalid field rejected
+    assert main([*common, "list", "--fields", "nope"]) == 2
+    err = capsys.readouterr().err
+    assert "unknown field(s): nope" in err
+
+    # 2. Limit 0 returns empty
+    assert main([*common, "list", "--limit", "0"]) == 0
+    out = capsys.readouterr().out.strip()
+    assert out == ""
+
+    # 3. Negative limit rejected
+    assert main([*common, "list", "--limit", "-1"]) == 2
+    err = capsys.readouterr().err
+    assert "--limit must be non-negative" in err
+
+    # 4. Too small max-bytes rejected
+    assert main([*common, "list", "--max-bytes", "10"]) == 2
+    err = capsys.readouterr().err
+    assert "--max-bytes must be at least 20" in err
+
+    # 5. Non-JSON show with --fields
+    assert main([*common, "show", "item-01", "--fields", "id,description"]) == 0
+    out = capsys.readouterr().out.strip()
+    assert out == "item-01 A full description"
+
+
+def test_lease_timestamp_format_compatibility(tmp_path: Path) -> None:
+    import sqlite3
+    from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase, TodoTracker
+
+    db_path = tmp_path / "lease_compat.sqlite"
+    config = DatabaseConfig(
+        path=db_path,
+        identity=ProjectIdentity(project_id="lease-test", repository="https://example.test/lease"),
+    )
+    db = TodoDatabase.open(config)
+    tracker = TodoTracker(db, actor="user-1")
+    tracker.create_item(
+        item_id="item-malformed",
+        title="Malformed Lease Item",
+        worktree="todo-db",
+        priority="high",
+        description="Item with legacy timestamp",
+    )
+
+    # Insert a non-standard formatted timestamp
+    raw = sqlite3.connect(db_path)
+    raw.execute(
+        "UPDATE items SET claimed_by = 'other-user', claimed_at = '2026/01/01 10:00:00' WHERE id = 'item-malformed'"
+    )
+    raw.commit()
+    raw.close()
+
+    # 1. ready_items treats the malformed/expired lease as ready
+    ready = tracker.ready_items()
+    assert any(i["id"] == "item-malformed" for i in ready)
+
+    # 2. claim can claim it without error
+    order = tracker.claim("item-malformed")
+    assert order["id"] == "item-malformed"
+    assert order["claimed_by"] == "user-1"
+    db.close()
