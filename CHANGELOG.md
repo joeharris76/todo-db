@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-08-18
+
 ### Added
 
 - `todo-db update` now amends the remaining create-time item fields that are
