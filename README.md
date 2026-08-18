@@ -281,10 +281,14 @@ unless `TODO_DB_ALLOW_HOSTED_VERIFY_RUN=1` is set; inspect the command first
 with `todo-db verify <id>`, then opt in per invocation. Agent model finish never
 executes stored commands. Human `agent finish --run-verifications` previews and
 runs each rung exactly once, then binds the passing ladder to a deterministic
-Git workspace fingerprint. Verification subprocesses receive a small
-environment allowlist; extra names require explicit
-`TODO_DB_VERIFY_ENV_PASSTHROUGH`. This reduces ambient-secret exposure but is
-not a sandbox: an approved command still has the caller's filesystem access.
+Git workspace fingerprint. Verification subprocesses receive a small environment allowlist; extra names
+require explicit `TODO_DB_VERIFY_ENV_PASSTHROUGH`. Tracker data-plane
+credentials (`TODO_DB_AUTH_TOKEN`, `TODO_DB_RO_AUTH_TOKEN`) and Turso
+control-plane credentials (`TURSO_AUTH_TOKEN`, `TURSO_API_TOKEN`) are always
+rejected from passthrough, with variable names—but never values—reported.
+Unrelated explicitly named credentials remain supported. This reduces
+ambient-secret exposure but is not a sandbox: an approved command still has
+the caller's filesystem access.
 
 Signed export manifests are available through `todo_db.sign_export()` and
 `todo_db.verify_signed_export()`. Keep the signing key outside the database;

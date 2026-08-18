@@ -337,6 +337,11 @@ def _uv_project_missing_pytest(command: str) -> str | None:
     return None
 
 
+_VERIFY_ENV_PROTECTED_CREDENTIALS = frozenset(
+    {"TODO_DB_AUTH_TOKEN", "TODO_DB_RO_AUTH_TOKEN", "TURSO_AUTH_TOKEN", "TURSO_API_TOKEN"}
+)
+
+
 def _sanitized_verify_env() -> dict[str, str]:
     """Build a small verification environment; this reduces ambient exposure, not command authority."""
     safe_keys = {
@@ -361,6 +366,12 @@ def _sanitized_verify_env() -> dict[str, str]:
         for value in os.environ.get("TODO_DB_VERIFY_ENV_PASSTHROUGH", "").split(",")
         if value.strip()
     }
+    denied = sorted(passthrough & _VERIFY_ENV_PROTECTED_CREDENTIALS)
+    if denied:
+        raise TodoError(
+            "TODO_DB_VERIFY_ENV_PASSTHROUGH refuses protected tracker/Turso credential name(s): "
+            + ", ".join(denied)
+        )
     return {
         key: value
         for key, value in os.environ.items()

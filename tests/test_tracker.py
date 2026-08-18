@@ -588,6 +588,7 @@ def test_claim_coordination_metadata_and_clearance(tmp_path: Path) -> None:
 
 def test_sanitized_verify_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase, TodoTracker
+    from todo_db.errors import TodoError
 
     db_path = tmp_path / "verify_env.sqlite"
     config = DatabaseConfig(
@@ -603,7 +604,12 @@ def test_sanitized_verify_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
             worktree="todo-db",
             priority="high",
             description="Testing sanitized environment",
-            verifications=[{"description": "check secret", "command": "python -c 'import os; print(os.environ.get(\"TODO_DB_AUTH_TOKEN\", \"NONE\"))'"}],
+            verifications=[
+                {
+                    "description": "check secret",
+                    "command": "python -c 'import os; print(os.environ.get(\"TODO_DB_AUTH_TOKEN\", \"NONE\"), os.environ.get(\"EXTERNAL_API_TOKEN\", \"NONE\"))'",
+                }
+            ],
         )
 
         monkeypatch.setenv("TODO_DB_AUTH_TOKEN", "super-secret-token")
@@ -612,10 +618,24 @@ def test_sanitized_verify_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
         assert "NONE" in out
         assert "super-secret-token" not in out
 
-        # With explicit passthrough
-        monkeypatch.setenv("TODO_DB_VERIFY_ENV_PASSTHROUGH", "TODO_DB_AUTH_TOKEN")
+        # Tracker and Turso credentials stay forbidden even under explicit passthrough.
+        protected = "TODO_DB_AUTH_TOKEN,TODO_DB_RO_AUTH_TOKEN,TURSO_AUTH_TOKEN,TURSO_API_TOKEN"
+        monkeypatch.setenv("TODO_DB_VERIFY_ENV_PASSTHROUGH", protected)
+        monkeypatch.setenv("TODO_DB_RO_AUTH_TOKEN", "readonly-secret")
+        monkeypatch.setenv("TURSO_AUTH_TOKEN", "control-plane-secret")
+        monkeypatch.setenv("TURSO_API_TOKEN", "api-secret")
+        expected_names = "TODO_DB_AUTH_TOKEN, TODO_DB_RO_AUTH_TOKEN, TURSO_API_TOKEN, TURSO_AUTH_TOKEN"
+        with pytest.raises(TodoError, match=expected_names) as raised:
+            tracker.run_verification("item-env", 1)
+        for secret in ("super-secret-token", "readonly-secret", "control-plane-secret", "api-secret"):
+            assert secret not in str(raised.value)
+
+        # Unrelated credentials remain available only when named explicitly.
+        monkeypatch.setenv("TODO_DB_VERIFY_ENV_PASSTHROUGH", "EXTERNAL_API_TOKEN")
+        monkeypatch.setenv("EXTERNAL_API_TOKEN", "explicit-external-token")
         res, out = tracker.run_verification("item-env", 1)
         assert res == "pass"
-        assert "super-secret-token" in out
+        assert "NONE explicit-external-token" in out
+        assert "super-secret-token" not in out
     finally:
         database.close()
