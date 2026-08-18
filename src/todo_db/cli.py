@@ -1292,6 +1292,15 @@ def _main(argv: list[str] | None = None) -> int:
         args.db = _resolve_db(raw_db, discovered)
         if args.command == "init" and identity is None:
             raise TodoError(f"init requires a project identity and no longer assumes one: {IDENTITY_SOURCES_HINT}")
+        if (
+            args.command not in {"init", "init-project", "doctor"}
+            and discovered is None
+            and raw_db is None
+            and identity is None
+        ):
+            raise TodoError(
+                "no project boundary discovered: E_NO_PROJECT (run from a repository with .todo-db/config.json or supply --project-id/--repository)"
+            )
         project_id = identity.project_id if identity is not None else None
         if args.command == "finding" and args.finding_command in FINDING_OFFLINE_SUBCOMMANDS:
             return _finding_offline(args, project_id)

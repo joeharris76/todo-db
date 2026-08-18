@@ -464,3 +464,19 @@ def test_custom_wrapper_depth_derives_correct_repo_root(tmp_path: Path) -> None:
     wrapper = tmp_path / "scripts" / "nested" / "deep" / "todo"
     content = wrapper.read_text(encoding="utf-8")
     assert 'REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)"' in content
+
+
+def test_e_no_project_pre_open_guard(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    from todo_db.cli import main
+
+    # In a clean directory with no config, no git, no flags
+    clean_dir = tmp_path / "empty_dir"
+    clean_dir.mkdir()
+    monkeypatch.chdir(clean_dir)
+    monkeypatch.delenv("TODO_DB_CONFIG", raising=False)
+    monkeypatch.delenv("TODO_DB_PROJECT_ID", raising=False)
+    monkeypatch.delenv("TODO_DB_REPOSITORY", raising=False)
+
+    assert main(["ready"]) == 2
+    err = capsys.readouterr().err
+    assert "E_NO_PROJECT" in err
