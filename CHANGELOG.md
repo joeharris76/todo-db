@@ -6,6 +6,17 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-18
+
+### Added
+
+- Claim-coordinated agent workflow service and CLI subcommands under `todo agent` (`next`, `take`, `context`, `progress`, `finish`, `claims`, `adopt`, `release`).
+- Schema Migration 006 adding `claimed_at`, `claimed_session`, `claim_token`, `claimed_branch`, `claimed_worktree`, and `git_baseline` columns with concurrent claim index.
+- Root-safe, NUL-delimited `GitScopeEngine` verifying working-tree and branch-baseline changes without path truncation or shell escape vulnerabilities.
+- Bounded agent projection service with mandatory guardrails, token rotation, and lease management.
+- Pi extension adapter package (`@todo-db/pi-adapter`) providing extension tools, serialized mutation queue, and status panel for Pi.
+- Batch query optimizations and typed schema error codes (`E_*`).
+
 ## [0.3.3] - 2026-08-18
 
 ### Added
