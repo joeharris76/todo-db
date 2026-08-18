@@ -35,6 +35,9 @@ from .tracker import PRIORITIES, TodoTracker, _parse_anti_pattern
 FINDING_OFFLINE_SUBCOMMANDS = frozenset({"create", "candidates"})
 FINDING_MUTATING_SUBCOMMANDS = frozenset({"sync", "dismiss", "triage", "link", "promote"})
 
+AGENT_OFFLINE_SUBCOMMANDS = frozenset({"instructions"})
+AGENT_MUTATING_SUBCOMMANDS = frozenset({"take", "progress", "finish", "adopt", "release"})
+
 CONFIG_DIRNAME = ".todo-db"
 CONFIG_FILENAME = "config.json"
 DEFAULT_DB_RELATIVE = f"{CONFIG_DIRNAME}/standalone.sqlite"
@@ -487,6 +490,59 @@ def _parser() -> argparse.ArgumentParser:
     fpromote.add_argument("--worktree")
     fpromote.add_argument("--description")
     _identity_args(fpromote)
+
+    agent = sub.add_parser("agent", help="streamlined claim-coordinated agent workflow surface")
+    agent_sub = agent.add_subparsers(dest="agent_command", required=True)
+
+    agent_instructions = agent_sub.add_parser("instructions", help="print offline agent operational instructions")
+    _identity_args(agent_instructions)
+
+    agent_next = agent_sub.add_parser("next", help="inspect next actionable item or claim", parents=[compact_parser])
+    agent_next.add_argument("--principal", help="filter to specific principal/actor (default: current actor)")
+    _identity_args(agent_next)
+
+    agent_take = agent_sub.add_parser("take", help="atomically take ready item or adopt existing claim", parents=[compact_parser])
+    agent_take.add_argument("id", nargs="?", help="item id to take (default: highest-priority ready item)")
+    agent_take.add_argument("--session", help="ephemeral agent session identifier")
+    agent_take.add_argument("--worktree", help="worktree path override")
+    agent_take.add_argument("--branch", help="git branch override")
+    _identity_args(agent_take)
+
+    agent_context = agent_sub.add_parser("context", help="bounded item projection with guardrails", parents=[compact_parser])
+    agent_context.add_argument("id", help="item id")
+    agent_context.add_argument("--unit-limit", type=int, default=None, help="max work units to include")
+    _identity_args(agent_context)
+
+    agent_progress = agent_sub.add_parser("progress", help="mark work unit done and refresh lease", parents=[compact_parser])
+    agent_progress.add_argument("id", help="item id")
+    agent_progress.add_argument("wid", help="work unit id (e.g. w0)")
+    agent_progress.add_argument("--evidence", required=True, help="evidence of completed work")
+    agent_progress.add_argument("--notes", help="optional notes")
+    agent_progress.add_argument("--claim-token", help="claim generation token")
+    _identity_args(agent_progress)
+
+    agent_finish = agent_sub.add_parser("finish", help="run finish gates and mark item done")
+    agent_finish.add_argument("id", help="item id")
+    agent_finish.add_argument("--claim-token", help="claim generation token")
+    agent_finish.add_argument("--model-assert", action="store_true", help="assert verifications passed without executing shell commands")
+    agent_finish.add_argument("--run-verifications", action="store_true", help="explicit human run: preview and run verifications")
+    agent_finish.add_argument("--pr", type=int, help="pull request number")
+    agent_finish.add_argument("--override-verifications", help="verification override reason")
+    _identity_args(agent_finish)
+
+    agent_claims = agent_sub.add_parser("claims", help="list active claims", parents=[compact_parser])
+    agent_claims.add_argument("--principal", help="filter by principal")
+    _identity_args(agent_claims)
+
+    agent_adopt = agent_sub.add_parser("adopt", help="adopt claim with new session id", parents=[compact_parser])
+    agent_adopt.add_argument("id", help="item id")
+    agent_adopt.add_argument("--session", required=True, help="new session id")
+    _identity_args(agent_adopt)
+
+    agent_release = agent_sub.add_parser("release", help="release active claim")
+    agent_release.add_argument("id", help="item id")
+    _identity_args(agent_release)
+
     return parser
 
 
@@ -500,6 +556,12 @@ def _config(args: argparse.Namespace, mode: CredentialMode, identity: ProjectIde
 
 
 def _mode_for(args: argparse.Namespace) -> CredentialMode:
+    if args.command == "agent":
+        return (
+            CredentialMode.READ_WRITE
+            if args.agent_command in AGENT_MUTATING_SUBCOMMANDS
+            else CredentialMode.READ_ONLY
+        )
     if args.command == "finding":
         return (
             CredentialMode.READ_WRITE
@@ -1264,6 +1326,121 @@ def _run_finding(database: TodoDatabase, args: argparse.Namespace, project_id: s
     return 0
 
 
+def _agent_offline(args: argparse.Namespace) -> int:
+    if args.agent_command == "instructions":
+        print(
+            "# Autonomous Agent Workflow Protocol\n\n"
+            "1. Inspect queue or existing claim:\n"
+            "   `todo agent next`\n\n"
+            "2. Claim ready work or re-adopt active claim:\n"
+            "   `todo agent take [id] [--session <session-id>]`\n\n"
+            "3. Retrieve bounded context with guardrails:\n"
+            "   `todo agent context <id>`\n\n"
+            "4. Execute work units sequentially and record progress:\n"
+            "   `todo agent progress <id> <wid> --evidence '<description of completed unit>'`\n\n"
+            "5. Run finish gate assertion to verify and complete work:\n"
+            "   `todo agent finish <id> --model-assert`\n\n"
+            "Notes:\n"
+            "- A single active claim is enforced per principal.\n"
+            "- Scope rules (only_modify, do_not_modify) are checked at completion.\n"
+            "- Structural failures allow claim retention while correcting work.\n"
+        )
+        return 0
+    raise TodoError(f"unsupported offline agent command: {args.agent_command}")
+
+
+def _run_agent(database: TodoDatabase, args: argparse.Namespace) -> int:
+    from .agent import AgentWorkflow
+
+    tracker = TodoTracker(database, actor=args.actor)
+    workflow = AgentWorkflow(tracker)
+    cmd = args.agent_command
+
+    if cmd == "next":
+        res = workflow.next(principal=args.principal)
+        _output(json.dumps(res, indent=2, sort_keys=True), args)
+        return 0
+
+    if cmd == "take":
+        res = workflow.take(
+            item_id=args.id,
+            session=args.session,
+            worktree=args.worktree,
+            branch=args.branch,
+        )
+        _output(json.dumps(res, indent=2, sort_keys=True), args)
+        return 0
+
+    if cmd == "context":
+        fields = [f.strip() for f in args.fields.split(",")] if getattr(args, "fields", None) else None
+        res = workflow.context(args.id, fields=fields, unit_limit=args.unit_limit)
+        _output(json.dumps(res, indent=2, sort_keys=True), args)
+        return 0
+
+    if cmd == "progress":
+        res = workflow.progress(
+            args.id,
+            args.wid,
+            args.evidence,
+            claim_token=args.claim_token,
+            notes=args.notes,
+        )
+        _output(json.dumps(res, indent=2, sort_keys=True), args)
+        return 0
+
+    if cmd == "finish":
+        try:
+            res = workflow.finish(
+                args.id,
+                claim_token=args.claim_token,
+                model_assert=args.model_assert,
+                run_verifications=args.run_verifications,
+                pr=args.pr,
+                verification_override_reason=args.override_verifications,
+            )
+            _output(json.dumps(res, indent=2, sort_keys=True), args)
+            return 0
+        except TodoError as exc:
+            msg = str(exc)
+            if "lint findings detected" in msg:
+                print(json.dumps({"error": msg, "code": "E_LINT_GATE"}, indent=2, sort_keys=True), file=sys.stderr)
+                return 1
+            if "scope violations detected" in msg:
+                print(json.dumps({"error": msg, "code": "E_SCOPE_GATE"}, indent=2, sort_keys=True), file=sys.stderr)
+                return 1
+            if "verifications not passed" in msg or "verification seq" in msg:
+                print(json.dumps({"error": msg, "code": "E_VERIFY_GATE"}, indent=2, sort_keys=True), file=sys.stderr)
+                return 1
+            raise
+
+    if cmd == "claims":
+        principal = args.principal
+        if principal:
+            rows = database.connection.execute(
+                "SELECT * FROM items WHERE claimed_by = ? AND state = 'active' ORDER BY priority",
+                (principal,),
+            ).fetchall()
+        else:
+            rows = database.connection.execute(
+                "SELECT * FROM items WHERE claimed_by IS NOT NULL AND state = 'active' ORDER BY priority"
+            ).fetchall()
+        claims = [dict(r) for r in rows]
+        _output(json.dumps(claims, indent=2, sort_keys=True), args)
+        return 0
+
+    if cmd == "adopt":
+        res = workflow.take(args.id, session=args.session)
+        _output(json.dumps(res, indent=2, sort_keys=True), args)
+        return 0
+
+    if cmd == "release":
+        tracker.release(args.id)
+        _output(json.dumps({"id": args.id, "status": "released"}, indent=2, sort_keys=True), args)
+        return 0
+
+    raise TodoError(f"unsupported agent subcommand: {cmd}")
+
+
 def _changed_files(base: str | None) -> list[str]:
     from .agent import GitScopeEngine
 
@@ -1294,6 +1471,8 @@ def _main(argv: list[str] | None = None) -> int:
             raise TodoError(f"init requires a project identity and no longer assumes one: {IDENTITY_SOURCES_HINT}")
         if (
             args.command not in {"init", "init-project", "doctor"}
+            and not (args.command == "finding" and args.finding_command in FINDING_OFFLINE_SUBCOMMANDS)
+            and not (args.command == "agent" and args.agent_command in AGENT_OFFLINE_SUBCOMMANDS)
             and discovered is None
             and raw_db is None
             and identity is None
@@ -1304,6 +1483,8 @@ def _main(argv: list[str] | None = None) -> int:
         project_id = identity.project_id if identity is not None else None
         if args.command == "finding" and args.finding_command in FINDING_OFFLINE_SUBCOMMANDS:
             return _finding_offline(args, project_id)
+        if args.command == "agent" and args.agent_command in AGENT_OFFLINE_SUBCOMMANDS:
+            return _agent_offline(args)
         mode = _mode_for(args)
         with TodoDatabase.open(_config(args, mode, identity)) as database:
             if project_id is None:
@@ -1569,6 +1750,8 @@ def _main(argv: list[str] | None = None) -> int:
                     print(f"{args.key}={args.value}")
             elif command == "finding":
                 return _run_finding(database, args, project_id)
+            elif command == "agent":
+                return _run_agent(database, args)
             else:  # pragma: no cover - argparse constrains command values
                 parser.error(f"unsupported command: {command}")
         return 0

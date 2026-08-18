@@ -31,3 +31,13 @@ class SchemaDivergedError(SchemaMismatchError):
 
 class AuditIntegrityError(TodoDBError):
     """Raised when the audit chain or an export signature fails verification."""
+
+
+E_NO_PROJECT = "E_NO_PROJECT"
+E_CLAIM_STALE = "E_CLAIM_STALE"
+E_BASE_DIVERGED = "E_BASE_DIVERGED"
+E_BASE_UNREACHABLE = "E_BASE_UNREACHABLE"
+E_LINT_GATE = "E_LINT_GATE"
+E_SCOPE_GATE = "E_SCOPE_GATE"
+E_VERIFY_GATE = "E_VERIFY_GATE"
+E_NOTHING_READY = "E_NOTHING_READY"
