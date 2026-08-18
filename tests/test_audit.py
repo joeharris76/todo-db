@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-import json
 import hashlib
 from importlib import resources
-import sqlite3
+import json
 from pathlib import Path
+import sqlite3
 
 import pytest
 
 from todo_db.database import SCHEMA_VERSION
+from todo_db.errors import AuditIntegrityError
 
 
 def _open_database(path: Path):
@@ -22,13 +23,19 @@ def _open_database(path: Path):
     )
 
 
-def test_audit_chain_includes_sequence_and_verifies(tmp_path: Path) -> None:
+def test_audit_chain_verifies_valid_sequence_and_integrity(tmp_path: Path) -> None:
     db = _open_database(tmp_path / "todo.sqlite")
     db.record_event(actor="test", action="first", detail={"value": 1})
     db.record_event(actor="test", action="second", detail={"value": 2})
 
     exported = db.export()
-    db.verify_audit()
+    result = db.verify_audit()
+
+    assert set(result.keys()) == {"algorithm", "event_count", "head_seq", "head_hash"}
+    assert result["algorithm"] == "sha256-chain-v2"
+    assert result["event_count"] == 2
+    assert result["head_seq"] == 2
+    assert result["head_hash"] is not None
 
     assert exported["integrity"]["algorithm"] == "sha256-chain-v2"
     assert exported["integrity"]["event_count"] == 2
@@ -38,8 +45,6 @@ def test_audit_chain_includes_sequence_and_verifies(tmp_path: Path) -> None:
 
 
 def test_audit_verification_rejects_tampered_event_detail(tmp_path: Path) -> None:
-    from todo_db.errors import AuditIntegrityError
-
     path = tmp_path / "todo.sqlite"
     db = _open_database(path)
     db.record_event(actor="test", action="probe", detail={"value": 7})
@@ -54,7 +59,7 @@ def test_audit_verification_rejects_tampered_event_detail(tmp_path: Path) -> Non
         _open_database(path)
 
 
-def test_schema_v1_event_history_is_migrated_to_hash_chain_v2(tmp_path: Path) -> None:
+def test_audit_history_upgrades_legacy_hash_version_transparently(tmp_path: Path) -> None:
     from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase
 
     path = tmp_path / "todo.sqlite"
@@ -86,7 +91,7 @@ def test_schema_v1_event_history_is_migrated_to_hash_chain_v2(tmp_path: Path) ->
     db.close()
 
 
-def test_signed_export_manifest_round_trip_and_tamper_detection(tmp_path: Path) -> None:
+def test_signed_export_manifest_authenticates_valid_export_and_detects_tamper(tmp_path: Path) -> None:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
     from todo_db.audit import sign_export, verify_signed_export
 
@@ -103,3 +108,41 @@ def test_signed_export_manifest_round_trip_and_tamper_detection(tmp_path: Path) 
     with pytest.raises(Exception, match="signature|manifest"):
         verify_signed_export(exported, signed, private_key.public_key())
     db.close()
+
+
+def test_verify_audit_returns_exact_four_key_shape_and_handles_empty_history(tmp_path: Path) -> None:
+    db = _open_database(tmp_path / "empty.sqlite")
+    result = db.verify_audit()
+
+    assert set(result.keys()) == {"algorithm", "event_count", "head_seq", "head_hash"}
+    assert result["algorithm"] == "sha256-chain-v2"
+    assert result["event_count"] == 0
+    assert result["head_seq"] == 0
+    assert result["head_hash"] is None
+    db.close()
+
+
+def test_verify_audit_rejects_missing_audit_head(tmp_path: Path) -> None:
+    path = tmp_path / "missing_head.sqlite"
+    db = _open_database(path)
+    db.close()
+
+    raw = sqlite3.connect(path)
+    raw.execute("DELETE FROM audit_head")
+    raw.commit()
+    raw.close()
+
+    raw_conn = sqlite3.connect(path)
+    raw_conn.row_factory = sqlite3.Row
+    from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase
+
+    unverified_db = TodoDatabase(
+        raw_conn,
+        DatabaseConfig(
+            path=path,
+            identity=ProjectIdentity(project_id="project-test", repository="https://example.test/project"),
+        ),
+    )
+    with pytest.raises(AuditIntegrityError, match="audit head is missing"):
+        unverified_db.verify_audit()
+    raw_conn.close()

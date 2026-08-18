@@ -167,3 +167,14 @@ def test_tool_invocations_lifecycle_counter(sql_trace: SQLTrace, tmp_path: Path)
     assert len(sql_trace.tool_invocations) == 6
     assert sql_trace.tool_invocations == ["create", "claim", "start", "done", "verify", "complete"]
     assert sql_trace.total_statements >= 6
+
+
+def test_audit_full_walk_statement_and_byte_counts(sql_trace: SQLTrace, seeded_db: TodoDatabase) -> None:
+    sql_trace.reset()
+    with sql_trace.phase("audit_verify"):
+        result = seeded_db.verify_audit()
+        assert result["event_count"] >= 20
+        assert set(result.keys()) == {"algorithm", "event_count", "head_seq", "head_hash"}
+
+    # Full walk executes exactly 2 statements: 1 for events, 1 for audit_head
+    assert sql_trace.count_phase("audit_verify") == 2

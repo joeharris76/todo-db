@@ -730,13 +730,18 @@ class TodoDatabase:
         self._check_identity()
 
     def _upgrade_audit_history(self) -> None:
+        needs_upgrade = self._connection.execute(
+            "SELECT 1 FROM events WHERE hash_version != ? LIMIT 1", (AUDIT_HASH_VERSION,)
+        ).fetchone()
+        if needs_upgrade is None:
+            return
         rows = [
             dict(row)
             for row in self._connection.execute(
                 "SELECT seq, at, actor, action, detail, hash_version FROM events ORDER BY seq"
             )
         ]
-        if not rows or all(int(row["hash_version"]) == AUDIT_HASH_VERSION for row in rows):
+        if not rows:
             return
         identity = self.project_identity
         with self._write_transaction():
