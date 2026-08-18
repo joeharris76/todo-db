@@ -1265,17 +1265,9 @@ def _run_finding(database: TodoDatabase, args: argparse.Namespace, project_id: s
 
 
 def _changed_files(base: str | None) -> list[str]:
-    command = ["git", "diff", "--name-only", f"{base}...HEAD" if base else "HEAD"]
-    result = subprocess.run(command, capture_output=True, text=True, check=False)
-    if result.returncode != 0:
-        raise TodoError(f"git diff failed: {result.stderr.strip()}")
-    files = set(result.stdout.splitlines())
-    untracked = subprocess.run(
-        ["git", "ls-files", "--others", "--exclude-standard"], capture_output=True, text=True, check=False
-    )
-    if untracked.returncode == 0:
-        files.update(untracked.stdout.splitlines())
-    return sorted(file for file in files if file)
+    from .agent import GitScopeEngine
+
+    return GitScopeEngine().changed_files(base)
 
 
 def _main(argv: list[str] | None = None) -> int:

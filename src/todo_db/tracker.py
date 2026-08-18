@@ -1594,6 +1594,19 @@ class TodoTracker:
             self.connection.execute("UPDATE items SET blocked_reason = NULL WHERE id = ?", (item_id,))
             self._event("unblock", item_id)
 
+    def rebaseline_scope(self, item_id: str, new_baseline: str, reason: str) -> None:
+        if not reason.strip():
+            raise TodoError("rebaseline reason is required")
+        with self.database.transaction():
+            item = self._require_item(item_id)
+            old_baseline = item["git_baseline"] if "git_baseline" in item.keys() else None
+            self.connection.execute("UPDATE items SET git_baseline = ? WHERE id = ?", (new_baseline, item_id))
+            self._event(
+                "rebaseline",
+                item_id,
+                {"old_baseline": old_baseline, "new_baseline": new_baseline, "reason": reason},
+            )
+
     def sweep_stale(self, ttl_hours: float = DEFAULT_LEASE_TTL_HOURS) -> list[str]:
         released: list[str] = []
         with self.database.transaction():
