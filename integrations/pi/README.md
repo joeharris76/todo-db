@@ -22,7 +22,7 @@ cd integrations/pi
 npm install
 npm run build
 npm pack
-pi install ./todo-db-pi-adapter-0.1.0.tgz
+pi install ./todo-db-pi-adapter-0.1.1.tgz
 ```
 
 The project must have an initialized tracker:

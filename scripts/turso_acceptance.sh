@@ -21,9 +21,15 @@ skip() {
 if [[ -z "${TEST_TURSO_URL:-}" ]]; then
   command -v turso >/dev/null 2>&1 || skip "turso CLI is unavailable"
   turso auth whoami >/dev/null 2>&1 || skip "turso CLI is not authenticated"
-  GROUP_FLAG=()
-  if [[ -n "${TURSO_GROUP:-}" ]]; then GROUP_FLAG=(--group "$TURSO_GROUP"); fi
-  turso db create "$DB_NAME" "${GROUP_FLAG[@]}"
+  SELECTED_GROUP="${TURSO_GROUP:-}"
+  if [[ -z "$SELECTED_GROUP" ]]; then
+    SELECTED_GROUP="$(turso group list 2>/dev/null | awk 'NR==2 {print $1}')"
+  fi
+  if [[ -n "$SELECTED_GROUP" ]]; then
+    turso db create "$DB_NAME" --group "$SELECTED_GROUP"
+  else
+    turso db create "$DB_NAME"
+  fi
   CLEANUP_REQUIRED=1
   TEST_TURSO_URL="$(turso db show "$DB_NAME" --url)"
   TEST_TURSO_TOKEN="$(turso db tokens create "$DB_NAME")"

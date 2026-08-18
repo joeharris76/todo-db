@@ -24,3 +24,27 @@ jobs:
         run: uv run pytest -q
       - name: Build artifacts
         run: uv build
+
+      - name: Validate acceptance harness syntax
+        run: bash -n scripts/turso_acceptance.sh
+
+  pi-adapter:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: integrations/pi
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: integrations/pi/package-lock.json
+      - name: Install exact dependencies
+        run: npm ci
+      - name: Tests
+        run: npm test
+      - name: Typecheck against Pi SDK
+        run: npm run typecheck
+      - name: Inspect package contents
+        run: npm pack --dry-run

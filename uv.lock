@@ -371,7 +371,7 @@ wheels = [
 
 [[package]]
 name = "todo-db"
-version = "0.4.0"
+version = "0.4.1"
 source = { editable = "." }
 dependencies = [
     { name = "tomli", marker = "python_full_version < '3.11'" },

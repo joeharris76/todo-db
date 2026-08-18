@@ -6,6 +6,20 @@ optional Turso/libSQL hosted backends.
 `todo-db` is the canonical command. `todo` remains a compatibility alias for
 existing consumers and is not the generic project TODO router.
 
+## Install and upgrade
+
+```sh
+uv tool install "todo-db==0.4.1"
+# or: pipx install "todo-db==0.4.1"
+```
+
+Before upgrading an existing writable tracker, take the normal database/export
+backup. Opening it with `todo-db 0.4.1` applies checksum-verified schema
+migration 007, which adds verification workspace attestations. The migration
+is additive; older binaries must not write a database after it has been
+upgraded. Pi consumers should install `@todo-db/pi-adapter@0.1.1`; its model
+finish contract requires `todo-db >= 0.4.1`.
+
 ## Local use
 
 ```sh

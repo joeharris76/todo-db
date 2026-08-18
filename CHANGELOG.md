@@ -6,8 +6,15 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-08-18
+
 ### Added
 
+- Schema migration 007 binds passing verification ladders to a deterministic
+  Git workspace fingerprint. Existing databases migrate automatically when
+  opened by `todo-db 0.4.1`; take the normal database backup before upgrading.
+- Human-only, audited `todo agent rebaseline` remediation and an installable
+  Pi adapter README covering trust, paging, verification, and hosted limits.
 - Define the hosted credential lifecycle in ADR 0004 and an operations
   runbook: externally injected database-scoped tokens, explicit bounded RO/RW
   profiles, named rotation ownership, and coordinated database-wide compromise
@@ -15,11 +22,21 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
-- Require Pi project trust before resolving or executing project wrappers, and compile the adapter against Pi's real extension API.
-- Execute human agent verification ladders exactly once and bind no-shell completion to the current workspace fingerprint.
-- Recheck claim generation during completion and require it for streamlined release/rebaseline mutations.
-- Replace false hosted certification with an honest two-connection Turso race whose skipped result is non-passing.
-- Add recoverable bounded context pages, blocker/deferral projections, compact claim receipts, and lossless Git filename decoding.
+- Require Pi project trust before resolving or executing project wrappers,
+  compile the adapter against Pi's real extension API, and use its actual
+  session identifier.
+- Execute human agent verification ladders exactly once, reject commands that
+  mutate the Git workspace, and require a current attestation for no-shell
+  model completion.
+- Recheck claim generation during completion and require it for streamlined
+  release/rebaseline mutations; audit adoption and reject multiple live claims.
+- Replace false hosted certification with a real-primary two-connection Turso
+  race whose skipped result is non-passing. The race passed on 2026-08-18;
+  commit-outcome fault injection remains uncertified and hosted agent mutation
+  support remains experimental.
+- Add recoverable bounded context pages, blocker/deferral projections, compact
+  actor-scoped claim receipts, exact adapter output caps, environment
+  allowlists, and lossless Git filename decoding.
 
 ## [0.4.0] - 2026-08-18
 
