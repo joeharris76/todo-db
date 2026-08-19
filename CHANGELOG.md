@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-08-19
+
 ### Fixed
 
 - Canonicalize and confine generated-wrapper paths before calculating repository
