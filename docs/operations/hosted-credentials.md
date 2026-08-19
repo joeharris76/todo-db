@@ -4,6 +4,10 @@ This runbook covers database-scoped Turso credentials for todo-db. Keep bearer
 tokens out of the repository, command arguments, logs, tracker evidence, and
 configuration files.
 
+ADR 0004 sets the lifecycle: capability profiles, lifetime maximums, rotation
+ownership, and compromise response. ADR 0005 sets the provider contract that
+lets a provisioned credential reach a session without an interactive step.
+
 ## Provision
 
 Choose the shortest practical lifetime. These examples use the ADR 0004

@@ -270,7 +270,8 @@ export TODO_DB_RO_AUTH_TOKEN="$(turso db tokens create <db> --read-only --expira
 
 `CredentialMode.READ_ONLY` chooses a credential but does not make an RW token
 read-only. Server-side least privilege requires a token created with
-`--read-only`. ADR 0004 records the lifecycle decision; see
+`--read-only`. ADR 0004 records the lifecycle decision and ADR 0005 records the
+credential-provider contract that removes per-session token export; see
 [`docs/operations/hosted-credentials.md`](docs/operations/hosted-credentials.md)
 for provisioning, routine replacement, and compromise response.
 

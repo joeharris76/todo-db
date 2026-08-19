@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- ADR 0005 records the hosted credential-provider contract: an additive,
+  retrieval-only boundary that restores one-time provisioning and zero-
+  interaction reuse without amending any ADR 0004 decision.
+
 ## [0.4.2] - 2026-08-19
 
 ### Fixed
