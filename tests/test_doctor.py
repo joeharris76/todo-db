@@ -135,7 +135,10 @@ def test_doctor_reports_missing_hosted_token_as_auth_failure(
 
     assert main(["--db", "libsql://doctor-notoken.example.test", "doctor"]) == 4
     out = capsys.readouterr().out
-    assert "FAIL database: hosted read access requires TODO_DB_RO_AUTH_TOKEN or TODO_DB_AUTH_TOKEN" in out
+    assert "FAIL database: hosted read access requires a credential" in out
+    assert "TODO_DB_RO_AUTH_TOKEN or TODO_DB_AUTH_TOKEN" in out
+    assert "TODO_DB_CREDENTIAL_COMMAND" in out
+    assert "Provision once" in out
     assert "code: E_AUTH_MISSING" in out
 
 

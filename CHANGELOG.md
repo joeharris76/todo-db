@@ -20,6 +20,16 @@ adheres to [Semantic Versioning](https://semver.org/).
 - The Pi adapter forwards `TODO_DB_CREDENTIAL_COMMAND` through its sanitized
   environment.
 
+### Changed
+
+- Missing- and rejected-credential messages, the exit-4 help text, and the
+  generated wrapper's exit-4 notice now name the provisioning and rotation
+  procedures in `docs/operations/hosted-credentials.md` and the
+  `TODO_DB_CREDENTIAL_COMMAND` variable, instead of telling the reader to
+  inject a credential. Refresh a generated wrapper with
+  `todo-db refresh-wrapper` to pick up the new notice; the v2 contract is
+  unchanged, so an unrefreshed wrapper keeps working.
+
 ## [0.4.2] - 2026-08-19
 
 ### Fixed

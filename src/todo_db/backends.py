@@ -293,7 +293,9 @@ def resolve_credential(config: DatabaseConfig) -> ResolvedCredential:
             return ResolvedCredential(token, "TODO_DB_AUTH_TOKEN", "read-write")
         return _provider_or_missing(
             ("read-write",),
-            "hosted backend requires TODO_DB_AUTH_TOKEN; inject a bounded read-write credential",
+            "hosted backend requires a read-write credential: set TODO_DB_AUTH_TOKEN, or "
+            "provision one into your secret store and point TODO_DB_CREDENTIAL_COMMAND at it "
+            "(docs/operations/hosted-credentials.md, Provision once)",
         )
 
     read_only = os.environ.get("TODO_DB_RO_AUTH_TOKEN", "")
@@ -304,8 +306,10 @@ def resolve_credential(config: DatabaseConfig) -> ResolvedCredential:
         return ResolvedCredential(read_write, "TODO_DB_AUTH_TOKEN", "read-write")
     return _provider_or_missing(
         ("read-only", "read-write"),
-        "hosted read access requires TODO_DB_RO_AUTH_TOKEN or TODO_DB_AUTH_TOKEN; "
-        "inject a bounded credential",
+        "hosted read access requires a credential: set TODO_DB_RO_AUTH_TOKEN or "
+        "TODO_DB_AUTH_TOKEN, or provision one into your secret store and point "
+        "TODO_DB_CREDENTIAL_COMMAND at it "
+        "(docs/operations/hosted-credentials.md, Provision once)",
     )
 
 
@@ -354,7 +358,10 @@ def is_auth_shaped(detail: str) -> bool:
 
 def auth_remediation(credential: ResolvedCredential | None = None) -> str:
     source = credential.source if credential is not None else "the configured credential source"
-    return f"credential rejected: replace the bounded credential from {source} and retry in a fresh process"
+    return (
+        f"credential rejected: replace the bounded credential from {source} and retry in a fresh "
+        "process (docs/operations/hosted-credentials.md, Rotate: routine replacement)"
+    )
 
 
 def hosted_error(

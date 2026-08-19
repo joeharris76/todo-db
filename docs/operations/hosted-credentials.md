@@ -8,7 +8,7 @@ ADR 0004 sets the lifecycle: capability profiles, lifetime maximums, rotation
 ownership, and compromise response. ADR 0005 sets the provider contract that
 lets a provisioned credential reach a session without an interactive step.
 
-## Provision
+## Mint a bounded token
 
 Choose the shortest practical lifetime. These examples use the ADR 0004
 maximums:
@@ -32,6 +32,50 @@ Do not use group-scoped tokens with this runbook. If an operator deliberately
 uses one, the owner must document group-level invalidation and every database
 that shares its blast radius.
 
+## Provision once
+
+Do this one time per machine and capability. Afterwards no shell, agent session,
+or CI worker needs an interactive step until the token is rotated.
+
+1. Mint the bounded token as shown above and pipe it straight into your secret
+   store, never into a file or the shell history.
+
+   ```sh
+   turso db tokens create <database> --expiration 90d |
+     security add-generic-password -U -a "$USER" -s todo-db-rw -w
+   ```
+
+   1Password, `pass`, `gopass`, and a CI secret store are equally valid; the
+   store only has to print one token on standard output.
+
+2. Point todo-db at the store. Put this in the shell profile or process
+   supervisor that starts your sessions, so every later shell and agent
+   inherits it:
+
+   ```sh
+   export TODO_DB_CREDENTIAL_COMMAND="security find-generic-password -w -s todo-db-rw"
+   ```
+
+   For a read-only consumer, store a `--read-only` token under its own service
+   name and point the variable at that entry instead.
+
+3. Confirm it resolves without any injected credential:
+
+   ```sh
+   env -u TODO_DB_AUTH_TOKEN -u TODO_DB_RO_AUTH_TOKEN \
+     todo-db --db libsql://<host> doctor --json
+   ```
+
+   The `database` check must report
+   `"source": "TODO_DB_CREDENTIAL_COMMAND"`.
+
+`scripts/hosted_auth_acceptance.sh` runs step 3 as a repeatable check.
+
+The command is never run through a shell, so it must be a plain program and its
+arguments. Put any pipeline or conditional logic in a small script and name that
+script instead. A caller that filters the environment it passes to todo-db must
+forward `TODO_DB_CREDENTIAL_COMMAND`.
+
 ## Validate
 
 Run a read-only preflight before a batch:
@@ -49,7 +93,16 @@ TODO_DB_AUTH_TOKEN=... todo-db --db libsql://<host> doctor --rw --json
 Read-only mode is server-enforced only when the supplied token was created with
 `--read-only`. Never place `TODO_DB_AUTH_TOKEN` in the scheduled audit job.
 
-## Routine replacement
+## Rotate: routine replacement
+
+For a provider-backed credential this is the only recurring interactive step,
+at most once per ADR 0004 lifetime maximum for that capability: mint the
+replacement, overwrite the store entry in place (`security
+add-generic-password -U` updates rather than duplicates), start a fresh process,
+and re-run the Provision once step 3 check. `TODO_DB_CREDENTIAL_COMMAND` still
+names the same entry, so no session, wrapper, or CI job needs an update.
+
+For directly injected credentials:
 
 1. The named owner mints a bounded replacement before the current expiry.
 2. Update one external consumer or secret store.

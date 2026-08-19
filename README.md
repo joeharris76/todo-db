@@ -374,5 +374,6 @@ todo-db refresh-wrapper
 
 The command refuses symlinks, paths outside the project, missing files, and
 unrecognized custom scripts. `doctor` reports a legacy generated wrapper with
-the same targeted remediation. Inject a bounded credential before invoking the
-wrapper; an authentication failure is a hard stop for batch work.
+the same targeted remediation. Provision a credential once and point
+`TODO_DB_CREDENTIAL_COMMAND` at it, or inject one before invoking the wrapper;
+an authentication failure is a hard stop for batch work.

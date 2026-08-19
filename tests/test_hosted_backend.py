@@ -832,26 +832,52 @@ def test_injected_credentials_take_precedence_over_the_provider(
     assert not marker.exists()
 
 
-def test_unset_provider_leaves_v042_missing_credential_messages_unchanged(
+def test_unset_provider_changes_no_resolution_outcome_and_adds_no_provider_noise(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Codes, capabilities, and precedence are what they were before the provider existed.
+
+    The remediation wording deliberately changed to name the provisioning
+    procedure; what must not change is which credential is selected, which code
+    is raised, and that an operator who never adopts a provider is not told
+    about a failed one.
+    """
+
+    from todo_db import CredentialMode
+    from todo_db.backends import resolve_credential
+    from todo_db.errors import E_AUTH_MISSING, HostedAuthError
+
+    _no_injected_credentials(monkeypatch)
+    for mode in (CredentialMode.READ_ONLY, CredentialMode.READ_WRITE):
+        with pytest.raises(HostedAuthError) as raised:
+            resolve_credential(_hosted_config(mode))
+        assert raised.value.code == E_AUTH_MISSING
+        assert "returned no credential" not in str(raised.value)
+        assert "provider" not in str(raised.value).lower()
+
+    monkeypatch.setenv("TODO_DB_AUTH_TOKEN", "rw")
+    monkeypatch.setenv("TODO_DB_RO_AUTH_TOKEN", "ro")
+    assert resolve_credential(_hosted_config(CredentialMode.READ_ONLY)).source == "TODO_DB_RO_AUTH_TOKEN"
+    assert resolve_credential(_hosted_config(CredentialMode.READ_WRITE)).source == "TODO_DB_AUTH_TOKEN"
+
+
+def test_missing_credential_messages_name_the_provisioning_procedure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from todo_db import CredentialMode
-    from todo_db.backends import resolve_credential
+    from todo_db.backends import auth_remediation, resolve_credential
     from todo_db.errors import HostedAuthError
 
     _no_injected_credentials(monkeypatch)
-    with pytest.raises(HostedAuthError) as read_only:
-        resolve_credential(_hosted_config(CredentialMode.READ_ONLY))
-    assert str(read_only.value) == (
-        "hosted read access requires TODO_DB_RO_AUTH_TOKEN or TODO_DB_AUTH_TOKEN; "
-        "inject a bounded credential"
-    )
+    for mode in (CredentialMode.READ_ONLY, CredentialMode.READ_WRITE):
+        with pytest.raises(HostedAuthError) as raised:
+            resolve_credential(_hosted_config(mode))
+        message = str(raised.value)
+        assert "TODO_DB_CREDENTIAL_COMMAND" in message
+        assert "docs/operations/hosted-credentials.md, Provision once" in message
+        assert "inject a bounded" not in message
 
-    with pytest.raises(HostedAuthError) as read_write:
-        resolve_credential(_hosted_config(CredentialMode.READ_WRITE))
-    assert str(read_write.value) == (
-        "hosted backend requires TODO_DB_AUTH_TOKEN; inject a bounded read-write credential"
-    )
+    assert "Rotate: routine replacement" in auth_remediation()
 
 
 def test_provider_is_consulted_at_most_once_per_capability_per_process(
