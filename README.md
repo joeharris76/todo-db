@@ -310,7 +310,8 @@ pass it and a real downstream consumer check before tagging; see
 `CredentialMode.READ_ONLY` chooses a credential but does not make an RW token
 read-only. Server-side least privilege requires a token created with
 `--read-only`. ADR 0004 records the lifecycle decision and ADR 0005 records the
-credential-provider contract that removes per-session token export; see
+credential-provider contract that removes per-session token export
+([all decision records](docs/adr/README.md)); see
 [`docs/operations/hosted-credentials.md`](docs/operations/hosted-credentials.md)
 for provisioning, routine replacement, and compromise response.
 
