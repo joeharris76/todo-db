@@ -268,6 +268,31 @@ export TODO_DB_AUTH_TOKEN="$(turso db tokens create <db> --expiration 90d)"
 export TODO_DB_RO_AUTH_TOKEN="$(turso db tokens create <db> --read-only --expiration 180d)"
 ```
 
+When neither an explicit token nor a `TODO_DB_*` variable is present, todo-db
+asks the command in `TODO_DB_CREDENTIAL_COMMAND` for the capability it needs, so
+a credential provisioned once is reused by every later shell and agent session
+without an interactive step:
+
+```sh
+export TODO_DB_CREDENTIAL_COMMAND="security find-generic-password -w -s todo-db-rw"
+```
+
+The command is split with `shlex` and executed directly; it never runs through a
+shell. The requested capability (`read-only` or `read-write`) is appended as the
+final argument and exported as `TODO_DB_CREDENTIAL_CAPABILITY`. Exit 0 with
+output supplies the token; exit 0 with no output means the credential is absent,
+which is the only condition that lets read-only fall back to read-write. Any
+non-zero exit, timeout, unparsable command, missing executable, or oversized
+output is `E_AUTH_MISSING` and stops resolution, so a broken read-only provider
+can never escalate to a read-write credential. Failures report the provider's
+program name and exit status only: provider stdout is the token and provider
+stderr routinely echoes it, so neither ever reaches an error, log, or doctor
+field. The provider is consulted at most once per capability per process, never
+for a local database, and never when a credential was supplied explicitly. With
+the variable unset, behaviour is exactly what it was before it existed. A caller
+that filters the environment it passes to todo-db must forward the variable; the
+Pi adapter's sanitized environment does.
+
 `CredentialMode.READ_ONLY` chooses a credential but does not make an RW token
 read-only. Server-side least privilege requires a token created with
 `--read-only`. ADR 0004 records the lifecycle decision and ADR 0005 records the

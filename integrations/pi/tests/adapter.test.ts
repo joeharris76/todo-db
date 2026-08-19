@@ -43,17 +43,20 @@ describe("Pi Adapter Core", () => {
     process.env.LD_PRELOAD = "/evil.so";
     process.env.DYLD_INSERT_LIBRARIES = "/evil.dylib";
     process.env.TODO_DB_AUTH_TOKEN = "valid-token";
+    process.env.TODO_DB_CREDENTIAL_COMMAND = "security find-generic-password -w -s todo-db";
     process.env.GITHUB_TOKEN = "must-not-pass";
     process.env.PI_SESSION_FILE = "/secret/session.jsonl";
     const clean = getSanitizedEnv();
     assert.strictEqual(clean.LD_PRELOAD, undefined);
     assert.strictEqual(clean.DYLD_INSERT_LIBRARIES, undefined);
     assert.strictEqual(clean.TODO_DB_AUTH_TOKEN, "valid-token");
+    assert.strictEqual(clean.TODO_DB_CREDENTIAL_COMMAND, "security find-generic-password -w -s todo-db");
     assert.strictEqual(clean.GITHUB_TOKEN, undefined);
     assert.strictEqual(clean.PI_SESSION_FILE, undefined);
     delete process.env.LD_PRELOAD;
     delete process.env.DYLD_INSERT_LIBRARIES;
     delete process.env.TODO_DB_AUTH_TOKEN;
+    delete process.env.TODO_DB_CREDENTIAL_COMMAND;
   });
 
   it("serializes queue execution", async () => {

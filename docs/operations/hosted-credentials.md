@@ -22,8 +22,9 @@ export TODO_DB_RO_AUTH_TOKEN="$(turso db tokens create <database> --read-only --
 ```
 
 Inject the result with an OS keychain, password manager, process supervisor, or
-CI secret store. Do not save it in `.todo-db/config.json` or a wrapper-managed
-cache. Record the database, capability, issue date, expiry date, owner, and
+CI secret store. Point `TODO_DB_CREDENTIAL_COMMAND` at that store so sessions
+retrieve it without an interactive step; see Provision once below. Do not save it
+in `.todo-db/config.json` or a wrapper-managed cache. Record the database, capability, issue date, expiry date, owner, and
 replacement reminder in the external secret inventory—never the token value in
 tracker evidence.
 

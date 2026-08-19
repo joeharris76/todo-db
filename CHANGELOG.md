@@ -11,6 +11,14 @@ adheres to [Semantic Versioning](https://semver.org/).
 - ADR 0005 records the hosted credential-provider contract: an additive,
   retrieval-only boundary that restores one-time provisioning and zero-
   interaction reuse without amending any ADR 0004 decision.
+- `TODO_DB_CREDENTIAL_COMMAND` resolves a hosted credential from an external
+  secret store when none is injected, bounded by a timeout and an output-size
+  limit, never run through a shell, and never disclosing provider output. A
+  non-zero provider exit is an error rather than an absent credential, so a
+  failing read-only provider cannot escalate to read-write. With the variable
+  unset, resolution, messages, codes, and exit statuses are unchanged.
+- The Pi adapter forwards `TODO_DB_CREDENTIAL_COMMAND` through its sanitized
+  environment.
 
 ## [0.4.2] - 2026-08-19
 

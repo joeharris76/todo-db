@@ -1213,7 +1213,7 @@ def _doctor_hosted_probe(
         credential = resolve_credential(config)
     except HostedAuthError as exc:
         metadata = {
-            "source": "TODO_DB_RO_AUTH_TOKEN|TODO_DB_AUTH_TOKEN",
+            "source": "TODO_DB_RO_AUTH_TOKEN|TODO_DB_AUTH_TOKEN|TODO_DB_CREDENTIAL_COMMAND",
             "capability": "read-only requested",
             **_credential_metadata(None, exc),
         }

@@ -46,6 +46,9 @@ export function getSanitizedEnv(): NodeJS.ProcessEnv {
   const allowed = new Set([
     "CI", "COLORTERM", "HOME", "LANG", "LC_ALL", "LOGNAME", "NO_COLOR", "PATH", "SHELL", "TERM",
     "TMPDIR", "USER", "UV_CACHE_DIR", "VIRTUAL_ENV", "TODO_DB_AUTH_TOKEN", "TODO_DB_RO_AUTH_TOKEN",
+    // ADR 0005: todo-db resolves a credential from this command when none is injected.
+    // Dropping it here would make the provider unreachable for Pi alone.
+    "TODO_DB_CREDENTIAL_COMMAND",
     "TODO_DB_URL", "TODO_DB_PATH", "TODO_DB_CONFIG", "TODO_DB_TOOL", "TODO_DB_PROJECT_ID",
     "TODO_DB_REPOSITORY", "TODO_DB_PI_PRINCIPAL",
   ]);
