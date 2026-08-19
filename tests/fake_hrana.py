@@ -77,6 +77,11 @@ class FakeHranaConnection:
         self.sync_calls += 1
 
 
+# See tests/test_hosted_backend.py: a double that accepts any keyword tests that
+# the code called something, not that it called the right thing.
+_HRANA_CONNECT_KEYWORDS = frozenset({"auth_token", "isolation_level", "sync_url", "sync_interval"})
+
+
 class FakeHranaModule(types.ModuleType):
     def __init__(self, primary_path: Path):
         super().__init__("libsql")
@@ -85,6 +90,9 @@ class FakeHranaModule(types.ModuleType):
         self.connections: list[FakeHranaConnection] = []
 
     def connect(self, database: Any, **kwargs: Any):
+        unexpected = sorted(set(kwargs) - _HRANA_CONNECT_KEYWORDS)
+        if unexpected:
+            raise TypeError(f"libsql.connect() got unexpected keyword argument(s): {', '.join(unexpected)}")
         target = self.primary_path
         self.connect_calls.append({"database": str(database), **kwargs})
         conn = FakeHranaConnection(target, sync_url=kwargs.get("sync_url"), auth_token=kwargs.get("auth_token"))

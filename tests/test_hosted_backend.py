@@ -61,6 +61,12 @@ class FakeRawConnection:
         self.sync_calls += 1
 
 
+# The keyword arguments libsql.connect actually accepts in the calls this
+# package makes. The double rejects anything else: a permissive double would
+# accept a misspelled or invented keyword and pass, while real libsql raised.
+_LIBSQL_CONNECT_KEYWORDS = frozenset({"auth_token", "isolation_level", "sync_url", "sync_interval"})
+
+
 class FakeLibsql(types.ModuleType):
     def __init__(self, primary: Path):
         super().__init__("libsql")
@@ -69,6 +75,9 @@ class FakeLibsql(types.ModuleType):
         self.connections: list[FakeRawConnection] = []
 
     def connect(self, database, **kwargs):
+        unexpected = sorted(set(kwargs) - _LIBSQL_CONNECT_KEYWORDS)
+        if unexpected:
+            raise TypeError(f"libsql.connect() got unexpected keyword argument(s): {', '.join(unexpected)}")
         target = self.primary if "://" in str(database) else Path(database)
         self.connect_calls.append({"database": str(database), **kwargs})
         connection = FakeRawConnection(target)

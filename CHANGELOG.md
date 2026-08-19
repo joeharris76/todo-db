@@ -38,6 +38,10 @@ adheres to [Semantic Versioning](https://semver.org/).
   token, which would defeat the verification-subprocess credential boundary by
   passing the pointer instead of the secret.
 
+- `docs/operations/test-doubles.md` records what each test double cannot catch
+  and where the real behaviour is exercised instead. The libSQL and Hrana doubles
+  now reject unexpected keyword arguments rather than accepting anything.
+
 ### Changed
 
 - A provider-resolved credential reports its capability as
