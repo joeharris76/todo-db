@@ -293,6 +293,12 @@ the variable unset, behaviour is exactly what it was before it existed. A caller
 that filters the environment it passes to todo-db must forward the variable; the
 Pi adapter's sanitized environment does.
 
+`scripts/hosted_auth_acceptance.sh` proves the whole path end to end: it removes
+any inherited `TODO_DB_AUTH_TOKEN` and `TODO_DB_RO_AUTH_TOKEN`, then asserts
+that `doctor` resolves the credential from the provider and that an ordinary
+read succeeds. Unconfigured it exits 77; `--require` makes an unconfigured run a
+failure.
+
 `CredentialMode.READ_ONLY` chooses a credential but does not make an RW token
 read-only. Server-side least privilege requires a token created with
 `--read-only`. ADR 0004 records the lifecycle decision and ADR 0005 records the

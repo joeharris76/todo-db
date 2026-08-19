@@ -69,7 +69,16 @@ or CI worker needs an interactive step until the token is rotated.
    The `database` check must report
    `"source": "TODO_DB_CREDENTIAL_COMMAND"`.
 
-`scripts/hosted_auth_acceptance.sh` runs step 3 as a repeatable check.
+`scripts/hosted_auth_acceptance.sh` runs step 3 as a repeatable check. It
+removes any inherited `TODO_DB_AUTH_TOKEN` and `TODO_DB_RO_AUTH_TOKEN` before
+running, so a credential already in your shell cannot make it pass:
+
+```sh
+TODO_DB_ACCEPTANCE_URL=libsql://<host> scripts/hosted_auth_acceptance.sh
+```
+
+Unconfigured it exits 77 (skipped, never a pass). Pass `--require` to turn that
+skip into a failure; the release gate uses `--require`.
 
 The command is never run through a shell, so it must be a plain program and its
 arguments. Put any pipeline or conditional logic in a small script and name that

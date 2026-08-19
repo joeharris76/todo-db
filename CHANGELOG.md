@@ -19,6 +19,12 @@ adheres to [Semantic Versioning](https://semver.org/).
   unset, resolution, messages, codes, and exit statuses are unchanged.
 - The Pi adapter forwards `TODO_DB_CREDENTIAL_COMMAND` through its sanitized
   environment.
+- `scripts/hosted_auth_acceptance.sh` proves hosted authentication resolves with
+  the injected credentials removed, which is the only check here that can fail
+  the way an operator fails. Unconfigured it exits 77; `--require` makes that a
+  failure. CI validates its syntax and its skip contract but does not run it
+  against a hosted database, because CI's injected credentials would mask the
+  condition it tests.
 
 ### Changed
 

@@ -26,7 +26,18 @@ jobs:
         run: uv build
 
       - name: Validate acceptance harness syntax
-        run: bash -n scripts/turso_acceptance.sh
+        run: |
+          bash -n scripts/turso_acceptance.sh
+          bash -n scripts/hosted_auth_acceptance.sh
+
+      # The hosted run stays out of CI on purpose: CI injects credentials into
+      # the environment, which is the condition that hid the v0.4.2 failure.
+      # Only the skip contract is asserted here.
+      - name: Hosted auth harness skips rather than silently passing
+        run: |
+          env -u TODO_DB_URL -u TODO_DB_ACCEPTANCE_URL -u TODO_DB_AUTH_TOKEN \
+              -u TODO_DB_RO_AUTH_TOKEN -u TODO_DB_CREDENTIAL_COMMAND \
+            bash scripts/hosted_auth_acceptance.sh; test $? -eq 77
 
   pi-adapter:
     runs-on: ubuntu-latest
