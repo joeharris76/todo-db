@@ -35,9 +35,15 @@ jobs:
       # Only the skip contract is asserted here.
       - name: Hosted auth harness skips rather than silently passing
         run: |
+          # The runner shell is `bash -e`, so capture the status explicitly:
+          # a bare `cmd; test $? -eq 77` aborts on the skip before asserting.
+          set +e
           env -u TODO_DB_URL -u TODO_DB_ACCEPTANCE_URL -u TODO_DB_AUTH_TOKEN \
               -u TODO_DB_RO_AUTH_TOKEN -u TODO_DB_CREDENTIAL_COMMAND \
-            bash scripts/hosted_auth_acceptance.sh; test $? -eq 77
+            bash scripts/hosted_auth_acceptance.sh
+          status=$?
+          set -e
+          test "$status" -eq 77
 
   pi-adapter:
     runs-on: ubuntu-latest
