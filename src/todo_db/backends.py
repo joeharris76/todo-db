@@ -222,16 +222,23 @@ def _provider_credential(capability: str) -> ResolvedCredential | None:
     if not argv:
         raise _ProviderError(f"{CREDENTIAL_COMMAND_VARIABLE} is empty after parsing")
 
+    # The capability travels only in the child environment. Appending it as a
+    # positional argument would break every documented one-line provider:
+    # `security find-generic-password -w -s <service>` reads a trailing word as
+    # the keychain to search and exits 44, and `op read` and `pass show` reject
+    # the extra argument the same way. A provider that needs to branch reads
+    # TODO_DB_CREDENTIAL_CAPABILITY; a plain retrieval command needs nothing.
     child_env = dict(os.environ)
     child_env["TODO_DB_CREDENTIAL_CAPABILITY"] = capability
     program = argv[0]
     try:
         # argv list, never a shell: the configured string is operator-owned but
-        # must not become an injection surface.
+        # must not become an injection surface. Output is captured as bytes so
+        # that no decode can raise from inside communicate() and escape the
+        # error handling below.
         completed = subprocess.run(
-            [*argv, capability],
+            argv,
             capture_output=True,
-            text=True,
             timeout=CREDENTIAL_COMMAND_TIMEOUT_SECONDS,
             env=child_env,
             check=False,
@@ -250,13 +257,13 @@ def _provider_credential(capability: str) -> ResolvedCredential | None:
 
     if completed.returncode != 0:
         raise _ProviderError(f"credential provider {program!r} exited {completed.returncode}")
-    raw = completed.stdout or ""
-    if len(raw.encode("utf-8", "replace")) > CREDENTIAL_COMMAND_MAX_BYTES:
+    raw = completed.stdout or b""
+    if len(raw) > CREDENTIAL_COMMAND_MAX_BYTES:
         raise _ProviderError(
             f"credential provider {program!r} returned more than "
             f"{CREDENTIAL_COMMAND_MAX_BYTES} bytes"
         )
-    token = raw.strip()
+    token = raw.decode("utf-8", "replace").strip()
     resolved = ResolvedCredential(token, CREDENTIAL_COMMAND_VARIABLE, capability) if token else None
     _PROVIDER_CACHE[cache_key] = resolved
     return resolved

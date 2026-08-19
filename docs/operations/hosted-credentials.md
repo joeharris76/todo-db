@@ -82,7 +82,18 @@ skip into a failure; the release gate uses `--require`.
 
 The command is never run through a shell, so it must be a plain program and its
 arguments. Put any pipeline or conditional logic in a small script and name that
-script instead. A caller that filters the environment it passes to todo-db must
+script instead. Your arguments are passed through unchanged; todo-db appends
+nothing. When a provider must serve both capabilities from one entry-point, have
+that script read `TODO_DB_CREDENTIAL_CAPABILITY`, which todo-db sets to
+`read-only` or `read-write` in the command's environment:
+
+```sh
+#!/bin/sh
+case "$TODO_DB_CREDENTIAL_CAPABILITY" in
+  read-only)  exec security find-generic-password -w -s todo-db-ro ;;
+  *)          exec security find-generic-password -w -s todo-db-rw ;;
+esac
+``` A caller that filters the environment it passes to todo-db must
 forward `TODO_DB_CREDENTIAL_COMMAND`.
 
 ## Validate

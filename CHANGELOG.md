@@ -34,6 +34,14 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- The credential provider receives the operator's `argv` unchanged; the
+  requested capability reaches it only through `TODO_DB_CREDENTIAL_CAPABILITY`
+  in its environment. Appending it as a positional argument broke every
+  documented one-line provider.
+- Provider output is captured as bytes, bounded before decoding, and decoded
+  with replacement, so malformed output degrades to a coded error instead of an
+  unhandled `UnicodeDecodeError`.
+
 - Missing- and rejected-credential messages, the exit-4 help text, and the
   generated wrapper's exit-4 notice now name the provisioning and rotation
   procedures in `docs/operations/hosted-credentials.md` and the

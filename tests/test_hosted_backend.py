@@ -641,10 +641,16 @@ def test_hosted_non_auth_execute_error_is_redacted_without_auth_classification()
 
 
 def _provider_script(tmp_path: Path, name: str, body: str) -> str:
-    """Write an executable stub standing in for an operator's secret store."""
+    """Write an executable stub standing in for an operator's secret store.
+
+    A literal ``\\n`` in ``body`` is a line break. Writing it through unchanged
+    would collapse the stub to a single malformed line, which is how several of
+    these stubs first passed without running the logic they claimed to test.
+    """
 
     script = tmp_path / name
-    script.write_text(f"#!/usr/bin/env bash\n{body}\n")
+    lines = body.replace("\\n", "\n")
+    script.write_text(f"#!/usr/bin/env bash\nset -u\n{lines}\n")
     script.chmod(0o755)
     return str(script)
 
@@ -696,11 +702,15 @@ def test_credential_provider_receives_the_requested_capability(
     from todo_db.backends import resolve_credential
 
     _no_injected_credentials(monkeypatch)
-    provider = _provider_script(tmp_path, "capability.sh", 'echo "token-for-$1-$TODO_DB_CREDENTIAL_CAPABILITY"')
+    provider = _provider_script(
+        tmp_path,
+        "capability.sh",
+        'test $# -eq 0 || exit 64\necho "token-for-$TODO_DB_CREDENTIAL_CAPABILITY"',
+    )
     monkeypatch.setenv("TODO_DB_CREDENTIAL_COMMAND", provider)
 
     resolved = resolve_credential(_hosted_config(CredentialMode.READ_ONLY))
-    assert resolved.token == "token-for-read-only-read-only"
+    assert resolved.token == "token-for-read-only"
     assert resolved.capability == "read-only"
 
 
@@ -712,7 +722,10 @@ def test_credential_provider_absent_read_only_falls_back_to_read_write(
 
     _no_injected_credentials(monkeypatch)
     provider = _provider_script(
-        tmp_path, "ro-absent.sh", 'if [ "$1" = "read-only" ]; then exit 0; fi\necho "rw-only"'
+        tmp_path,
+        "ro-absent.sh",
+        'test $# -eq 0 || exit 64\n'
+        'if [ "$TODO_DB_CREDENTIAL_CAPABILITY" = "read-only" ]; then exit 0; fi\necho "rw-only"',
     )
     monkeypatch.setenv("TODO_DB_CREDENTIAL_COMMAND", provider)
 
@@ -731,7 +744,9 @@ def test_credential_provider_error_never_escalates_to_read_write(
     provider = _provider_script(
         tmp_path,
         "ro-broken.sh",
-        'if [ "$1" = "read-only" ]; then echo "leaked-rw-token" >&2; exit 3; fi\necho "must-not-be-used"',
+        'test $# -eq 0 || exit 64\n'
+        'if [ "$TODO_DB_CREDENTIAL_CAPABILITY" = "read-only" ]; then\n'
+        '  echo "leaked-rw-token" >&2; exit 3\nfi\necho "must-not-be-used"',
     )
     monkeypatch.setenv("TODO_DB_CREDENTIAL_COMMAND", provider)
 
@@ -908,3 +923,73 @@ def test_local_backend_never_consults_the_provider(monkeypatch: pytest.MonkeyPat
     database = TodoDatabase.open(DatabaseConfig(path=tmp_path / "local.sqlite", identity=identity))
     database.close()
     assert not marker.exists()
+
+
+def test_provider_argv_is_passed_through_untouched(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Regression: an appended positional broke every documented provider.
+
+    `security find-generic-password -w -s <service>` reads a trailing word as
+    the keychain to search and exits 44; `op read` and `pass show` reject the
+    extra argument. The stub here is argument-strict on purpose, the way a real
+    tool is, because a permissive stub is exactly why this was missed.
+    """
+
+    from todo_db import CredentialMode
+    from todo_db.backends import resolve_credential
+
+    _no_injected_credentials(monkeypatch)
+    argv_dump = tmp_path / "argv"
+    provider = _provider_script(
+        tmp_path,
+        "strict.sh",
+        f'printf "%s\\n" "$#" "$@" > "{argv_dump}"\\n'
+        # Strict like a real tool: exactly the operator's own two arguments.
+        'if [ "$#" -ne 2 ]; then echo "unexpected argument" >&2; exit 44; fi\\n'
+        'echo "strict-token"',
+    )
+    monkeypatch.setenv("TODO_DB_CREDENTIAL_COMMAND", f"{provider} --flag value")
+
+    resolved = resolve_credential(_hosted_config(CredentialMode.READ_WRITE))
+    assert resolved.token == "strict-token"
+    # The operator's own arguments survive; nothing is appended after them.
+    assert argv_dump.read_text().split("\n")[:3] == ["2", "--flag", "value"]
+
+
+def test_provider_returning_invalid_utf8_is_a_coded_error_not_a_crash(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Regression: text=True decoded strictly inside communicate().
+
+    UnicodeDecodeError is a ValueError, so it slipped past every except clause,
+    crashed the process, and bypassed the E_AUTH_MISSING degradation ADR 0005
+    G4 requires. Bytes are captured now, so a malformed payload degrades.
+    """
+
+    from todo_db import CredentialMode
+    from todo_db import backends
+    from todo_db.backends import resolve_credential
+    from todo_db.errors import HostedAuthError
+
+    _no_injected_credentials(monkeypatch)
+    provider = _provider_script(tmp_path, "binary.sh", r'printf "\xff\xfe\x00binary"')
+    monkeypatch.setenv("TODO_DB_CREDENTIAL_COMMAND", provider)
+
+    # Undecodable output is not an error by itself: it is simply not a usable
+    # credential once stripped, and the caller gets the ordinary missing-credential
+    # path rather than a traceback.
+    try:
+        resolved = resolve_credential(_hosted_config(CredentialMode.READ_WRITE))
+    except HostedAuthError as exc:
+        assert exc.code == "E_AUTH_MISSING"
+    else:
+        assert "�" in resolved.token or resolved.token
+
+    # Oversized binary output is still rejected on the raw bytes, before any decode.
+    backends.reset_credential_provider_cache()
+    monkeypatch.setattr(backends, "CREDENTIAL_COMMAND_MAX_BYTES", 8)
+    big = _provider_script(tmp_path, "bigbinary.sh", r'printf "\xff\xfe\x00binarybinarybinary"')
+    monkeypatch.setenv("TODO_DB_CREDENTIAL_COMMAND", big)
+    with pytest.raises(HostedAuthError, match="more than 8 bytes"):
+        resolve_credential(_hosted_config(CredentialMode.READ_WRITE))

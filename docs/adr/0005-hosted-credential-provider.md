@@ -93,9 +93,14 @@ The value is parsed with `shlex.split` and executed directly. It is never passed
 to a shell.
 
 - **Capability.** The requested capability, `read-only` or `read-write`, is
-  appended as the final argument, and is also exported to the child as
-  `TODO_DB_CREDENTIAL_CAPABILITY`. A provider that ignores both and always
-  returns the same token is valid; the operator then owns the mismatch.
+  exported to the child as `TODO_DB_CREDENTIAL_CAPABILITY` and nowhere else.
+  The operator's `argv` is passed through exactly as written. Appending the
+  capability as a positional argument was tried and rejected: it breaks every
+  documented one-line provider, because `security find-generic-password` reads
+  a trailing word as the keychain to search and exits 44, and `op read` and
+  `pass show` reject the extra argument. A provider that ignores the variable
+  and always returns the same token is valid; the operator then owns the
+  mismatch.
 - **Present.** Exit status 0 with non-empty standard output. The token is the
   output with surrounding whitespace stripped and nothing else removed.
 - **Absent.** Exit status 0 with empty standard output. Read-only resolution may
@@ -114,6 +119,16 @@ to a shell.
   provider's `argv[0]` and its exit status, nothing more.
 - **Invocation count.** At most once per capability per process. The provider is
   never consulted for a local or standalone SQLite backend.
+- **Memoization key.** The configured command string and the requested
+  capability, which together cover every input the provider is given: it is
+  never told which database it is being asked about. A provider that branches on
+  some other environment variable read at call time is therefore memoized across
+  a change to that variable within one process. That is a documented limitation,
+  not a supported configuration.
+- **Output handling.** Captured as bytes. The size bound is enforced on the raw
+  bytes before any decode, and decoding replaces malformed sequences rather than
+  raising, so no provider output can produce an exception that escapes the
+  error contract above.
 
 A caller that filters the environment it passes to `todo-db` must forward
 `TODO_DB_CREDENTIAL_COMMAND`, or the provider is silently unreachable for that

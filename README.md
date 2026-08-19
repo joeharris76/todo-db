@@ -278,8 +278,10 @@ export TODO_DB_CREDENTIAL_COMMAND="security find-generic-password -w -s todo-db-
 ```
 
 The command is split with `shlex` and executed directly; it never runs through a
-shell. The requested capability (`read-only` or `read-write`) is appended as the
-final argument and exported as `TODO_DB_CREDENTIAL_CAPABILITY`. Exit 0 with
+shell, and your arguments are passed through exactly as written. The requested
+capability (`read-only` or `read-write`) reaches the command only as
+`TODO_DB_CREDENTIAL_CAPABILITY` in its environment, so a plain retrieval command
+needs no special handling and a script that wants to branch can read it. Exit 0 with
 output supplies the token; exit 0 with no output means the credential is absent,
 which is the only condition that lets read-only fall back to read-write. Any
 non-zero exit, timeout, unparsable command, missing executable, or oversized
