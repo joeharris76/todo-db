@@ -297,7 +297,9 @@ Pi adapter's sanitized environment does.
 any inherited `TODO_DB_AUTH_TOKEN` and `TODO_DB_RO_AUTH_TOKEN`, then asserts
 that `doctor` resolves the credential from the provider and that an ordinary
 read succeeds. Unconfigured it exits 77; `--require` makes an unconfigured run a
-failure.
+failure. Releases that touch credential resolution or the wrapper contract must
+pass it and a real downstream consumer check before tagging; see
+[`docs/operations/release-gates.md`](docs/operations/release-gates.md).
 
 `CredentialMode.READ_ONLY` chooses a credential but does not make an RW token
 read-only. Server-side least privilege requires a token created with

@@ -26,6 +26,12 @@ adheres to [Semantic Versioning](https://semver.org/).
   against a hosted database, because CI's injected credentials would mask the
   condition it tests.
 
+- `docs/operations/release-gates.md` makes a hosted acceptance run and a real
+  downstream consumer check mandatory before tagging any release that touches
+  credential resolution or the wrapper contract, and states plainly that green
+  CI, passing tests, package smoke tests, and verified checksums do not satisfy
+  them.
+
 ### Changed
 
 - Missing- and rejected-credential messages, the exit-4 help text, and the
