@@ -8,6 +8,7 @@ import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 from .errors import E_AUTH_MISSING, E_AUTH_REJECTED, HostedAuthError, TodoDBError
 from .models import CredentialMode, DatabaseConfig
@@ -202,8 +203,33 @@ def resolve_credential(config: DatabaseConfig) -> ResolvedCredential:
     )
 
 
+def _url_redaction_variants(url: str) -> set[str]:
+    if not url:
+        return set()
+    normalized = _normalize_url(url)
+    parsed = urlsplit(normalized)
+    variants = {url, normalized}
+    if parsed.netloc:
+        variants.add(parsed.netloc)
+    if parsed.hostname:
+        variants.add(parsed.hostname)
+        try:
+            port = parsed.port
+        except ValueError:
+            port = None
+        if port is not None:
+            variants.add(f"{parsed.hostname}:{port}")
+        elif parsed.scheme in {"libsql", "https"}:
+            variants.add(f"{parsed.hostname}:443")
+    if parsed.scheme == "libsql":
+        variants.add(urlunsplit(("https", parsed.netloc, parsed.path, parsed.query, parsed.fragment)))
+    return {variant for variant in variants if variant}
+
+
 def _redacted_error(exc: BaseException, *, url: str, token: str) -> str:
-    message = str(exc).replace(url, "[REDACTED]")
+    message = str(exc)
+    for variant in sorted(_url_redaction_variants(url), key=len, reverse=True):
+        message = message.replace(variant, "[REDACTED]")
     return message.replace(token, "[REDACTED]") if token else message
 
 

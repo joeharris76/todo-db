@@ -377,12 +377,17 @@ def test_refresh_wrapper_replaces_only_a_recognized_legacy_wrapper(tmp_path: Pat
     config_path = tmp_path / ".todo-db" / "config.json"
     gitignore_path = tmp_path / ".todo-db" / ".gitignore"
     wrapper = tmp_path / "_project" / "scripts" / "todo"
+    payload = json.loads(config_path.read_text(encoding="utf-8"))
+    payload["wrapper"] = "scratch/../_project//scripts/todo"
+    config_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     config_before = config_path.read_bytes()
     gitignore_before = gitignore_path.read_bytes()
     wrapper.write_text(wrapper.read_text(encoding="utf-8").replace(f"{WRAPPER_VERSION_MARKER}\n", ""), encoding="utf-8")
 
     assert main(["refresh-wrapper"]) == 0
-    assert WRAPPER_VERSION_MARKER in wrapper.read_text(encoding="utf-8")
+    refreshed = wrapper.read_text(encoding="utf-8")
+    assert WRAPPER_VERSION_MARKER in refreshed
+    assert 'REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"' in refreshed
     assert config_path.read_bytes() == config_before
     assert gitignore_path.read_bytes() == gitignore_before
 
@@ -481,6 +486,104 @@ def test_custom_wrapper_depth_derives_correct_repo_root(tmp_path: Path) -> None:
     wrapper = tmp_path / "scripts" / "nested" / "deep" / "todo"
     content = wrapper.read_text(encoding="utf-8")
     assert 'REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)"' in content
+
+
+def test_wrapper_path_is_normalized_before_recording_and_depth_calculation(tmp_path: Path) -> None:
+    from todo_db.cli import main
+
+    supplied = "scratch/../scripts//nested/todo"
+    assert (
+        main(
+            [
+                "init-project",
+                "--project-id",
+                "normalized-wrapper",
+                "--repository",
+                "todo-db",
+                "--wrapper",
+                supplied,
+            ]
+        )
+        == 0
+    )
+    config = json.loads((tmp_path / ".todo-db" / "config.json").read_text(encoding="utf-8"))
+    assert config["wrapper"] == "scripts/nested/todo"
+    content = (tmp_path / "scripts" / "nested" / "todo").read_text(encoding="utf-8")
+    assert 'REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"' in content
+
+
+@pytest.mark.parametrize("wrapper", ["../outside/todo", "../../outside/todo"])
+def test_init_project_rejects_wrapper_paths_outside_project(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], wrapper: str
+) -> None:
+    from todo_db.cli import main
+
+    assert (
+        main(
+            [
+                "init-project",
+                "--project-id",
+                "unsafe-wrapper",
+                "--repository",
+                "todo-db",
+                "--wrapper",
+                wrapper,
+            ]
+        )
+        == 2
+    )
+    assert "wrapper path must name a file inside the project root" in capsys.readouterr().err
+    assert not (tmp_path / ".todo-db").exists()
+    assert not (tmp_path.parent / "outside" / "todo").exists()
+
+
+def test_init_project_rejects_wrapper_parent_symlink(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from todo_db.cli import main
+
+    outside = tmp_path.parent / f"{tmp_path.name}-outside"
+    outside.mkdir()
+    (tmp_path / "linked").symlink_to(outside, target_is_directory=True)
+    assert (
+        main(
+            [
+                "init-project",
+                "--project-id",
+                "unsafe-wrapper",
+                "--repository",
+                "todo-db",
+                "--wrapper",
+                "linked/todo",
+            ]
+        )
+        == 2
+    )
+    assert "wrapper path traverses a symlink" in capsys.readouterr().err
+    assert not (outside / "todo").exists()
+    assert not (tmp_path / ".todo-db").exists()
+
+
+def test_init_project_rejects_absolute_wrapper_path(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    from todo_db.cli import main
+
+    assert (
+        main(
+            [
+                "init-project",
+                "--project-id",
+                "unsafe-wrapper",
+                "--repository",
+                "todo-db",
+                "--wrapper",
+                str(tmp_path / "absolute-todo"),
+            ]
+        )
+        == 2
+    )
+    assert "wrapper path must be relative to the project root" in capsys.readouterr().err
+    assert not (tmp_path / ".todo-db").exists()
+    assert not (tmp_path / "absolute-todo").exists()
 
 
 def test_e_no_project_pre_open_guard(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:

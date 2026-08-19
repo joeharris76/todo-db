@@ -8,6 +8,9 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Canonicalize and confine generated-wrapper paths before calculating repository
+  depth, and redact HTTPS/authority variants when libSQL errors translate a
+  configured endpoint.
 - Unify hosted credential selection and doctor provenance, add coded missing and rejected auth errors, narrow ambiguous failure classification, and negotiate legacy-safe versus v2 authentication exit codes.
 - Require the scheduled hosted audit to prove it selected the server-enforced read-only credential before verifying the audit chain.
 
