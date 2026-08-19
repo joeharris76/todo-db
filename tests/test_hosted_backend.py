@@ -196,12 +196,14 @@ def test_hosted_read_write_outage_redacts_url_and_token(monkeypatch: pytest.Monk
     from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase
     from todo_db.errors import TodoDBError
 
-    url = "libsql://sensitive-project.example.test"
+    url = "libsql://sensitive-project.example.test/database?region=private"
+    translated = "https://sensitive-project.example.test/database?region=private"
+    authority = "sensitive-project.example.test:443"
     token = "sensitive-write-token"
     fake = FakeLibsql(tmp_path / "primary.sqlite")
 
     def failed_connect(database, **kwargs):
-        raise RuntimeError(f"cannot reach {url} using {token}")
+        raise RuntimeError(f"cannot reach {translated} through {authority} using {token}")
 
     fake.connect = failed_connect
     monkeypatch.setitem(sys.modules, "libsql", fake)
@@ -216,10 +218,16 @@ def test_hosted_read_write_outage_redacts_url_and_token(monkeypatch: pytest.Monk
     message = str(raised.value)
     assert "hosted backend connection failed" in message
     assert url not in message
+    assert translated not in message
+    assert "sensitive-project.example.test" not in message
+    assert authority not in message
     assert token not in message
     assert "[REDACTED]" in message
     rendered = "".join(traceback.format_exception(raised.type, raised.value, raised.tb))
     assert url not in rendered
+    assert translated not in rendered
+    assert "sensitive-project.example.test" not in rendered
+    assert authority not in rendered
     assert token not in rendered
 
 
@@ -588,15 +596,19 @@ def test_hosted_non_auth_execute_error_is_redacted_without_auth_classification()
     from todo_db.backends import HostedConnection
     from todo_db.errors import HostedAuthError, TodoDBError
 
+    configured = "libsql://secret.turso.io/database?region=private"
+    translated = "https://secret.turso.io/database?region=private"
+    authority = "secret.turso.io:443"
+
     class NetworkFailure:
         def execute(self, sql, params):
             raise Exception(
-                "TLS authority validation failed for https://secret.turso.io using credential secret-123"
+                f"TLS authority validation failed for {translated} through {authority} using secret-123"
             )
 
     conn = HostedConnection(
         NetworkFailure(),
-        url="https://secret.turso.io",
+        url=configured,
         token="secret-123",
         token_variable="TODO_DB_AUTH_TOKEN",
     )
@@ -604,19 +616,25 @@ def test_hosted_non_auth_execute_error_is_redacted_without_auth_classification()
         conn.execute("SELECT 1")
     assert not isinstance(raised.value, HostedAuthError)
     assert "authority validation failed" in str(raised.value)
-    assert "https://secret.turso.io" not in str(raised.value)
+    assert configured not in str(raised.value)
+    assert translated not in str(raised.value)
+    assert "secret.turso.io" not in str(raised.value)
+    assert authority not in str(raised.value)
     assert "secret-123" not in str(raised.value)
 
     class OperationalNetworkFailure:
         def execute(self, sql, params):
-            raise sqlite3.OperationalError("connection reset for https://secret.turso.io with secret-123")
+            raise sqlite3.OperationalError(f"connection reset for {translated} via {authority} with secret-123")
 
     operational = HostedConnection(
         OperationalNetworkFailure(),
-        url="https://secret.turso.io",
+        url=configured,
         token="secret-123",
     )
     with pytest.raises(TodoDBError) as operational_error:
         operational.execute("SELECT 1")
-    assert "https://secret.turso.io" not in str(operational_error.value)
+    assert configured not in str(operational_error.value)
+    assert translated not in str(operational_error.value)
+    assert "secret.turso.io" not in str(operational_error.value)
+    assert authority not in str(operational_error.value)
     assert "secret-123" not in str(operational_error.value)

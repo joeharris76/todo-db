@@ -930,8 +930,32 @@ WRAPPER_VERSION_MARKER = "# todo-db-wrapper: v2"
 _GENERATED_WRAPPER_SIGNATURE = "TODO tracker entry point. Routes every subcommand to the"
 
 
+def _normalized_wrapper_relative(value: str) -> Path:
+    candidate = Path(os.path.normpath(value))
+    if candidate.is_absolute():
+        raise TodoError("wrapper path must be relative to the project root")
+    if candidate == Path(".") or not candidate.name or candidate.parts[0] == "..":
+        raise TodoError("wrapper path must name a file inside the project root")
+    return candidate
+
+
+def _wrapper_path_in_root(root: Path, relative: Path) -> Path:
+    root = root.resolve()
+    candidate = root
+    for part in relative.parts:
+        candidate /= part
+        if candidate.is_symlink():
+            raise TodoError(f"wrapper path traverses a symlink: {candidate}")
+    try:
+        candidate.resolve().relative_to(root)
+    except ValueError:
+        raise TodoError("wrapper path escapes the project root") from None
+    return candidate
+
+
 def _wrapper_script(project_id: str, wrapper_rel_path: str = DEFAULT_WRAPPER_RELATIVE) -> str:
-    parts = Path(wrapper_rel_path).parent.parts
+    normalized = _normalized_wrapper_relative(wrapper_rel_path)
+    parts = normalized.parent.parts
     upward = "/".join(".." for _ in parts) if parts else "."
     return f"""#!/usr/bin/env bash
 {WRAPPER_VERSION_MARKER}
@@ -997,11 +1021,12 @@ def _warn_if_git_ignored(path: Path, root: Path) -> None:
 def _init_project(args: argparse.Namespace, identity: ProjectIdentity, raw_db: str | None) -> int:
     """Run `init` and scaffold the repo: committed config, scoped .gitignore, optional wrapper."""
 
-    root = Path.cwd()
+    root = Path.cwd().resolve()
     config_dir = root / CONFIG_DIRNAME
     config_path = config_dir / CONFIG_FILENAME
     gitignore_path = config_dir / ".gitignore"
-    wrapper_path = (root / args.wrapper) if args.wrapper else None
+    wrapper_relative = _normalized_wrapper_relative(args.wrapper) if args.wrapper else None
+    wrapper_path = _wrapper_path_in_root(root, wrapper_relative) if wrapper_relative is not None else None
     collisions = [path for path in (config_path, wrapper_path) if path is not None and path.exists()]
     if gitignore_path.exists() and gitignore_path.read_text(encoding="utf-8") != SCAFFOLD_GITIGNORE:
         collisions.append(gitignore_path)
@@ -1028,15 +1053,17 @@ def _init_project(args: argparse.Namespace, identity: ProjectIdentity, raw_db: s
 
     config_dir.mkdir(parents=True, exist_ok=True)
     payload = {"project_id": identity.project_id, "repository": identity.repository, "db": db_value}
-    if args.wrapper is not None:
-        payload["wrapper"] = args.wrapper
+    if wrapper_relative is not None:
+        payload["wrapper"] = wrapper_relative.as_posix()
     config_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(f"wrote {config_path}")
     gitignore_path.write_text(SCAFFOLD_GITIGNORE, encoding="utf-8")
     print(f"wrote {gitignore_path}")
-    if wrapper_path is not None:
+    if wrapper_path is not None and wrapper_relative is not None:
         wrapper_path.parent.mkdir(parents=True, exist_ok=True)
-        wrapper_path.write_text(_wrapper_script(identity.project_id, wrapper_rel_path=args.wrapper), encoding="utf-8")
+        wrapper_path.write_text(
+            _wrapper_script(identity.project_id, wrapper_rel_path=wrapper_relative.as_posix()), encoding="utf-8"
+        )
         wrapper_path.chmod(wrapper_path.stat().st_mode | 0o111)
         print(f"wrote {wrapper_path} (executable)")
     _warn_if_git_ignored(config_path, root)
@@ -1051,18 +1078,10 @@ def _refresh_wrapper(args: argparse.Namespace) -> int:
         raise TodoError(f"refresh-wrapper requires a discovered {CONFIG_DIRNAME}/{CONFIG_FILENAME}")
     config_path, payload = discovered
     root = _config_root(config_path).resolve()
-    relative = str(args.wrapper or payload.get("wrapper") or DEFAULT_WRAPPER_RELATIVE)
-    candidate = Path(relative)
-    if candidate.is_absolute():
-        raise TodoError("refresh-wrapper requires a path relative to the project root")
-    lexical_path = root / candidate
-    if lexical_path.is_symlink():
-        raise TodoError(f"refusing to replace symlinked wrapper: {lexical_path}")
-    wrapper_path = lexical_path.resolve()
-    try:
-        wrapper_path.relative_to(root)
-    except ValueError:
-        raise TodoError("refresh-wrapper path escapes the project root") from None
+    configured = str(args.wrapper or payload.get("wrapper") or DEFAULT_WRAPPER_RELATIVE)
+    candidate = _normalized_wrapper_relative(configured)
+    relative = candidate.as_posix()
+    wrapper_path = _wrapper_path_in_root(root, candidate)
     if not wrapper_path.is_file():
         raise TodoError(f"no existing wrapper to refresh: {wrapper_path}")
     current = wrapper_path.read_text(encoding="utf-8")
@@ -1094,12 +1113,13 @@ def _doctor_wrapper_check(discovered: tuple[Path, dict[str, Any]] | None) -> Doc
     if discovered is None:
         return None
     config_path, payload = discovered
-    root = _config_root(config_path)
-    relative = str(payload.get("wrapper") or DEFAULT_WRAPPER_RELATIVE)
-    candidate = Path(relative)
-    if candidate.is_absolute() or ".." in candidate.parts:
-        return ("FAIL", f"unsafe wrapper path in {config_path}: {relative}", "record a project-relative wrapper path")
-    wrapper_path = root / candidate
+    root = _config_root(config_path).resolve()
+    configured = str(payload.get("wrapper") or DEFAULT_WRAPPER_RELATIVE)
+    try:
+        candidate = _normalized_wrapper_relative(configured)
+        wrapper_path = _wrapper_path_in_root(root, candidate)
+    except TodoError as exc:
+        return ("FAIL", f"unsafe wrapper path in {config_path}: {configured}", str(exc))
     if not wrapper_path.exists():
         if payload.get("wrapper"):
             return ("FAIL", f"configured wrapper is missing: {wrapper_path}", "restore it or remove the wrapper key")
