@@ -55,8 +55,10 @@ exit codes:
   0  success (doctor: every check passed; warnings allowed)
   1  findings reported (check-scope violations, lint findings, verify --run failures)
   2  generic error, or legacy-safe auth failure before the v2 contract is negotiated
-  4  hosted authentication failure under TODO_DB_AUTH_CONTRACT=v2: inject a valid
-     bounded TODO_DB_AUTH_TOKEN (or TODO_DB_RO_AUTH_TOKEN for reads) and retry"""
+  4  hosted authentication failure under TODO_DB_AUTH_CONTRACT=v2: set a valid bounded
+     TODO_DB_AUTH_TOKEN (or TODO_DB_RO_AUTH_TOKEN for reads), or provision one into
+     your secret store and point TODO_DB_CREDENTIAL_COMMAND at it, then retry
+     (docs/operations/hosted-credentials.md, Provision once)"""
 
 
 def _auth_contract_v2() -> bool:
@@ -1000,7 +1002,7 @@ run_todo_db() {{
 status=0
 run_todo_db "$@" || status=$?
 if [ "$status" -eq 4 ]; then
-  echo "todo: hosted authentication failed; inject a bounded credential and retry (automatic token minting is disabled)" >&2
+  echo "todo: hosted authentication failed; set TODO_DB_AUTH_TOKEN or point TODO_DB_CREDENTIAL_COMMAND at your secret store, then retry (see docs/operations/hosted-credentials.md, Provision once; automatic token minting is disabled)" >&2
 fi
 exit "$status"
 """
@@ -1213,7 +1215,7 @@ def _doctor_hosted_probe(
         credential = resolve_credential(config)
     except HostedAuthError as exc:
         metadata = {
-            "source": "TODO_DB_RO_AUTH_TOKEN|TODO_DB_AUTH_TOKEN",
+            "source": "TODO_DB_RO_AUTH_TOKEN|TODO_DB_AUTH_TOKEN|TODO_DB_CREDENTIAL_COMMAND",
             "capability": "read-only requested",
             **_credential_metadata(None, exc),
         }

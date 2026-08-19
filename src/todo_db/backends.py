@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 import sqlite3
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -176,6 +178,124 @@ def _secure_url(value: str) -> str:
     return value
 
 
+CREDENTIAL_COMMAND_VARIABLE = "TODO_DB_CREDENTIAL_COMMAND"
+CREDENTIAL_COMMAND_TIMEOUT_SECONDS = 5.0
+CREDENTIAL_COMMAND_MAX_BYTES = 8192
+
+
+class _ProviderError(Exception):
+    """Internal: the provider ran but could not be trusted to answer.
+
+    Carries only non-secret detail. Provider stdout is the bearer token and
+    provider stderr routinely echoes it back, so neither is ever recorded.
+    """
+
+
+_PROVIDER_CACHE: dict[tuple[str, str], ResolvedCredential | None] = {}
+
+
+def reset_credential_provider_cache() -> None:
+    """Forget provider answers resolved earlier in this process. Test and embedding hook."""
+
+    _PROVIDER_CACHE.clear()
+
+
+def _provider_credential(capability: str) -> ResolvedCredential | None:
+    """Ask the configured provider for one capability, per ADR 0005 G4.
+
+    Returns a credential when the provider exits 0 with output, None when it
+    exits 0 with no output (the credential is absent and capability fallback
+    may continue), and raises _ProviderError for every other outcome so a
+    broken provider can never be mistaken for an absent credential.
+    """
+
+    configured = os.environ.get(CREDENTIAL_COMMAND_VARIABLE, "").strip()
+    if not configured:
+        return None
+    cache_key = (configured, capability)
+    if cache_key in _PROVIDER_CACHE:
+        return _PROVIDER_CACHE[cache_key]
+    try:
+        argv = shlex.split(configured)
+    except ValueError as exc:
+        raise _ProviderError(f"{CREDENTIAL_COMMAND_VARIABLE} is not a parsable command line") from exc
+    if not argv:
+        raise _ProviderError(f"{CREDENTIAL_COMMAND_VARIABLE} is empty after parsing")
+
+    # The capability travels only in the child environment. Appending it as a
+    # positional argument would break every documented one-line provider:
+    # `security find-generic-password -w -s <service>` reads a trailing word as
+    # the keychain to search and exits 44, and `op read` and `pass show` reject
+    # the extra argument the same way. A provider that needs to branch reads
+    # TODO_DB_CREDENTIAL_CAPABILITY; a plain retrieval command needs nothing.
+    child_env = dict(os.environ)
+    child_env["TODO_DB_CREDENTIAL_CAPABILITY"] = capability
+    program = argv[0]
+    try:
+        # argv list, never a shell: the configured string is operator-owned but
+        # must not become an injection surface. Output is captured as bytes so
+        # that no decode can raise from inside communicate() and escape the
+        # error handling below.
+        completed = subprocess.run(
+            argv,
+            capture_output=True,
+            timeout=CREDENTIAL_COMMAND_TIMEOUT_SECONDS,
+            env=child_env,
+            check=False,
+        )
+    except FileNotFoundError as exc:
+        raise _ProviderError(f"credential provider {program!r} was not found") from exc
+    except PermissionError as exc:
+        raise _ProviderError(f"credential provider {program!r} is not executable") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise _ProviderError(
+            f"credential provider {program!r} exceeded "
+            f"{CREDENTIAL_COMMAND_TIMEOUT_SECONDS:g}s"
+        ) from exc
+    except OSError as exc:
+        raise _ProviderError(f"credential provider {program!r} could not be started") from exc
+
+    if completed.returncode != 0:
+        raise _ProviderError(f"credential provider {program!r} exited {completed.returncode}")
+    raw = completed.stdout or b""
+    if len(raw) > CREDENTIAL_COMMAND_MAX_BYTES:
+        raise _ProviderError(
+            f"credential provider {program!r} returned more than "
+            f"{CREDENTIAL_COMMAND_MAX_BYTES} bytes"
+        )
+    token = raw.decode("utf-8", "replace").strip()
+    # The capability is what was asked for, not a property of what came back: a
+    # single-entry provider may ignore the request and return one token for
+    # both. Label it so no output claims a capability nothing verified.
+    resolved = (
+        ResolvedCredential(token, CREDENTIAL_COMMAND_VARIABLE, f"requested:{capability}")
+        if token
+        else None
+    )
+    _PROVIDER_CACHE[cache_key] = resolved
+    return resolved
+
+
+def _provider_or_missing(capabilities: tuple[str, ...], missing_message: str) -> ResolvedCredential:
+    """Try each capability in order, then raise the caller's missing-credential error.
+
+    With no provider configured the message is exactly what it was before the
+    provider existed, so callers that never adopt one see no change at all.
+    """
+
+    configured = os.environ.get(CREDENTIAL_COMMAND_VARIABLE, "").strip()
+    try:
+        for capability in capabilities:
+            credential = _provider_credential(capability)
+            if credential is not None:
+                return credential
+    except _ProviderError as exc:
+        raise HostedAuthError(str(exc), code=E_AUTH_MISSING) from None
+    if configured:
+        missing_message = f"{missing_message} ({CREDENTIAL_COMMAND_VARIABLE} returned no credential)"
+    raise HostedAuthError(missing_message, code=E_AUTH_MISSING)
+
+
 def resolve_credential(config: DatabaseConfig) -> ResolvedCredential:
     """Resolve one hosted credential and retain only non-secret provenance metadata."""
 
@@ -185,9 +305,11 @@ def resolve_credential(config: DatabaseConfig) -> ResolvedCredential:
         token = os.environ.get("TODO_DB_AUTH_TOKEN", "")
         if token:
             return ResolvedCredential(token, "TODO_DB_AUTH_TOKEN", "read-write")
-        raise HostedAuthError(
-            "hosted backend requires TODO_DB_AUTH_TOKEN; inject a bounded read-write credential",
-            code=E_AUTH_MISSING,
+        return _provider_or_missing(
+            ("read-write",),
+            "hosted backend requires a read-write credential: set TODO_DB_AUTH_TOKEN, or "
+            "provision one into your secret store and point TODO_DB_CREDENTIAL_COMMAND at it "
+            "(docs/operations/hosted-credentials.md, Provision once)",
         )
 
     read_only = os.environ.get("TODO_DB_RO_AUTH_TOKEN", "")
@@ -196,10 +318,12 @@ def resolve_credential(config: DatabaseConfig) -> ResolvedCredential:
     read_write = os.environ.get("TODO_DB_AUTH_TOKEN", "")
     if read_write:
         return ResolvedCredential(read_write, "TODO_DB_AUTH_TOKEN", "read-write")
-    raise HostedAuthError(
-        "hosted read access requires TODO_DB_RO_AUTH_TOKEN or TODO_DB_AUTH_TOKEN; "
-        "inject a bounded credential",
-        code=E_AUTH_MISSING,
+    return _provider_or_missing(
+        ("read-only", "read-write"),
+        "hosted read access requires a credential: set TODO_DB_RO_AUTH_TOKEN or "
+        "TODO_DB_AUTH_TOKEN, or provision one into your secret store and point "
+        "TODO_DB_CREDENTIAL_COMMAND at it "
+        "(docs/operations/hosted-credentials.md, Provision once)",
     )
 
 
@@ -248,7 +372,10 @@ def is_auth_shaped(detail: str) -> bool:
 
 def auth_remediation(credential: ResolvedCredential | None = None) -> str:
     source = credential.source if credential is not None else "the configured credential source"
-    return f"credential rejected: replace the bounded credential from {source} and retry in a fresh process"
+    return (
+        f"credential rejected: replace the bounded credential from {source} and retry in a fresh "
+        "process (docs/operations/hosted-credentials.md, Rotate: routine replacement)"
+    )
 
 
 def hosted_error(

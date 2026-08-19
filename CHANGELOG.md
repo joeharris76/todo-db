@@ -6,6 +6,74 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- ADR 0005 records the hosted credential-provider contract: an additive,
+  retrieval-only boundary that restores one-time provisioning and zero-
+  interaction reuse without amending any ADR 0004 decision.
+- `TODO_DB_CREDENTIAL_COMMAND` resolves a hosted credential from an external
+  secret store when none is injected, bounded by a timeout and an output-size
+  limit, never run through a shell, and never disclosing provider output. A
+  non-zero provider exit is an error rather than an absent credential, so a
+  failing read-only provider cannot escalate to read-write. With the variable
+  unset, resolution, messages, codes, and exit statuses are unchanged.
+- The Pi adapter forwards `TODO_DB_CREDENTIAL_COMMAND` through its sanitized
+  environment.
+- `scripts/hosted_auth_acceptance.sh` proves hosted authentication resolves with
+  the injected credentials removed, which is the only check here that can fail
+  the way an operator fails. Unconfigured it exits 77; `--require` makes that a
+  failure. CI validates its syntax and its skip contract but does not run it
+  against a hosted database, because CI's injected credentials would mask the
+  condition it tests.
+
+- `docs/operations/release-gates.md` makes a hosted acceptance run and a real
+  downstream consumer check mandatory before tagging any release that touches
+  credential resolution or the wrapper contract, and states plainly that green
+  CI, passing tests, package smoke tests, and verified checksums do not satisfy
+  them.
+
+- `TODO_DB_CREDENTIAL_COMMAND` joins the credentials that are always rejected
+  from `TODO_DB_VERIFY_ENV_PASSTHROUGH`. It holds no secret itself, but a stored
+  verification command that inherited it could run the provider and print the
+  token, which would defeat the verification-subprocess credential boundary by
+  passing the pointer instead of the secret.
+
+- `docs/adr/README.md` indexes the decision records, which now all live in
+  `docs/adr/`. ADR 0001 and 0002 moved from `_project/decisions/`, and that
+  directory's superseded copy of ADR 0003 was removed in favour of the current
+  text.
+- `docs/operations/test-doubles.md` records what each test double cannot catch
+  and where the real behaviour is exercised instead. The libSQL and Hrana doubles
+  now reject unexpected keyword arguments rather than accepting anything.
+
+### Changed
+
+- A provider-resolved credential reports its capability as
+  `requested:read-only` or `requested:read-write`. The provider may ignore the
+  request and serve both capabilities from one entry, so the label no longer
+  implies a property nothing verified. Environment-variable provenance and the
+  scheduled audit's read-only assertion are unchanged.
+- The credential provider receives the operator's `argv` unchanged; the
+  requested capability reaches it only through `TODO_DB_CREDENTIAL_CAPABILITY`
+  in its environment. Appending it as a positional argument broke every
+  documented one-line provider.
+- Provider output is captured as bytes, bounded before decoding, and decoded
+  with replacement, so malformed output degrades to a coded error instead of an
+  unhandled `UnicodeDecodeError`.
+
+- Missing- and rejected-credential messages, the exit-4 help text, and the
+  generated wrapper's exit-4 notice now name the provisioning and rotation
+  procedures in `docs/operations/hosted-credentials.md` and the
+  `TODO_DB_CREDENTIAL_COMMAND` variable, instead of telling the reader to
+  inject a credential. Refresh a generated wrapper with
+  `todo-db refresh-wrapper` to pick up the new notice; the v2 contract is
+  unchanged, so an unrefreshed wrapper keeps working.
+
+### Fixed
+
+- The macOS keychain provisioning runbook now uses `-w "$token"` argument syntax
+  because macOS `security add-generic-password` does not read token data from stdin.
+
 ## [0.4.2] - 2026-08-19
 
 ### Fixed

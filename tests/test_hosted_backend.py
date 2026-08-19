@@ -61,6 +61,12 @@ class FakeRawConnection:
         self.sync_calls += 1
 
 
+# The keyword arguments libsql.connect actually accepts in the calls this
+# package makes. The double rejects anything else: a permissive double would
+# accept a misspelled or invented keyword and pass, while real libsql raised.
+_LIBSQL_CONNECT_KEYWORDS = frozenset({"auth_token", "isolation_level", "sync_url", "sync_interval"})
+
+
 class FakeLibsql(types.ModuleType):
     def __init__(self, primary: Path):
         super().__init__("libsql")
@@ -69,6 +75,9 @@ class FakeLibsql(types.ModuleType):
         self.connections: list[FakeRawConnection] = []
 
     def connect(self, database, **kwargs):
+        unexpected = sorted(set(kwargs) - _LIBSQL_CONNECT_KEYWORDS)
+        if unexpected:
+            raise TypeError(f"libsql.connect() got unexpected keyword argument(s): {', '.join(unexpected)}")
         target = self.primary if "://" in str(database) else Path(database)
         self.connect_calls.append({"database": str(database), **kwargs})
         connection = FakeRawConnection(target)
@@ -638,3 +647,423 @@ def test_hosted_non_auth_execute_error_is_redacted_without_auth_classification()
     assert "secret.turso.io" not in str(operational_error.value)
     assert authority not in str(operational_error.value)
     assert "secret-123" not in str(operational_error.value)
+
+
+def _provider_script(tmp_path: Path, name: str, body: str) -> str:
+    """Write an executable stub standing in for an operator's secret store.
+
+    A literal ``\\n`` in ``body`` is a line break. Writing it through unchanged
+    would collapse the stub to a single malformed line, which is how several of
+    these stubs first passed without running the logic they claimed to test.
+    """
+
+    script = tmp_path / name
+    lines = body.replace("\\n", "\n")
+    script.write_text(f"#!/usr/bin/env bash\nset -u\n{lines}\n")
+    script.chmod(0o755)
+    return str(script)
+
+
+@pytest.fixture(autouse=True)
+def _clear_provider_cache():
+    from todo_db.backends import reset_credential_provider_cache
+
+    reset_credential_provider_cache()
+    yield
+    reset_credential_provider_cache()
+
+
+def _hosted_config(mode):
+    from todo_db import DatabaseConfig
+
+    return DatabaseConfig(path="libsql://provider.example.test", credential_mode=mode)
+
+
+def _no_injected_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("TODO_DB_AUTH_TOKEN", raising=False)
+    monkeypatch.delenv("TODO_DB_RO_AUTH_TOKEN", raising=False)
+    monkeypatch.delenv("TODO_DB_CREDENTIAL_COMMAND", raising=False)
+
+
+def test_credential_provider_supplies_read_write_when_nothing_is_injected(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from todo_db import CredentialMode
+    from todo_db.backends import resolve_credential
+
+    _no_injected_credentials(monkeypatch)
+    provider = _provider_script(tmp_path, "provider.sh", 'echo "rw-from-store"')
+    monkeypatch.setenv("TODO_DB_CREDENTIAL_COMMAND", provider)
+
+    resolved = resolve_credential(_hosted_config(CredentialMode.READ_WRITE))
+    assert (resolved.source, resolved.capability, resolved.token) == (
+        "TODO_DB_CREDENTIAL_COMMAND",
+        "requested:read-write",
+        "rw-from-store",
+    )
+    assert "rw-from-store" not in repr(resolved)
+
+
+def test_credential_provider_receives_the_requested_capability(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from todo_db import CredentialMode
+    from todo_db.backends import resolve_credential
+
+    _no_injected_credentials(monkeypatch)
+    provider = _provider_script(
+        tmp_path,
+        "capability.sh",
+        'test $# -eq 0 || exit 64\necho "token-for-$TODO_DB_CREDENTIAL_CAPABILITY"',
+    )
+    monkeypatch.setenv("TODO_DB_CREDENTIAL_COMMAND", provider)
+
+    resolved = resolve_credential(_hosted_config(CredentialMode.READ_ONLY))
+    assert resolved.token == "token-for-read-only"
+    # Requested, never asserted as proven: the provider may ignore the request.
+    assert resolved.capability == "requested:read-only"
+
+
+def test_credential_provider_absent_read_only_falls_back_to_read_write(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from todo_db import CredentialMode
+    from todo_db.backends import resolve_credential
+
+    _no_injected_credentials(monkeypatch)
+    provider = _provider_script(
+        tmp_path,
+        "ro-absent.sh",
+        'test $# -eq 0 || exit 64\n'
+        'if [ "$TODO_DB_CREDENTIAL_CAPABILITY" = "read-only" ]; then exit 0; fi\necho "rw-only"',
+    )
+    monkeypatch.setenv("TODO_DB_CREDENTIAL_COMMAND", provider)
+
+    resolved = resolve_credential(_hosted_config(CredentialMode.READ_ONLY))
+    assert (resolved.capability, resolved.token) == ("requested:read-write", "rw-only")
+
+
+def test_credential_provider_error_never_escalates_to_read_write(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from todo_db import CredentialMode
+    from todo_db.backends import resolve_credential
+    from todo_db.errors import E_AUTH_MISSING, HostedAuthError
+
+    _no_injected_credentials(monkeypatch)
+    provider = _provider_script(
+        tmp_path,
+        "ro-broken.sh",
+        'test $# -eq 0 || exit 64\n'
+        'if [ "$TODO_DB_CREDENTIAL_CAPABILITY" = "read-only" ]; then\n'
+        '  echo "leaked-rw-token" >&2; exit 3\nfi\necho "must-not-be-used"',
+    )
+    monkeypatch.setenv("TODO_DB_CREDENTIAL_COMMAND", provider)
+
+    with pytest.raises(HostedAuthError) as raised:
+        resolve_credential(_hosted_config(CredentialMode.READ_ONLY))
+    assert raised.value.code == E_AUTH_MISSING
+    assert "exited 3" in str(raised.value)
+    assert "leaked-rw-token" not in str(raised.value)
+    assert "must-not-be-used" not in str(raised.value)
+
+
+def test_credential_provider_never_discloses_stdout_or_stderr(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from todo_db import CredentialMode
+    from todo_db.backends import resolve_credential
+    from todo_db.errors import HostedAuthError
+
+    _no_injected_credentials(monkeypatch)
+    provider = _provider_script(
+        tmp_path, "noisy.sh", 'echo "stdout-secret"\necho "stderr-secret" >&2\nexit 1'
+    )
+    monkeypatch.setenv("TODO_DB_CREDENTIAL_COMMAND", provider)
+
+    with pytest.raises(HostedAuthError) as raised:
+        resolve_credential(_hosted_config(CredentialMode.READ_WRITE))
+    rendered = str(raised.value) + "".join(traceback.format_exception(raised.value))
+    assert "stdout-secret" not in rendered
+    assert "stderr-secret" not in rendered
+
+
+def test_credential_provider_timeout_and_oversized_output_are_coded_errors(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from todo_db import CredentialMode
+    from todo_db import backends
+    from todo_db.backends import resolve_credential
+    from todo_db.errors import E_AUTH_MISSING, HostedAuthError
+
+    _no_injected_credentials(monkeypatch)
+    monkeypatch.setattr(backends, "CREDENTIAL_COMMAND_TIMEOUT_SECONDS", 0.2)
+    slow = _provider_script(tmp_path, "slow.sh", "sleep 5")
+    monkeypatch.setenv("TODO_DB_CREDENTIAL_COMMAND", slow)
+    with pytest.raises(HostedAuthError) as timed_out:
+        resolve_credential(_hosted_config(CredentialMode.READ_WRITE))
+    assert timed_out.value.code == E_AUTH_MISSING
+    assert "exceeded" in str(timed_out.value)
+
+    backends.reset_credential_provider_cache()
+    monkeypatch.setattr(backends, "CREDENTIAL_COMMAND_MAX_BYTES", 16)
+    huge = _provider_script(tmp_path, "huge.sh", 'printf "%0.sA" $(seq 1 200)')
+    monkeypatch.setenv("TODO_DB_CREDENTIAL_COMMAND", huge)
+    with pytest.raises(HostedAuthError) as too_big:
+        resolve_credential(_hosted_config(CredentialMode.READ_WRITE))
+    assert "more than 16 bytes" in str(too_big.value)
+
+
+def test_credential_provider_missing_or_unparsable_command_is_a_coded_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from todo_db import CredentialMode
+    from todo_db.backends import resolve_credential
+    from todo_db.errors import E_AUTH_MISSING, HostedAuthError
+
+    _no_injected_credentials(monkeypatch)
+    monkeypatch.setenv("TODO_DB_CREDENTIAL_COMMAND", str(tmp_path / "does-not-exist"))
+    with pytest.raises(HostedAuthError) as absent:
+        resolve_credential(_hosted_config(CredentialMode.READ_WRITE))
+    assert absent.value.code == E_AUTH_MISSING
+    assert "was not found" in str(absent.value)
+
+    monkeypatch.setenv("TODO_DB_CREDENTIAL_COMMAND", 'op read "unterminated')
+    with pytest.raises(HostedAuthError, match="not a parsable command line"):
+        resolve_credential(_hosted_config(CredentialMode.READ_WRITE))
+
+
+def test_injected_credentials_take_precedence_over_the_provider(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from todo_db import CredentialMode, DatabaseConfig
+    from todo_db.backends import resolve_credential
+
+    _no_injected_credentials(monkeypatch)
+    marker = tmp_path / "provider-ran"
+    provider = _provider_script(tmp_path, "marker.sh", f'touch "{marker}"\necho "provider-token"')
+    monkeypatch.setenv("TODO_DB_CREDENTIAL_COMMAND", provider)
+    monkeypatch.setenv("TODO_DB_AUTH_TOKEN", "injected-rw")
+
+    assert resolve_credential(_hosted_config(CredentialMode.READ_WRITE)).source == "TODO_DB_AUTH_TOKEN"
+    explicit = resolve_credential(
+        DatabaseConfig(
+            path="libsql://provider.example.test",
+            credential_mode=CredentialMode.READ_WRITE,
+            auth_token="explicit",
+        )
+    )
+    assert explicit.source == "DatabaseConfig.auth_token"
+    assert not marker.exists()
+
+
+def test_unset_provider_changes_no_resolution_outcome_and_adds_no_provider_noise(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Codes, capabilities, and precedence are what they were before the provider existed.
+
+    The remediation wording deliberately changed to name the provisioning
+    procedure; what must not change is which credential is selected, which code
+    is raised, and that an operator who never adopts a provider is not told
+    about a failed one.
+    """
+
+    from todo_db import CredentialMode
+    from todo_db.backends import resolve_credential
+    from todo_db.errors import E_AUTH_MISSING, HostedAuthError
+
+    _no_injected_credentials(monkeypatch)
+    for mode in (CredentialMode.READ_ONLY, CredentialMode.READ_WRITE):
+        with pytest.raises(HostedAuthError) as raised:
+            resolve_credential(_hosted_config(mode))
+        assert raised.value.code == E_AUTH_MISSING
+        assert "returned no credential" not in str(raised.value)
+        assert "provider" not in str(raised.value).lower()
+
+    monkeypatch.setenv("TODO_DB_AUTH_TOKEN", "rw")
+    monkeypatch.setenv("TODO_DB_RO_AUTH_TOKEN", "ro")
+    assert resolve_credential(_hosted_config(CredentialMode.READ_ONLY)).source == "TODO_DB_RO_AUTH_TOKEN"
+    assert resolve_credential(_hosted_config(CredentialMode.READ_WRITE)).source == "TODO_DB_AUTH_TOKEN"
+
+
+def test_missing_credential_messages_name_the_provisioning_procedure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from todo_db import CredentialMode
+    from todo_db.backends import auth_remediation, resolve_credential
+    from todo_db.errors import HostedAuthError
+
+    _no_injected_credentials(monkeypatch)
+    for mode in (CredentialMode.READ_ONLY, CredentialMode.READ_WRITE):
+        with pytest.raises(HostedAuthError) as raised:
+            resolve_credential(_hosted_config(mode))
+        message = str(raised.value)
+        assert "TODO_DB_CREDENTIAL_COMMAND" in message
+        assert "docs/operations/hosted-credentials.md, Provision once" in message
+        assert "inject a bounded" not in message
+
+    assert "Rotate: routine replacement" in auth_remediation()
+
+
+def test_provider_is_consulted_at_most_once_per_capability_per_process(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from todo_db import CredentialMode
+    from todo_db.backends import resolve_credential
+
+    _no_injected_credentials(monkeypatch)
+    counter = tmp_path / "calls"
+    provider = _provider_script(tmp_path, "counting.sh", f'echo x >> "{counter}"\necho "cached-token"')
+    monkeypatch.setenv("TODO_DB_CREDENTIAL_COMMAND", provider)
+
+    for _ in range(4):
+        assert resolve_credential(_hosted_config(CredentialMode.READ_WRITE)).token == "cached-token"
+    assert counter.read_text().count("x") == 1
+
+
+def test_local_backend_never_consults_the_provider(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase
+
+    _no_injected_credentials(monkeypatch)
+    marker = tmp_path / "provider-ran-locally"
+    provider = _provider_script(tmp_path, "local.sh", f'touch "{marker}"\necho "unused"')
+    monkeypatch.setenv("TODO_DB_CREDENTIAL_COMMAND", provider)
+
+    identity = ProjectIdentity(project_id="provider-local", repository="https://example.test/local")
+    database = TodoDatabase.open(DatabaseConfig(path=tmp_path / "local.sqlite", identity=identity))
+    database.close()
+    assert not marker.exists()
+
+
+def test_provider_argv_is_passed_through_untouched(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Regression: an appended positional broke every documented provider.
+
+    `security find-generic-password -w -s <service>` reads a trailing word as
+    the keychain to search and exits 44; `op read` and `pass show` reject the
+    extra argument. The stub here is argument-strict on purpose, the way a real
+    tool is, because a permissive stub is exactly why this was missed.
+    """
+
+    from todo_db import CredentialMode
+    from todo_db.backends import resolve_credential
+
+    _no_injected_credentials(monkeypatch)
+    argv_dump = tmp_path / "argv"
+    provider = _provider_script(
+        tmp_path,
+        "strict.sh",
+        f'printf "%s\\n" "$#" "$@" > "{argv_dump}"\\n'
+        # Strict like a real tool: exactly the operator's own two arguments.
+        'if [ "$#" -ne 2 ]; then echo "unexpected argument" >&2; exit 44; fi\\n'
+        'echo "strict-token"',
+    )
+    monkeypatch.setenv("TODO_DB_CREDENTIAL_COMMAND", f"{provider} --flag value")
+
+    resolved = resolve_credential(_hosted_config(CredentialMode.READ_WRITE))
+    assert resolved.token == "strict-token"
+    # The operator's own arguments survive; nothing is appended after them.
+    assert argv_dump.read_text().split("\n")[:3] == ["2", "--flag", "value"]
+
+
+def test_provider_returning_invalid_utf8_is_a_coded_error_not_a_crash(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Regression: text=True decoded strictly inside communicate().
+
+    UnicodeDecodeError is a ValueError, so it slipped past every except clause,
+    crashed the process, and bypassed the E_AUTH_MISSING degradation ADR 0005
+    G4 requires. Bytes are captured now, so a malformed payload degrades.
+    """
+
+    from todo_db import CredentialMode
+    from todo_db import backends
+    from todo_db.backends import resolve_credential
+    from todo_db.errors import HostedAuthError
+
+    _no_injected_credentials(monkeypatch)
+    provider = _provider_script(tmp_path, "binary.sh", r'printf "\xff\xfe\x00binary"')
+    monkeypatch.setenv("TODO_DB_CREDENTIAL_COMMAND", provider)
+
+    # Undecodable output is not an error by itself: it is simply not a usable
+    # credential once stripped, and the caller gets the ordinary missing-credential
+    # path rather than a traceback.
+    try:
+        resolved = resolve_credential(_hosted_config(CredentialMode.READ_WRITE))
+    except HostedAuthError as exc:
+        assert exc.code == "E_AUTH_MISSING"
+    else:
+        assert "�" in resolved.token or resolved.token
+
+    # Oversized binary output is still rejected on the raw bytes, before any decode.
+    backends.reset_credential_provider_cache()
+    monkeypatch.setattr(backends, "CREDENTIAL_COMMAND_MAX_BYTES", 8)
+    big = _provider_script(tmp_path, "bigbinary.sh", r'printf "\xff\xfe\x00binarybinarybinary"')
+    monkeypatch.setenv("TODO_DB_CREDENTIAL_COMMAND", big)
+    with pytest.raises(HostedAuthError, match="more than 8 bytes"):
+        resolve_credential(_hosted_config(CredentialMode.READ_WRITE))
+
+
+def test_single_entry_provider_never_claims_a_capability_it_cannot_prove(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A store with one entry serves both capabilities from one token.
+
+    The resolver asks for read-only, the provider returns the read-write token
+    because that is all it has, and nothing in the output may imply the token is
+    read-only. ADR 0004 already says read-only is server-enforced only when the
+    token was minted read-only; this keeps the client label honest too.
+    """
+
+    from todo_db import CredentialMode
+    from todo_db.backends import resolve_credential
+
+    _no_injected_credentials(monkeypatch)
+    provider = _provider_script(tmp_path, "single.sh", 'echo "the-one-and-only-rw-token"')
+    monkeypatch.setenv("TODO_DB_CREDENTIAL_COMMAND", provider)
+
+    read_only = resolve_credential(_hosted_config(CredentialMode.READ_ONLY))
+    assert read_only.token == "the-one-and-only-rw-token"
+    assert read_only.capability == "requested:read-only"
+    assert read_only.capability != "read-only"
+
+
+def test_provider_absent_branch_must_exit_zero_to_permit_fallback(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The sharp edge a branching provider script has to get right.
+
+    Real tools exit non-zero when an entry is missing, and a non-zero exit is an
+    error that stops resolution. Only exit 0 with empty output means absent, so
+    a script that wants read-only to fall back must exit 0 explicitly.
+    """
+
+    from todo_db import CredentialMode
+    from todo_db import backends
+    from todo_db.backends import resolve_credential
+    from todo_db.errors import E_AUTH_MISSING, HostedAuthError
+
+    _no_injected_credentials(monkeypatch)
+    wrong = _provider_script(
+        tmp_path,
+        "missing-entry.sh",
+        'if [ "$TODO_DB_CREDENTIAL_CAPABILITY" = "read-only" ]; then exit 44; fi\n'
+        'echo "rw-token"',
+    )
+    monkeypatch.setenv("TODO_DB_CREDENTIAL_COMMAND", wrong)
+    with pytest.raises(HostedAuthError) as raised:
+        resolve_credential(_hosted_config(CredentialMode.READ_ONLY))
+    assert raised.value.code == E_AUTH_MISSING
+    assert "exited 44" in str(raised.value)
+
+    backends.reset_credential_provider_cache()
+    right = _provider_script(
+        tmp_path,
+        "absent-branch.sh",
+        'if [ "$TODO_DB_CREDENTIAL_CAPABILITY" = "read-only" ]; then exit 0; fi\n'
+        'echo "rw-token"',
+    )
+    monkeypatch.setenv("TODO_DB_CREDENTIAL_COMMAND", right)
+    resolved = resolve_credential(_hosted_config(CredentialMode.READ_ONLY))
+    assert (resolved.capability, resolved.token) == ("requested:read-write", "rw-token")

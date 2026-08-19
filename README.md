@@ -268,9 +268,50 @@ export TODO_DB_AUTH_TOKEN="$(turso db tokens create <db> --expiration 90d)"
 export TODO_DB_RO_AUTH_TOKEN="$(turso db tokens create <db> --read-only --expiration 180d)"
 ```
 
+When neither an explicit token nor a `TODO_DB_*` variable is present, todo-db
+asks the command in `TODO_DB_CREDENTIAL_COMMAND` for the capability it needs, so
+a credential provisioned once is reused by every later shell and agent session
+without an interactive step:
+
+```sh
+export TODO_DB_CREDENTIAL_COMMAND="security find-generic-password -w -s todo-db-rw"
+```
+
+The command is split with `shlex` and executed directly; it never runs through a
+shell, and your arguments are passed through exactly as written. The requested
+capability (`read-only` or `read-write`) reaches the command only as
+`TODO_DB_CREDENTIAL_CAPABILITY` in its environment, so a plain retrieval command
+needs no special handling and a script that wants to branch can read it. A
+provider-resolved credential is reported as `requested:read-only` or
+`requested:read-write`, because the provider may ignore the request and serve
+both from one entry; the label records the request, never a proven property.
+Exit 0 with
+output supplies the token; exit 0 with no output means the credential is absent,
+which is the only condition that lets read-only fall back to read-write. Any
+non-zero exit, timeout, unparsable command, missing executable, or oversized
+output is `E_AUTH_MISSING` and stops resolution, so a broken read-only provider
+can never escalate to a read-write credential. Failures report the provider's
+program name and exit status only: provider stdout is the token and provider
+stderr routinely echoes it, so neither ever reaches an error, log, or doctor
+field. The provider is consulted at most once per capability per process, never
+for a local database, and never when a credential was supplied explicitly. With
+the variable unset, behaviour is exactly what it was before it existed. A caller
+that filters the environment it passes to todo-db must forward the variable; the
+Pi adapter's sanitized environment does.
+
+`scripts/hosted_auth_acceptance.sh` proves the whole path end to end: it removes
+any inherited `TODO_DB_AUTH_TOKEN` and `TODO_DB_RO_AUTH_TOKEN`, then asserts
+that `doctor` resolves the credential from the provider and that an ordinary
+read succeeds. Unconfigured it exits 77; `--require` makes an unconfigured run a
+failure. Releases that touch credential resolution or the wrapper contract must
+pass it and a real downstream consumer check before tagging; see
+[`docs/operations/release-gates.md`](docs/operations/release-gates.md).
+
 `CredentialMode.READ_ONLY` chooses a credential but does not make an RW token
 read-only. Server-side least privilege requires a token created with
-`--read-only`. ADR 0004 records the lifecycle decision; see
+`--read-only`. ADR 0004 records the lifecycle decision and ADR 0005 records the
+credential-provider contract that removes per-session token export
+([all decision records](docs/adr/README.md)); see
 [`docs/operations/hosted-credentials.md`](docs/operations/hosted-credentials.md)
 for provisioning, routine replacement, and compromise response.
 
@@ -288,6 +329,10 @@ environment allowlist; extra names require explicit
 credentials (`TODO_DB_AUTH_TOKEN`, `TODO_DB_RO_AUTH_TOKEN`) and Turso
 control-plane credentials (`TURSO_AUTH_TOKEN`, `TURSO_API_TOKEN`) are always
 rejected from passthrough, with variable names—but never values—reported.
+`TODO_DB_CREDENTIAL_COMMAND` is rejected on the same terms: it holds no secret
+itself, but a verification command that inherited it could run the provider and
+print the token, so the protection covers anything that yields a credential on
+demand, not only variables that contain one.
 Unrelated explicitly named credentials remain supported. This reduces
 ambient-secret exposure but is not a sandbox: an approved command still has
 the caller's filesystem access.
@@ -348,5 +393,6 @@ todo-db refresh-wrapper
 
 The command refuses symlinks, paths outside the project, missing files, and
 unrecognized custom scripts. `doctor` reports a legacy generated wrapper with
-the same targeted remediation. Inject a bounded credential before invoking the
-wrapper; an authentication failure is a hard stop for batch work.
+the same targeted remediation. Provision a credential once and point
+`TODO_DB_CREDENTIAL_COMMAND` at it, or inject one before invoking the wrapper;
+an authentication failure is a hard stop for batch work.

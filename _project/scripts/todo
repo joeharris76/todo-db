@@ -41,6 +41,6 @@ run_todo_db() {
 status=0
 run_todo_db "$@" || status=$?
 if [ "$status" -eq 4 ]; then
-  echo "todo: hosted authentication failed; inject a bounded credential and retry (automatic token minting is disabled)" >&2
+  echo "todo: hosted authentication failed; set TODO_DB_AUTH_TOKEN or point TODO_DB_CREDENTIAL_COMMAND at your secret store, then retry (see docs/operations/hosted-credentials.md, Provision once; automatic token minting is disabled)" >&2
 fi
 exit "$status"

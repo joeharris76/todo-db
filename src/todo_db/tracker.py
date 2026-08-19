@@ -337,8 +337,18 @@ def _uv_project_missing_pytest(command: str) -> str | None:
     return None
 
 
+# Protects credentials and anything that yields one on demand. A verification
+# command is written by another actor on a shared hosted tracker, so forwarding
+# TODO_DB_CREDENTIAL_COMMAND is equivalent to forwarding the token it resolves:
+# the command can simply run the provider and print the result.
 _VERIFY_ENV_PROTECTED_CREDENTIALS = frozenset(
-    {"TODO_DB_AUTH_TOKEN", "TODO_DB_RO_AUTH_TOKEN", "TURSO_AUTH_TOKEN", "TURSO_API_TOKEN"}
+    {
+        "TODO_DB_AUTH_TOKEN",
+        "TODO_DB_RO_AUTH_TOKEN",
+        "TODO_DB_CREDENTIAL_COMMAND",
+        "TURSO_AUTH_TOKEN",
+        "TURSO_API_TOKEN",
+    }
 )
 
 

@@ -4,7 +4,11 @@ This runbook covers database-scoped Turso credentials for todo-db. Keep bearer
 tokens out of the repository, command arguments, logs, tracker evidence, and
 configuration files.
 
-## Provision
+ADR 0004 sets the lifecycle: capability profiles, lifetime maximums, rotation
+ownership, and compromise response. ADR 0005 sets the provider contract that
+lets a provisioned credential reach a session without an interactive step.
+
+## Mint a bounded token
 
 Choose the shortest practical lifetime. These examples use the ADR 0004
 maximums:
@@ -18,14 +22,92 @@ export TODO_DB_RO_AUTH_TOKEN="$(turso db tokens create <database> --read-only --
 ```
 
 Inject the result with an OS keychain, password manager, process supervisor, or
-CI secret store. Do not save it in `.todo-db/config.json` or a wrapper-managed
-cache. Record the database, capability, issue date, expiry date, owner, and
+CI secret store. Point `TODO_DB_CREDENTIAL_COMMAND` at that store so sessions
+retrieve it without an interactive step; see Provision once below. Do not save it
+in `.todo-db/config.json` or a wrapper-managed cache. Record the database, capability, issue date, expiry date, owner, and
 replacement reminder in the external secret inventory—never the token value in
 tracker evidence.
 
 Do not use group-scoped tokens with this runbook. If an operator deliberately
 uses one, the owner must document group-level invalidation and every database
 that shares its blast radius.
+
+## Provision once
+
+Do this one time per machine and capability. Afterwards no shell, agent session,
+or CI worker needs an interactive step until the token is rotated.
+
+1. Mint the bounded token as shown above and pipe it straight into your secret
+   store, never into a file or the shell history.
+
+   ```sh
+   security add-generic-password -U -a "$USER" -s todo-db-rw \
+     -w "$(turso db tokens create <database> --expiration 90d)"
+   ```
+
+   1Password, `pass`, `gopass`, and a CI secret store are equally valid; the
+   store only has to print one token on standard output.
+
+2. Point todo-db at the store. Put this in the shell profile or process
+   supervisor that starts your sessions, so every later shell and agent
+   inherits it:
+
+   ```sh
+   export TODO_DB_CREDENTIAL_COMMAND="security find-generic-password -w -s todo-db-rw"
+   ```
+
+   For a read-only consumer, store a `--read-only` token under its own service
+   name and point the variable at that entry instead.
+
+3. Confirm it resolves without any injected credential:
+
+   ```sh
+   env -u TODO_DB_AUTH_TOKEN -u TODO_DB_RO_AUTH_TOKEN \
+     todo-db --db libsql://<host> doctor --json
+   ```
+
+   The `database` check must report
+   `"source": "TODO_DB_CREDENTIAL_COMMAND"`.
+
+`scripts/hosted_auth_acceptance.sh` runs step 3 as a repeatable check. It
+removes any inherited `TODO_DB_AUTH_TOKEN` and `TODO_DB_RO_AUTH_TOKEN` before
+running, so a credential already in your shell cannot make it pass:
+
+```sh
+TODO_DB_ACCEPTANCE_URL=libsql://<host> scripts/hosted_auth_acceptance.sh
+```
+
+Unconfigured it exits 77 (skipped, never a pass). Pass `--require` to turn that
+skip into a failure; the release gate uses `--require`.
+
+The command is never run through a shell, so it must be a plain program and its
+arguments. Put any pipeline or conditional logic in a small script and name that
+script instead. Your arguments are passed through unchanged; todo-db appends
+nothing. When a provider must serve both capabilities from one entry-point, have
+that script read `TODO_DB_CREDENTIAL_CAPABILITY`, which todo-db sets to
+`read-only` or `read-write` in the command's environment:
+
+```sh
+#!/bin/sh
+# Exit 0 with no output means "absent", which is the only condition that lets a
+# read-only request fall back to read-write. A missing entry makes `security`
+# exit 44, and a non-zero exit is an error that stops resolution, so the absent
+# case has to be handled deliberately.
+case "$TODO_DB_CREDENTIAL_CAPABILITY" in
+  read-only)
+    security find-generic-password -w -s todo-db-ro 2>/dev/null || exit 0
+    ;;
+  *)
+    exec security find-generic-password -w -s todo-db-rw
+    ;;
+esac
+```
+
+If your store holds one entry serving both capabilities, point the variable
+straight at it and skip the script. `doctor` will then report
+`capability: requested:read-write` even for a read-only operation, because the
+capability records what todo-db asked for, not what the token can do. A caller that filters the environment it passes to todo-db must
+forward `TODO_DB_CREDENTIAL_COMMAND`.
 
 ## Validate
 
@@ -44,7 +126,16 @@ TODO_DB_AUTH_TOKEN=... todo-db --db libsql://<host> doctor --rw --json
 Read-only mode is server-enforced only when the supplied token was created with
 `--read-only`. Never place `TODO_DB_AUTH_TOKEN` in the scheduled audit job.
 
-## Routine replacement
+## Rotate: routine replacement
+
+For a provider-backed credential this is the only recurring interactive step,
+at most once per ADR 0004 lifetime maximum for that capability: mint the
+replacement, overwrite the store entry in place (`security
+add-generic-password -U` updates rather than duplicates), start a fresh process,
+and re-run the Provision once step 3 check. `TODO_DB_CREDENTIAL_COMMAND` still
+names the same entry, so no session, wrapper, or CI job needs an update.
+
+For directly injected credentials:
 
 1. The named owner mints a bounded replacement before the current expiry.
 2. Update one external consumer or secret store.
