@@ -40,6 +40,11 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- A provider-resolved credential reports its capability as
+  `requested:read-only` or `requested:read-write`. The provider may ignore the
+  request and serve both capabilities from one entry, so the label no longer
+  implies a property nothing verified. Environment-variable provenance and the
+  scheduled audit's read-only assertion are unchanged.
 - The credential provider receives the operator's `argv` unchanged; the
   requested capability reaches it only through `TODO_DB_CREDENTIAL_CAPABILITY`
   in its environment. Appending it as a positional argument broke every

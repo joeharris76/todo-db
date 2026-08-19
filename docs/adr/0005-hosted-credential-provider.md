@@ -101,11 +101,21 @@ to a shell.
   `pass show` reject the extra argument. A provider that ignores the variable
   and always returns the same token is valid; the operator then owns the
   mismatch.
+- **Capability is requested, not proven.** A provider-resolved credential is
+  labelled `requested:read-only` or `requested:read-write`. The provider may
+  ignore the request and serve both capabilities from one entry, so no output
+  may imply the token has a property nothing verified. Environment-variable
+  provenance is unchanged, and the scheduled audit continues to require the
+  read-only variable by name rather than a capability label. This restates at
+  the client what ADR 0004 already fixed at the server: read-only is enforced
+  only when the token was minted read-only.
 - **Present.** Exit status 0 with non-empty standard output. The token is the
   output with surrounding whitespace stripped and nothing else removed.
 - **Absent.** Exit status 0 with empty standard output. Read-only resolution may
   then ask for `read-write`, mirroring the environment-variable fallback. This
-  is the only fallback the provider permits.
+  is the only fallback the provider permits. Real tools exit non-zero when an
+  entry is missing, so a branching script that wants the fallback must exit 0
+  with no output deliberately; the runbook example shows it.
 - **Error.** Any non-zero exit status, timeout, unparsable command string,
   missing executable, or output larger than the size bound. Resolution stops
   with `E_AUTH_MISSING`. An error is never treated as absence, so a broken

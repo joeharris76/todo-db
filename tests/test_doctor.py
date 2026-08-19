@@ -242,13 +242,13 @@ def test_doctor_reports_provider_provenance_without_the_token(
 
     assert main(["--db", url, "doctor"]) == 0
     out = capsys.readouterr().out
-    assert "credential: TODO_DB_CREDENTIAL_COMMAND (read-only)" in out
+    assert "credential: TODO_DB_CREDENTIAL_COMMAND (requested:read-only)" in out
     assert "ro-token" not in out
 
     assert main(["--db", url, "doctor", "--json"]) == 0
     payload = _json.loads(capsys.readouterr().out)
     database_check = next(check for check in payload["checks"] if check["name"] == "database")
     assert database_check["source"] == "TODO_DB_CREDENTIAL_COMMAND"
-    assert database_check["capability"] == "read-only"
+    assert database_check["capability"] == "requested:read-only"
     assert "ro-token" not in _json.dumps(payload)
     reset_credential_provider_cache()

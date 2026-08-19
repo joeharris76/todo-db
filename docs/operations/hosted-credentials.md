@@ -89,11 +89,24 @@ that script read `TODO_DB_CREDENTIAL_CAPABILITY`, which todo-db sets to
 
 ```sh
 #!/bin/sh
+# Exit 0 with no output means "absent", which is the only condition that lets a
+# read-only request fall back to read-write. A missing entry makes `security`
+# exit 44, and a non-zero exit is an error that stops resolution, so the absent
+# case has to be handled deliberately.
 case "$TODO_DB_CREDENTIAL_CAPABILITY" in
-  read-only)  exec security find-generic-password -w -s todo-db-ro ;;
-  *)          exec security find-generic-password -w -s todo-db-rw ;;
+  read-only)
+    security find-generic-password -w -s todo-db-ro 2>/dev/null || exit 0
+    ;;
+  *)
+    exec security find-generic-password -w -s todo-db-rw
+    ;;
 esac
-``` A caller that filters the environment it passes to todo-db must
+```
+
+If your store holds one entry serving both capabilities, point the variable
+straight at it and skip the script. `doctor` will then report
+`capability: requested:read-write` even for a read-only operation, because the
+capability records what todo-db asked for, not what the token can do. A caller that filters the environment it passes to todo-db must
 forward `TODO_DB_CREDENTIAL_COMMAND`.
 
 ## Validate

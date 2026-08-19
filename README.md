@@ -281,7 +281,11 @@ The command is split with `shlex` and executed directly; it never runs through a
 shell, and your arguments are passed through exactly as written. The requested
 capability (`read-only` or `read-write`) reaches the command only as
 `TODO_DB_CREDENTIAL_CAPABILITY` in its environment, so a plain retrieval command
-needs no special handling and a script that wants to branch can read it. Exit 0 with
+needs no special handling and a script that wants to branch can read it. A
+provider-resolved credential is reported as `requested:read-only` or
+`requested:read-write`, because the provider may ignore the request and serve
+both from one entry; the label records the request, never a proven property.
+Exit 0 with
 output supplies the token; exit 0 with no output means the credential is absent,
 which is the only condition that lets read-only fall back to read-write. Any
 non-zero exit, timeout, unparsable command, missing executable, or oversized

@@ -689,7 +689,7 @@ def test_credential_provider_supplies_read_write_when_nothing_is_injected(
     resolved = resolve_credential(_hosted_config(CredentialMode.READ_WRITE))
     assert (resolved.source, resolved.capability, resolved.token) == (
         "TODO_DB_CREDENTIAL_COMMAND",
-        "read-write",
+        "requested:read-write",
         "rw-from-store",
     )
     assert "rw-from-store" not in repr(resolved)
@@ -711,7 +711,8 @@ def test_credential_provider_receives_the_requested_capability(
 
     resolved = resolve_credential(_hosted_config(CredentialMode.READ_ONLY))
     assert resolved.token == "token-for-read-only"
-    assert resolved.capability == "read-only"
+    # Requested, never asserted as proven: the provider may ignore the request.
+    assert resolved.capability == "requested:read-only"
 
 
 def test_credential_provider_absent_read_only_falls_back_to_read_write(
@@ -730,7 +731,7 @@ def test_credential_provider_absent_read_only_falls_back_to_read_write(
     monkeypatch.setenv("TODO_DB_CREDENTIAL_COMMAND", provider)
 
     resolved = resolve_credential(_hosted_config(CredentialMode.READ_ONLY))
-    assert (resolved.capability, resolved.token) == ("read-write", "rw-only")
+    assert (resolved.capability, resolved.token) == ("requested:read-write", "rw-only")
 
 
 def test_credential_provider_error_never_escalates_to_read_write(
@@ -993,3 +994,67 @@ def test_provider_returning_invalid_utf8_is_a_coded_error_not_a_crash(
     monkeypatch.setenv("TODO_DB_CREDENTIAL_COMMAND", big)
     with pytest.raises(HostedAuthError, match="more than 8 bytes"):
         resolve_credential(_hosted_config(CredentialMode.READ_WRITE))
+
+
+def test_single_entry_provider_never_claims_a_capability_it_cannot_prove(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A store with one entry serves both capabilities from one token.
+
+    The resolver asks for read-only, the provider returns the read-write token
+    because that is all it has, and nothing in the output may imply the token is
+    read-only. ADR 0004 already says read-only is server-enforced only when the
+    token was minted read-only; this keeps the client label honest too.
+    """
+
+    from todo_db import CredentialMode
+    from todo_db.backends import resolve_credential
+
+    _no_injected_credentials(monkeypatch)
+    provider = _provider_script(tmp_path, "single.sh", 'echo "the-one-and-only-rw-token"')
+    monkeypatch.setenv("TODO_DB_CREDENTIAL_COMMAND", provider)
+
+    read_only = resolve_credential(_hosted_config(CredentialMode.READ_ONLY))
+    assert read_only.token == "the-one-and-only-rw-token"
+    assert read_only.capability == "requested:read-only"
+    assert read_only.capability != "read-only"
+
+
+def test_provider_absent_branch_must_exit_zero_to_permit_fallback(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The sharp edge a branching provider script has to get right.
+
+    Real tools exit non-zero when an entry is missing, and a non-zero exit is an
+    error that stops resolution. Only exit 0 with empty output means absent, so
+    a script that wants read-only to fall back must exit 0 explicitly.
+    """
+
+    from todo_db import CredentialMode
+    from todo_db import backends
+    from todo_db.backends import resolve_credential
+    from todo_db.errors import E_AUTH_MISSING, HostedAuthError
+
+    _no_injected_credentials(monkeypatch)
+    wrong = _provider_script(
+        tmp_path,
+        "missing-entry.sh",
+        'if [ "$TODO_DB_CREDENTIAL_CAPABILITY" = "read-only" ]; then exit 44; fi\n'
+        'echo "rw-token"',
+    )
+    monkeypatch.setenv("TODO_DB_CREDENTIAL_COMMAND", wrong)
+    with pytest.raises(HostedAuthError) as raised:
+        resolve_credential(_hosted_config(CredentialMode.READ_ONLY))
+    assert raised.value.code == E_AUTH_MISSING
+    assert "exited 44" in str(raised.value)
+
+    backends.reset_credential_provider_cache()
+    right = _provider_script(
+        tmp_path,
+        "absent-branch.sh",
+        'if [ "$TODO_DB_CREDENTIAL_CAPABILITY" = "read-only" ]; then exit 0; fi\n'
+        'echo "rw-token"',
+    )
+    monkeypatch.setenv("TODO_DB_CREDENTIAL_COMMAND", right)
+    resolved = resolve_credential(_hosted_config(CredentialMode.READ_ONLY))
+    assert (resolved.capability, resolved.token) == ("requested:read-write", "rw-token")

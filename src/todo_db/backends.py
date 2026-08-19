@@ -264,7 +264,14 @@ def _provider_credential(capability: str) -> ResolvedCredential | None:
             f"{CREDENTIAL_COMMAND_MAX_BYTES} bytes"
         )
     token = raw.decode("utf-8", "replace").strip()
-    resolved = ResolvedCredential(token, CREDENTIAL_COMMAND_VARIABLE, capability) if token else None
+    # The capability is what was asked for, not a property of what came back: a
+    # single-entry provider may ignore the request and return one token for
+    # both. Label it so no output claims a capability nothing verified.
+    resolved = (
+        ResolvedCredential(token, CREDENTIAL_COMMAND_VARIABLE, f"requested:{capability}")
+        if token
+        else None
+    )
     _PROVIDER_CACHE[cache_key] = resolved
     return resolved
 
