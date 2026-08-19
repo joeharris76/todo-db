@@ -69,6 +69,11 @@ adheres to [Semantic Versioning](https://semver.org/).
   `todo-db refresh-wrapper` to pick up the new notice; the v2 contract is
   unchanged, so an unrefreshed wrapper keeps working.
 
+### Fixed
+
+- The macOS keychain provisioning runbook now uses `-w "$token"` argument syntax
+  because macOS `security add-generic-password` does not read token data from stdin.
+
 ## [0.4.2] - 2026-08-19
 
 ### Fixed

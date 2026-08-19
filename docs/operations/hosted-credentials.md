@@ -41,8 +41,8 @@ or CI worker needs an interactive step until the token is rotated.
    store, never into a file or the shell history.
 
    ```sh
-   turso db tokens create <database> --expiration 90d |
-     security add-generic-password -U -a "$USER" -s todo-db-rw -w
+   security add-generic-password -U -a "$USER" -s todo-db-rw \
+     -w "$(turso db tokens create <database> --expiration 90d)"
    ```
 
    1Password, `pass`, `gopass`, and a CI secret store are equally valid; the

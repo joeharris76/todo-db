@@ -55,6 +55,7 @@ fi
 # The point of the harness: run as a session that was never handed a credential.
 unset TODO_DB_AUTH_TOKEN
 unset TODO_DB_RO_AUTH_TOKEN
+unset TODO_DB_CONFIG
 export TODO_DB_AUTH_CONTRACT=v2
 
 WORK="$(mktemp -d)"
