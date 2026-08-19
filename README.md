@@ -324,6 +324,10 @@ environment allowlist; extra names require explicit
 credentials (`TODO_DB_AUTH_TOKEN`, `TODO_DB_RO_AUTH_TOKEN`) and Turso
 control-plane credentials (`TURSO_AUTH_TOKEN`, `TURSO_API_TOKEN`) are always
 rejected from passthrough, with variable names—but never values—reported.
+`TODO_DB_CREDENTIAL_COMMAND` is rejected on the same terms: it holds no secret
+itself, but a verification command that inherited it could run the provider and
+print the token, so the protection covers anything that yields a credential on
+demand, not only variables that contain one.
 Unrelated explicitly named credentials remain supported. This reduces
 ambient-secret exposure but is not a sandbox: an approved command still has
 the caller's filesystem access.

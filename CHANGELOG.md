@@ -32,6 +32,12 @@ adheres to [Semantic Versioning](https://semver.org/).
   CI, passing tests, package smoke tests, and verified checksums do not satisfy
   them.
 
+- `TODO_DB_CREDENTIAL_COMMAND` joins the credentials that are always rejected
+  from `TODO_DB_VERIFY_ENV_PASSTHROUGH`. It holds no secret itself, but a stored
+  verification command that inherited it could run the provider and print the
+  token, which would defeat the verification-subprocess credential boundary by
+  passing the pointer instead of the secret.
+
 ### Changed
 
 - The credential provider receives the operator's `argv` unchanged; the
