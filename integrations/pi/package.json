@@ -1,6 +1,6 @@
 {
   "name": "@todo-db/pi-adapter",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Safe, claim-coordinated todo-db extension for Pi",
   "type": "module",
   "main": "./dist/src/index.js",

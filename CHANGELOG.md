@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-08-19
+
 ### Added
 
 - ADR 0005 records the hosted credential-provider contract: an additive,
