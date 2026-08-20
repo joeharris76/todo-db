@@ -45,7 +45,6 @@ class DatabaseConfig:
     identity: ProjectIdentity | None = None
     credential_mode: CredentialMode = CredentialMode.READ_WRITE
     timeout: float = 5.0
-    replica_path: Path | None = None
     auth_token: str | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
@@ -58,8 +57,6 @@ class DatabaseConfig:
         else:
             target = Path(self.path)
         object.__setattr__(self, "path", target)
-        if self.replica_path is not None:
-            object.__setattr__(self, "replica_path", Path(self.replica_path))
 
     @property
     def is_hosted(self) -> bool:

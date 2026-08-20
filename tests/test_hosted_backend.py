@@ -40,7 +40,6 @@ class FakeRawConnection:
         path.parent.mkdir(parents=True, exist_ok=True)
         self._connection = sqlite3.connect(path)
         self._connection.isolation_level = None
-        self.sync_calls = 0
 
     def execute(self, sql: str, params=()):
         try:
@@ -57,14 +56,11 @@ class FakeRawConnection:
     def close(self):
         self._connection.close()
 
-    def sync(self):
-        self.sync_calls += 1
-
 
 # The keyword arguments libsql.connect actually accepts in the calls this
 # package makes. The double rejects anything else: a permissive double would
 # accept a misspelled or invented keyword and pass, while real libsql raised.
-_LIBSQL_CONNECT_KEYWORDS = frozenset({"auth_token", "isolation_level", "sync_url", "sync_interval"})
+_LIBSQL_CONNECT_KEYWORDS = frozenset({"auth_token", "isolation_level"})
 
 
 class FakeLibsql(types.ModuleType):
@@ -115,9 +111,7 @@ def test_turso_read_only_uses_read_only_token_against_primary(monkeypatch: pytes
     monkeypatch.setitem(sys.modules, "libsql", fake)
     url = "libsql://project.aws-us-east-1.turso.io"
     identity = ProjectIdentity(project_id="project-test", repository="https://example.test/project")
-    TodoDatabase.open(
-        DatabaseConfig(path=url, identity=identity, auth_token="rw-token", replica_path=tmp_path / "primary.sqlite")
-    ).close()
+    TodoDatabase.open(DatabaseConfig(path=url, identity=identity, auth_token="rw-token")).close()
 
     monkeypatch.setenv("TODO_DB_RO_AUTH_TOKEN", "ro-token")
     readonly = TodoDatabase.open(DatabaseConfig(path=url, identity=identity, credential_mode=CredentialMode.READ_ONLY))
@@ -293,7 +287,6 @@ def test_auth_shaped_connect_failure_raises_hosted_auth_error_with_remediation(
                 path=url,
                 identity=ProjectIdentity(project_id="auth-test", repository="todo-db"),
                 auth_token=token,
-                replica_path=tmp_path / "replica.sqlite",
             )
         )
     message = str(raised.value)
@@ -445,7 +438,6 @@ def _open_hosted_tracker(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
             path="libsql://project.aws-us-east-1.turso.io",
             identity=ProjectIdentity(project_id="hosted-verify", repository="todo-db"),
             auth_token="rw-token",
-            replica_path=tmp_path / "replica.sqlite",
         )
     )
     tracker = TodoTracker(database, actor="hosted-actor")
@@ -525,7 +517,6 @@ def test_hosted_tracker_lifecycle_uses_same_transactional_service(
             path="libsql://project.aws-us-east-1.turso.io",
             identity=ProjectIdentity(project_id="hosted-test", repository="todo-db"),
             auth_token="rw-token",
-            replica_path=tmp_path / "replica.sqlite",
         )
     )
     tracker = TodoTracker(database, actor="hosted-actor")

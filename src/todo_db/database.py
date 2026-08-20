@@ -339,7 +339,7 @@ class TodoDatabase:
 
     @property
     def is_hosted(self) -> bool:
-        """True when this database is a shared hosted (libsql/https) backend or replica."""
+        """True for hosted databases and legacy replica artifacts kept behind safety gates."""
         if self._config.is_hosted:
             return True
         path = Path(self._config.path)

@@ -156,7 +156,6 @@ def test_doctor_passes_against_a_healthy_hosted_database(
             path=url,
             identity=ProjectIdentity(project_id="doctor-hosted", repository="todo-db"),
             auth_token="rw-token",
-            replica_path=tmp_path / "primary.sqlite",
         )
     ).close()
     empty_bin = tmp_path / "emptybin"
@@ -225,7 +224,6 @@ def test_doctor_reports_provider_provenance_without_the_token(
             path=url,
             identity=ProjectIdentity(project_id="doctor-provider", repository="todo-db"),
             auth_token="ro-token",
-            replica_path=tmp_path / "primary.sqlite",
         )
     ).close()
 

@@ -126,8 +126,8 @@ It writes three things into the adopting repository:
 - `.todo-db/config.json` — the committed source of the project identity (and
   optionally the database target as a repo-relative path or `libsql://` URL).
   Commit this file; it is the whole point of the scaffold.
-- `.todo-db/.gitignore` — ignores the databases (`*.sqlite*`, `replica.db*`,
-  `*.lock`) while keeping `config.json` tracked. Do not add a bare
+- `.todo-db/.gitignore` — ignores local database and legacy replica artifacts
+  (`*.sqlite*`, `replica.db*`, `*.lock`) while keeping `config.json` tracked. Do not add a bare
   `.todo-db/` rule to the repository root `.gitignore`; that would hide the
   config file (init-project warns when git ignores it).
 - with `--wrapper [PATH]` (default `_project/scripts/todo`), an executable
@@ -170,8 +170,9 @@ TODO_DB_AUTH_TOKEN=... uv run todo-db \
 `scripts/turso_acceptance.sh` runs an opt-in, real-primary, two-connection
 one-winner claim race against a throwaway Turso database and destroys it
 afterwards. Exit 77 means the test did not run and is not certification.
-Commit-outcome fault behavior remains unmeasured, so agent mutations on hosted
-Turso are experimental rather than certified.
+The local fault harness exercises reconciliation after a post-commit transport
+failure, but real hosted commit-outcome fault behavior remains unmeasured, so
+agent mutations on hosted Turso are experimental rather than certified.
 
 ## Findings
 
@@ -366,8 +367,8 @@ return exit 2 with wrapper-migration guidance so a committed legacy wrapper
 cannot intercept exit 4 and mint an RW token. Library callers always receive
 the coded `HostedAuthError`, independent of CLI exit negotiation.
 
-`todo-db doctor` is a read-only preflight (no writes, no replica sync unless
-`--rw` is passed) intended before batch work. It checks config discovery,
+`todo-db doctor` is a read-only preflight intended before batch work. Passing
+`--rw` adds a hosted read-write connection probe. It checks config discovery,
 identity resolution (with its source tier; failing only when no source
 resolves and the database is unbound), the database target (local: file or
 creatable parent plus schema version, warning `behind -- run init to
