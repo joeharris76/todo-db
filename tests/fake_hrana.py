@@ -46,14 +46,12 @@ class FakeHranaCursor:
 
 
 class FakeHranaConnection:
-    def __init__(self, path: Path, sync_url: str | None = None, auth_token: str | None = None):
+    def __init__(self, path: Path, auth_token: str | None = None):
         path.parent.mkdir(parents=True, exist_ok=True)
         self._path = path
-        self._sync_url = sync_url
         self._auth_token = auth_token
         self._connection = sqlite3.connect(path, timeout=30.0)
         self._connection.isolation_level = None
-        self.sync_calls = 0
         self.bytes_sent = 0
         self.bytes_received = 0
 
@@ -73,13 +71,10 @@ class FakeHranaConnection:
     def close(self):
         self._connection.close()
 
-    def sync(self):
-        self.sync_calls += 1
-
 
 # See tests/test_hosted_backend.py: a double that accepts any keyword tests that
 # the code called something, not that it called the right thing.
-_HRANA_CONNECT_KEYWORDS = frozenset({"auth_token", "isolation_level", "sync_url", "sync_interval"})
+_HRANA_CONNECT_KEYWORDS = frozenset({"auth_token", "isolation_level"})
 
 
 class FakeHranaModule(types.ModuleType):
@@ -95,7 +90,7 @@ class FakeHranaModule(types.ModuleType):
             raise TypeError(f"libsql.connect() got unexpected keyword argument(s): {', '.join(unexpected)}")
         target = self.primary_path
         self.connect_calls.append({"database": str(database), **kwargs})
-        conn = FakeHranaConnection(target, sync_url=kwargs.get("sync_url"), auth_token=kwargs.get("auth_token"))
+        conn = FakeHranaConnection(target, auth_token=kwargs.get("auth_token"))
         self.connections.append(conn)
         return conn
 

@@ -33,14 +33,16 @@ Stands in for the `libsql` module.
 
 ## `FakeHranaModule` — `tests/fake_hrana.py`
 
-Stands in for the embedded-replica client.
+Stands in for the direct hosted primary client.
 
-- **Now strict about**: the same keyword set, for the same reason.
-- **Still cannot catch**: real replication lag, `sync()` semantics, or the
-  divergence between replica reads and primary writes that the latency harness
-  measures. It models the calls, not the distributed behaviour.
-- **Covered instead by**: `tests/test_hosted_latency.py` measurement arms and
-  the opt-in acceptance harness.
+- **Now strict about**: the same keyword set, direct-primary connection
+  arguments, and local transaction behavior used by the hosted harness.
+- **Still cannot catch**: real server-side constraint or concurrency behavior,
+  network and TLS failure shapes, or commit outcomes after a transport failure.
+  It executes against local SQLite, so it models the protocol boundary rather
+  than the distributed service.
+- **Covered instead by**: `tests/test_hosted_latency.py` measurement and fault
+  cases, plus the opt-in acceptance harness.
 
 ## `_provider_script` — `tests/test_hosted_backend.py`
 

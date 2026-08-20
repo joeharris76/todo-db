@@ -123,6 +123,9 @@ A mutation worker validates its read-write credential explicitly:
 TODO_DB_AUTH_TOKEN=... todo-db --db libsql://<host> doctor --rw --json
 ```
 
+`--rw` probes the direct hosted read-write connection; it does not create or
+sync a local replica.
+
 Read-only mode is server-enforced only when the supplied token was created with
 `--read-only`. Never place `TODO_DB_AUTH_TOKEN` in the scheduled audit job.
 

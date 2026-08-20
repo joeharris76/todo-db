@@ -179,7 +179,6 @@ def _parser() -> argparse.ArgumentParser:
         f"(default: TODO_DB_PATH/TODO_DB_URL, then a discovered {CONFIG_DIRNAME}/{CONFIG_FILENAME},"
         f" then ./{DEFAULT_DB_RELATIVE})",
     )
-    parser.add_argument("--replica", type=Path, help="local embedded-replica path for hosted read-write mode")
     parser.add_argument("--actor", help="audit actor identity")
     parser.add_argument("--project-id", default=argparse.SUPPRESS)
     parser.add_argument("--repository", default=argparse.SUPPRESS)
@@ -244,9 +243,7 @@ def _parser() -> argparse.ArgumentParser:
 
     doctor = sub.add_parser("doctor", help="read-only preflight: config, identity, database, auth, drafts dir")
     doctor.add_argument("--json", action="store_true")
-    doctor.add_argument(
-        "--rw", action="store_true", help="also probe hosted replica open+sync (writes local replica files)"
-    )
+    doctor.add_argument("--rw", action="store_true", help="also probe the hosted read-write connection")
     _identity_args(doctor)
 
     export = sub.add_parser("export", help="write a lossless JSON export")
@@ -587,7 +584,6 @@ def _config(args: argparse.Namespace, mode: CredentialMode, identity: ProjectIde
         path=args.db,
         identity=identity,
         credential_mode=mode,
-        replica_path=args.replica,
     )
 
 
@@ -1048,7 +1044,6 @@ def _init_project(args: argparse.Namespace, identity: ProjectIdentity, raw_db: s
         path=db_target,
         identity=identity,
         credential_mode=CredentialMode.READ_WRITE,
-        replica_path=args.replica,
     )
     with TodoDatabase.open(database_config) as database:
         print(f"schema v{database.schema_version} ready for {database.project_identity.project_id}")
@@ -1326,7 +1321,7 @@ def _doctor(args: argparse.Namespace) -> int:
 
     if hosted and args.rw:
         rw_config = DatabaseConfig(
-            path=target, identity=identity, credential_mode=CredentialMode.READ_WRITE, replica_path=args.replica
+            path=target, identity=identity, credential_mode=CredentialMode.READ_WRITE
         )
         rw_credential: ResolvedCredential | None = None
         try:

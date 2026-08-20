@@ -158,12 +158,6 @@ class HostedConnection:
         except Exception as exc:
             raise self._wrap_error(exc, "close") from None
 
-    def sync(self) -> None:
-        try:
-            self._raw.sync()
-        except Exception as exc:
-            raise self._wrap_error(exc, "sync") from None
-
 
 def _normalize_url(value: str) -> str:
     value = value.strip()
