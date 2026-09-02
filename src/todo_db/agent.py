@@ -235,7 +235,7 @@ class AgentWorkflow:
         ).fetchall()
         if len(rows) > 1:
             raise TodoError(
-                f"principal {p!r} holds multiple active claims; release all but one with `todo agent release <id> --claim-token <token>`",
+                f"principal {p!r} holds multiple active claims; release all but one with `release(id='<id>', claim_token='<token>')`",
                 code=E_MULTIPLE_CLAIMS,
             )
         return dict(rows[0]) if rows else None
@@ -292,7 +292,7 @@ class AgentWorkflow:
         if item["state"] != "active" or item.get("claimed_by") != self.tracker.actor:
             raise TodoError(
                 f"cannot adopt {item_id!r}: not an active claim held by actor {self.tracker.actor!r}; "
-                f"use `todo agent take {item_id}` instead"
+                f"use `take(id='{item_id}')` instead"
             )
         new_token = uuid4().hex
         now = utc_now()
@@ -335,7 +335,7 @@ class AgentWorkflow:
                 if item_id is not None and existing["id"] != item_id:
                     raise TodoError(
                         f"actor {self.tracker.actor!r} already holds active claim on {existing['id']!r}; "
-                        f"release it first with `todo agent release {existing['id']}` before taking {item_id!r}"
+                        f"release it first with `release(id='{existing['id']}')` before taking {item_id!r}"
                     )
                 if session and existing.get("claimed_session") != session:
                     self._adopt_internal(existing["id"], session)
@@ -651,15 +651,15 @@ class AgentWorkflow:
 
         structural_commands: list[str] = []
         if item.get("blocked_reason"):
-            structural_commands.append(f"todo unblock {item_id}")
+            structural_commands.append(f"unblock(id='{item_id}')")
         structural_commands.extend(
-            f"todo dismiss {entry['id']} --reason '<reason>'"
+            f"dismiss_deferral(id='{entry['id']}', reason='<reason>')"
             for entry in item.get("deferrals", [])
             if entry.get("resolution") == "open"
         )
         lint_issues = self.tracker.lint(item_id)
         if lint_issues:
-            structural_commands.insert(0, f"todo lint {item_id}")
+            structural_commands.insert(0, f"lint(id='{item_id}')")
         if lint_issues and not structural_commands[1:]:
             # Lint-only failure retains the claim so the agent can repair and retry (ADR 0006 G7).
             details = "; ".join(lint_issues)

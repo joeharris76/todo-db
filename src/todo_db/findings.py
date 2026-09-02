@@ -692,7 +692,7 @@ class FindingsTracker:
                 worktree=worktree or "main",
                 priority=priority,
                 description=description
-                or f"Promoted from finding {finding_id}. Run `todo-db finding show {finding_id}` for the review prose.",
+                or f"Promoted from finding {finding_id}. Run `finding_show(id='{finding_id}')` for the review prose.",
             )
             tracker._event(
                 "create", new_item_id, {"title": item_title, "state": "planning", "promoted_from_finding": finding_id}

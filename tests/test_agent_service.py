@@ -381,13 +381,13 @@ def test_structural_finish_gate_releases_claim_with_remediation(tmp_path: Path) 
         context = workflow.take("item-structural")
         token = context["claim_token"]
         workflow.progress("item-structural", "w0", "done", claim_token=token)
-        with pytest.raises(TodoError, match="claim retained; run `todo lint item-structural`"):
+        with pytest.raises(TodoError, match=r"claim retained; run `lint\(id='item-structural'\)`"):
             workflow.finish("item-structural", claim_token=token, model_assert=True)
         # Lint gate retains the claim (ADR 0006 G7).
         assert tracker.get_item("item-structural")["claimed_by"] == "agent-tester"
         # Structural blockers still release immediately (even with lint present, structural dominates).
         tracker.block("item-structural", "human decision needed")
-        with pytest.raises(TodoError, match="claim released; run `todo lint item-structural; then todo unblock"):
+        with pytest.raises(TodoError, match=r"claim released; run `lint\(id='item-structural'\); then unblock\(id='item-structural'\)`"):
             workflow.finish("item-structural", claim_token=token, model_assert=True)
         assert tracker.get_item("item-structural")["claimed_by"] is None
     finally:

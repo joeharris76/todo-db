@@ -1648,7 +1648,7 @@ class TodoTracker:
                     if result != "pass":
                         raise TodoError(
                             f"cannot complete {item_id!r}: verification seq={seq} failed; "
-                            f"inspect it with `todo-db verify {item_id}`",
+                            f"inspect it with `verify_list(id='{item_id}')` (or `todo-db audit verify {item_id}`)",
                             code=E_VERIFY_GATE,
                         )
         elif not verification_definition:
@@ -1929,7 +1929,7 @@ class TodoTracker:
                 "refusing to execute a stored verification command from a hosted database: "
                 "commands in a shared database are written by other actors, so running them "
                 "locally is a lateral code-execution channel across the trust boundary. "
-                f"Inspect the command first (`todo-db verify {item_id}`), then set "
+                f"Inspect the command first with `verify_list(id='{item_id}')` (or `todo-db audit verify {item_id}`), then set "
                 "TODO_DB_ALLOW_HOSTED_VERIFY_RUN=1 to run it deliberately."
             )
         row = self.connection.execute(
