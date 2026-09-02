@@ -1,9 +1,17 @@
 {
   "help": [
     "standalone command 'refresh-wrapper'",
-    "standalone command 'init-project'"
+    "standalone command 'init-project'",
+    "standalone command 'verify-run'",
+    "standalone command 'rebaseline'",
+    "standalone command 'mcp'",
+    "help: BenchBox command '(agent|create|update|list|show|ready|stats|deps|start|done|defer|promote|dismiss|block|unblock|release|claim|check-scope|verify|lint|drop)' not in standalone"
   ],
   "exit_codes": [],
   "ddl": [],
-  "freeze": []
+  "freeze": [
+    "freeze: new standalone command 'verify-run' not in frozen snapshot",
+    "freeze: new standalone command 'rebaseline' not in frozen snapshot",
+    "freeze: new standalone command 'mcp' not in frozen snapshot"
+  ]
 }
