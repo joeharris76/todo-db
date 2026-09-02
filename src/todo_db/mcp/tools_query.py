@@ -63,10 +63,12 @@ def register_query_tools(
         ctx: Context = None,  # type: ignore[assignment]
     ) -> dict[str, Any]:
         principal = _principal(holder, ctx)
+        if not principal:
+            return err("E_NO_PRINCIPAL", "principal not yet resolved; call get_instructions first", kind="error")
 
         def _work():
             with database_for_tool(_target(), "list_items", allow_hosted=allow_hosted) as db:
-                tracker = TodoTracker(db, actor=principal or "tester")
+                tracker = TodoTracker(db, actor=principal)
                 try:
                     items = tracker.list_items()
                 except TodoDBError as exc:
@@ -95,10 +97,12 @@ def register_query_tools(
         ctx: Context = None,  # type: ignore[assignment]
     ) -> dict[str, Any]:
         principal = _principal(holder, ctx)
+        if not principal:
+            return err("E_NO_PRINCIPAL", "principal not yet resolved; call get_instructions first", kind="error")
 
         def _work():
             with database_for_tool(_target(), "show_item", allow_hosted=allow_hosted) as db:
-                tracker = TodoTracker(db, actor=principal or "tester")
+                tracker = TodoTracker(db, actor=principal)
                 try:
                     item = tracker.get_item(id)
                 except TodoDBError as exc:
@@ -120,10 +124,12 @@ def register_query_tools(
         ctx: Context = None,  # type: ignore[assignment]
     ) -> dict[str, Any]:
         principal = _principal(holder, ctx)
+        if not principal:
+            return err("E_NO_PRINCIPAL", "principal not yet resolved; call get_instructions first", kind="error")
 
         def _work():
             with database_for_tool(_target(), "ready", allow_hosted=allow_hosted) as db:
-                tracker = TodoTracker(db, actor=principal or "tester")
+                tracker = TodoTracker(db, actor=principal)
                 try:
                     items = tracker.ready_items()
                 except TodoDBError as exc:
@@ -148,17 +154,19 @@ def register_query_tools(
     )
     async def stats_tool(ctx: Context = None) -> dict[str, Any]:  # type: ignore[assignment]
         principal = _principal(holder, ctx)
+        if not principal:
+            return err("E_NO_PRINCIPAL", "principal not yet resolved; call get_instructions first", kind="error")
 
         def _work():
             with database_for_tool(_target(), "stats", allow_hosted=allow_hosted) as db:
-                tracker = TodoTracker(db, actor=principal or "tester")
+                tracker = TodoTracker(db, actor=principal)
                 try:
                     data = tracker.stats()
                     # Also include findings stats if available
                     try:
                         from ..findings import FindingsTracker
 
-                        data.update(FindingsTracker(db, actor=principal or "tester").stats())
+                        data.update(FindingsTracker(db, actor=principal).stats())
                     except Exception:
                         pass
                     # Simulate the unresolved-identity drafts-dir check: if target identity is None
@@ -179,10 +187,12 @@ def register_query_tools(
     @server.tool(name="deps", description="Show item dependencies.")
     async def deps_tool(id: str, ctx: Context = None) -> dict[str, Any]:  # type: ignore[assignment]
         principal = _principal(holder, ctx)
+        if not principal:
+            return err("E_NO_PRINCIPAL", "principal not yet resolved; call get_instructions first", kind="error")
 
         def _work():
             with database_for_tool(_target(), "deps", allow_hosted=allow_hosted) as db:
-                tracker = TodoTracker(db, actor=principal or "tester")
+                tracker = TodoTracker(db, actor=principal)
                 try:
                     item = tracker.get_item(id)
                     deps = item.get("deps", [])
@@ -210,10 +220,12 @@ def register_query_tools(
     @server.tool(name="export", description="Export all items and verifications for backup/audit.")
     async def export_tool(ctx: Context = None) -> dict[str, Any]:  # type: ignore[assignment]
         principal = _principal(holder, ctx)
+        if not principal:
+            return err("E_NO_PRINCIPAL", "principal not yet resolved; call get_instructions first", kind="error")
 
         def _work():
             with database_for_tool(_target(), "export", allow_hosted=allow_hosted) as db:
-                tracker = TodoTracker(db, actor=principal or "tester")
+                tracker = TodoTracker(db, actor=principal)
                 try:
                     data = tracker.export_all()
                     return ok({"items": data})
@@ -227,10 +239,12 @@ def register_query_tools(
     )
     async def check_scope_tool(id: str, files: list[str] | None = None, ctx: Context = None) -> dict[str, Any]:  # type: ignore[assignment]
         principal = _principal(holder, ctx)
+        if not principal:
+            return err("E_NO_PRINCIPAL", "principal not yet resolved; call get_instructions first", kind="error")
 
         def _work():
             with database_for_tool(_target(), "check_scope", allow_hosted=allow_hosted) as db:
-                tracker = TodoTracker(db, actor=principal or "tester")
+                tracker = TodoTracker(db, actor=principal)
                 try:
                     if files is None:
                         # Use the pinned git engine to compute changed files
@@ -248,10 +262,12 @@ def register_query_tools(
     @server.tool(name="verify_list", description="List stored verifications, never run them.")
     async def verify_list_tool(id: str, ctx: Context = None) -> dict[str, Any]:  # type: ignore[assignment]
         principal = _principal(holder, ctx)
+        if not principal:
+            return err("E_NO_PRINCIPAL", "principal not yet resolved; call get_instructions first", kind="error")
 
         def _work():
             with database_for_tool(_target(), "verify_list", allow_hosted=allow_hosted) as db:
-                tracker = TodoTracker(db, actor=principal or "tester")
+                tracker = TodoTracker(db, actor=principal)
                 try:
                     item = tracker.get_item(id)
                     verifications = item.get("verifications", [])
@@ -274,10 +290,12 @@ def register_query_tools(
     @server.tool(name="lint", description="Planning-quality check, read-only.")
     async def lint_tool(id: str, ctx: Context = None) -> dict[str, Any]:  # type: ignore[assignment]
         principal = _principal(holder, ctx)
+        if not principal:
+            return err("E_NO_PRINCIPAL", "principal not yet resolved; call get_instructions first", kind="error")
 
         def _work():
             with database_for_tool(_target(), "lint", allow_hosted=allow_hosted) as db:
-                tracker = TodoTracker(db, actor=principal or "tester")
+                tracker = TodoTracker(db, actor=principal)
                 try:
                     issues = tracker.lint(id)
                     return ok({"id": id, "issues": issues})
@@ -289,10 +307,12 @@ def register_query_tools(
     @server.tool(name="start_unit", description="No-shell state change — marks a unit in progress.")
     async def start_unit_tool(id: str, wid: str, ctx: Context = None) -> dict[str, Any]:  # type: ignore[assignment]
         principal = _principal(holder, ctx)
+        if not principal:
+            return err("E_NO_PRINCIPAL", "principal not yet resolved; call get_instructions first", kind="error")
 
         def _work():
             with database_for_tool(_target(), "start_unit", allow_hosted=allow_hosted) as db:
-                tracker = TodoTracker(db, actor=principal or "tester")
+                tracker = TodoTracker(db, actor=principal)
                 try:
                     tracker.start_unit(id, wid)
                     return ok({"id": id, "wid": wid, "status": "started"})
