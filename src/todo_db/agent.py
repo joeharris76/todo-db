@@ -199,10 +199,20 @@ class GitScopeEngine:
 class AgentWorkflow:
     """Streamlined, claim-coordinated workflow service for autonomous agents."""
 
-    def __init__(self, tracker: TodoTracker, repo_root: Path | None = None):
+    def __init__(
+        self,
+        tracker: TodoTracker,
+        repo_root: Path | None = None,
+        git_engine: GitScopeEngine | None = None,
+    ):
         self.tracker = tracker
         self.database = tracker.database
-        self.git_engine = GitScopeEngine(repo_root)
+        if git_engine is not None and repo_root is not None:
+            raise TodoError("pass at most one of repo_root and git_engine", code=E_SCOPE_GATE)
+        if git_engine is not None:
+            self.git_engine = git_engine
+        else:
+            self.git_engine = GitScopeEngine(repo_root)
 
     def current_claim(self, principal: str | None = None) -> dict[str, Any] | None:
         p = principal or self.tracker.actor
