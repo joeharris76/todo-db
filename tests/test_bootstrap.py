@@ -600,3 +600,129 @@ def test_e_no_project_pre_open_guard(tmp_path: Path, monkeypatch: pytest.MonkeyP
     assert main(["ready"]) == 2
     err = capsys.readouterr().err
     assert "E_NO_PROJECT" in err
+
+def test_env_db_without_identity_refuses_writes_but_allows_reads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Stale TODO_DB_PATH/TODO_DB_URL without discovered config must not contaminate another tracker.
+
+    Pre-0.2.0 defaults accidentally provided this guard via E_NO_PROJECT; this
+    restores it deliberately: env-sourced DB + identity-from-nowhere => refuse
+    writes with an actionable error while reads still succeed.
+    """
+
+    from todo_db.cli import main
+
+    other_db = tmp_path / "other.sqlite"
+    assert main(["--db", str(other_db), "init", "--project-id", "other-proj", "--repository", "https://example.test/other"]) == 0
+    capsys.readouterr()
+    assert (
+        main(
+            [
+                "--db",
+                str(other_db),
+                "create",
+                "other-item",
+                "--title",
+                "Other item title",
+                "--worktree",
+                "todo-db",
+                "--priority",
+                "medium",
+                "--description",
+                "Other item description long enough.",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+
+    clean_dir = tmp_path / "clean"
+    clean_dir.mkdir()
+    monkeypatch.chdir(clean_dir)
+    monkeypatch.delenv("TODO_DB_CONFIG", raising=False)
+    monkeypatch.delenv("TODO_DB_PROJECT_ID", raising=False)
+    monkeypatch.delenv("TODO_DB_REPOSITORY", raising=False)
+    monkeypatch.setenv("TODO_DB_PATH", str(other_db))
+    monkeypatch.delenv("TODO_DB_URL", raising=False)
+
+    assert (
+        main(
+            [
+                "create",
+                "stale-item",
+                "--title",
+                "Stale item",
+                "--worktree",
+                "todo-db",
+                "--priority",
+                "medium",
+                "--description",
+                "Stale item description long enough.",
+            ]
+        )
+        == 2
+    )
+    err = capsys.readouterr().err
+    assert "refusing to write" in err
+    assert "TODO_DB_PATH/TODO_DB_URL" in err
+    assert "--db" in err
+
+    assert main(["list", "--json"]) == 0
+    listed = json.loads(capsys.readouterr().out)
+    assert any(row["id"] == "other-item" for row in listed)
+
+    import sqlite3
+
+    assert [row[0] for row in sqlite3.connect(other_db).execute("SELECT id FROM items ORDER BY id")] == ["other-item"]
+
+    assert main(["agent", "take", "other-item"]) == 2
+    assert "refusing to write" in capsys.readouterr().err
+
+    assert (
+        main(
+            [
+                "create",
+                "explicit-ok",
+                "--title",
+                "Explicit ok",
+                "--worktree",
+                "todo-db",
+                "--priority",
+                "medium",
+                "--description",
+                "Explicit desc long enough here.",
+                "--project-id",
+                "other-proj",
+                "--repository",
+                "https://example.test/other",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+    assert main(["--db", str(other_db), "create", "via-db", "--title", "Via DB", "--worktree", "todo-db", "--priority", "medium", "--description", "Via DB desc long enough."]) == 0
+    capsys.readouterr()
+
+    monkeypatch.delenv("TODO_DB_PATH", raising=False)
+    monkeypatch.setenv("TODO_DB_URL", str(other_db))
+    assert (
+        main(
+            [
+                "create",
+                "url-stale",
+                "--title",
+                "URL stale",
+                "--worktree",
+                "todo-db",
+                "--priority",
+                "medium",
+                "--description",
+                "URL stale desc long enough.",
+            ]
+        )
+        == 2
+    )
+    assert "TODO_DB_PATH/TODO_DB_URL" in capsys.readouterr().err
+    assert main(["list", "--json"]) == 0
+    capsys.readouterr()
