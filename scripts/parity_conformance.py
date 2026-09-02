@@ -7,8 +7,8 @@ Diffs three surfaces that must stay compatible across the cutover:
   3. tracker + findings DDL (migrations/*.sql combined schema)
 
 Any asymmetry not explicitly allowlisted fails CI.  An explicit allowlist at
-``scripts/parity_allowlist.json`` gates intentional divergences (e.g. wrapper-only
-extensions and standalone-only recovery commands).
+``scripts/parity_allowlist.json`` gates intentional divergences (e.g. standalone-only
+floor commands).
 
 Freeze enforcement: until cutover the in-repo tracker is feature-frozen.  New
 commands or new migrations beyond the frozen snapshot must be allowlisted.

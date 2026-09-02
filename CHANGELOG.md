@@ -4,11 +4,21 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.6.0] - 2026-09-02
 
 ### Removed
 
-- **Pi adapter removed.** `integrations/pi/` and the `@todo-db/pi-adapter` package are removed (ADR 0006 G1). Pi users configure the native MCP server `todo-db-mcp` per `docs/operations/mcp-clients.md`.
+- **BREAKING — `agent` CLI, Pi adapter, and wrapper removed.** The `agent` CLI subcommand group (`todo agent …`, `todo agent instructions`), the Pi adapter package (`@todo-db/pi-adapter` / `integrations/pi/`), and the `_project/scripts/todo` wrapper script (`DEFAULT_WRAPPER_RELATIVE`, `refresh-wrapper`, `init-project --wrapper`, `TODO_DB_PI_PRINCIPAL`, and wrapper key handling) are removed. MCP `todo-db-mcp` (`todo-db[mcp]`) is the sole agent interface (ADR 0006, `docs/design/mcp-interface-migration.md`).
+- **BREAKING — Per-verb planning and mutation CLI surface removed.** The subcommands `create`, `update`, `list`, `show`, `ready`, `stats`, `deps`, `start`, `done`, `defer`, `promote`, `dismiss`, `block`, `unblock`, `release`, `claim`, `check-scope`, `verify`, and `lint`, as well as the `finding` CLI subcommands except `sync` (`create`, `list`, `show`, `candidates`, `dismiss`, `triage`, `link`, `promote`), are removed. Planning and workflow coordination move exclusively to the MCP server.
+
+### Added
+
+- **Minimal floor CLI.** A minimal `todo-db` CLI remains for bootstrap, CI, audit/export, `finding sync`, and human verification/rebaseline: `init`, `init-project`, `migrate`, `doctor`, `audit verify`, `export`, `restore`, `restore-legacy`, `import-yaml`, `finding sync`, `config`, `sweep-stale`, `complete`, `verify-run` (attest-only human verification ladder execution with `--claim-token` and `--actor`), and `rebaseline` (audited baseline update with `--claim-token` and `--actor`).
+
+### Changed
+
+- **`next_action` drops `command`.** `next_action` objects returned by `AgentWorkflow` and MCP tools drop the legacy `command` string property and are strictly machine-readable (`tool` + `arguments`).
+- **Release gate 2.** Rewritten in `docs/operations/release-gates.md` against surviving floor verbs (`todo-db audit verify`, `todo-db export`, `todo-db doctor`).
 
 ## [0.5.0] - 2026-09-02
 

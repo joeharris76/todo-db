@@ -1,6 +1,6 @@
 # MCP client registration for `todo-db`
 
-`todo-db` ships one MCP server (`todo-db-mcp`, installed as `todo-db[mcp]`). One server instance = one project = one worktree. Launch it over **stdio**; HTTP is out of scope for 0.5.0.
+`todo-db` ships one MCP server (`todo-db-mcp`, installed as `todo-db[mcp]`). One server instance = one project = one worktree. Launch it over **stdio**; HTTP is out of scope.
 
 ```
 todo-db-mcp --actor <principal> [--repo-root <path>] [--profile {agent,full}] [--log-level {debug,info,warning,error}] [--allow-hosted]
@@ -186,7 +186,7 @@ Then drive the workflow:
 3. `progress` per work unit
 4. `finish` (model-assert only; a stale fingerprint → `E_VERIFY_GATE`, a human runs `todo-db verify-run` from the floor CLI)
 
-All `next_action` objects returned by `next`/`take`/`progress`/`context` are machine-readable: `{"tool": "...", "arguments": {...}, "command": "todo agent ..."}` (the `command` string is dual-emitted for 0.5.0 and dropped in 0.6.0).
+All `next_action` objects returned by `next`/`take`/`progress`/`context` are machine-readable: `{"tool": "...", "arguments": {...}}` (the legacy `command` string was dropped in 0.6.0).
 
 ## skill-sync and the `todo` skill
 
