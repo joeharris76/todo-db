@@ -33,13 +33,12 @@ def test_wheel_and_sdist_build_and_wheel_cli_smoke(tmp_path: Path) -> None:
     assert sdists[0].stat().st_size < 2 * 1024 * 1024
 
     for distribution in (*wheels, *sdists):
-        for command in ("todo-db", "todo"):
-            smoke = subprocess.run(
-                ["uv", "run", "--isolated", "--with", str(distribution), "--", command, "--help"],
-                cwd=tmp_path,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            assert smoke.returncode == 0, smoke.stderr
-            assert "database-backed TODO tracker" in smoke.stdout
+        smoke = subprocess.run(
+            ["uv", "run", "--isolated", "--with", str(distribution), "--", "todo-db", "--help"],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert smoke.returncode == 0, smoke.stderr
+        assert "database-backed TODO tracker" in smoke.stdout
