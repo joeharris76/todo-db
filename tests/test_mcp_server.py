@@ -676,3 +676,115 @@ def test_finding_create_writes_draft_on_full_profile(tmp_path):
                 _os.environ.pop("TODO_DB_FINDING_DRAFTS_DIR", None)
 
     anyio.run(go)
+
+
+def _seed_finding(db_path: pathlib.Path, finding_id: str = "2026-07-25-101010-example-finding") -> str:
+    from todo_db import DatabaseConfig, FindingsTracker, TodoDatabase
+
+    db = TodoDatabase.open(DatabaseConfig(path=str(db_path), identity=IDENT))
+    ft = FindingsTracker(db, actor="tester")
+    drafts = db_path.parent.parent / "seed-drafts"
+    drafts.mkdir(parents=True, exist_ok=True)
+    lines = [
+        "---",
+        f"id: {finding_id}",
+        "date: 2026-07-25",
+        "status: open",
+        "finding_kind: framework-gap",
+        'review_context: "unit test"',
+        "evidence:",
+        "  - path: src/todo_db/findings.py",
+        '    pattern: "sync_drafts"',
+        "---",
+        "",
+        f"# Example finding {finding_id}",
+        "",
+        "## Finding",
+        "Reviews miss a class of gaps.",
+        "",
+        "## Why this matters",
+        "The class recurs.",
+        "",
+        "## Suggested next steps",
+        "- [ ] add a check",
+        "",
+    ]
+    (drafts / f"{finding_id}.md").write_text("\n".join(lines), encoding="utf-8")
+    ft.sync_drafts(drafts)
+    db.close()
+    return finding_id
+
+
+def test_finding_promote_creates_item_and_link(tmp_path):
+    db_path = _make_project(tmp_path)
+    fid = _seed_finding(db_path)
+    server = build_server(resolve_launch_config(_args("--repo-root", str(tmp_path), "--actor", "tester", "--profile", "full")))
+
+    import json as _json
+
+    import mcp.types as types
+    from mcp.shared.memory import create_connected_server_and_client_session as connect
+
+    async def go():
+        async with connect(server, client_info=types.Implementation(name="test-promote", version="0")) as session:
+            result = await session.call_tool("finding_promote", {"id": fid, "new_item_id": "promoted-from-finding"})
+            data = _json.loads(result.content[0].text)
+            assert data["ok"] is True, f"finding_promote failed: {data}"
+            assert data["data"]["id"] == fid
+            assert data["data"]["new_item"] == "promoted-from-finding"
+            from todo_db import DatabaseConfig, FindingsTracker, TodoDatabase, TodoTracker
+
+            db = TodoDatabase.open(DatabaseConfig(path=str(db_path), identity=IDENT))
+            ft = FindingsTracker(db, actor="tester")
+            finding = ft.get_finding(fid)
+            assert finding["disposition"] == "promoted"
+            assert any(link["kind"] == "promoted-to" and link["target_item"] == "promoted-from-finding" for link in finding["links"])
+            tracker = TodoTracker(db, actor="tester")
+            item = tracker.get_item("promoted-from-finding")
+            assert item is not None
+            db.close()
+
+    anyio.run(go)
+
+
+def test_finding_link_finding_to_finding_and_validation(tmp_path):
+    db_path = _make_project(tmp_path)
+    fid1 = _seed_finding(db_path, finding_id="2026-07-25-101010-example-finding")
+    fid2 = _seed_finding(db_path, finding_id="2026-07-25-111111-second-finding")
+    server = build_server(resolve_launch_config(_args("--repo-root", str(tmp_path), "--actor", "tester", "--profile", "full")))
+
+    import json as _json
+
+    import mcp.types as types
+    from mcp.shared.memory import create_connected_server_and_client_session as connect
+
+    async def go():
+        async with connect(server, client_info=types.Implementation(name="test-link", version="0")) as session:
+            result = await session.call_tool(
+                "finding_link", {"id": fid1, "kind": "related-finding", "target_finding": fid2}
+            )
+            data = _json.loads(result.content[0].text)
+            assert data["ok"] is True, f"finding_link failed: {data}"
+
+            from todo_db import DatabaseConfig, FindingsTracker, TodoDatabase
+
+            db = TodoDatabase.open(DatabaseConfig(path=str(db_path), identity=IDENT))
+            ft = FindingsTracker(db, actor="tester")
+            links = ft.get_finding(fid1)["links"]
+            assert any(link["kind"] == "related-finding" and link["target_finding"] == fid2 for link in links)
+            db.close()
+
+            result2 = await session.call_tool("finding_link", {"id": fid1, "kind": "informs"})
+            data2 = _json.loads(result2.content[0].text)
+            assert data2["ok"] is False
+            assert "exactly one" in data2["error"].lower()
+
+            result3 = await session.call_tool(
+                "finding_link",
+                {"id": fid1, "kind": "informs", "target_item": "missing-item", "target_finding": fid2},
+            )
+            data3 = _json.loads(result3.content[0].text)
+            assert data3["ok"] is False
+            assert "exactly one" in data3["error"].lower()
+
+    anyio.run(go)

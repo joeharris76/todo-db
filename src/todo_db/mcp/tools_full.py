@@ -401,7 +401,14 @@ def register_full_tools(
         return await run_in_worker(_work)
 
     @server.tool(name="finding_link", description="Link a finding.")
-    async def finding_link_tool(id: str, kind: str, target: str | None = None, ctx: Context = None) -> dict[str, Any]:  # type: ignore[assignment]
+    async def finding_link_tool(  # type: ignore[assignment]
+        id: str,
+        kind: str,
+        target_item: str | None = None,
+        target_finding: str | None = None,
+        note: str | None = None,
+        ctx: Context = None,
+    ) -> dict[str, Any]:
         principal = _principal(holder, ctx)
         if not principal:
             return err(E_NO_PRINCIPAL, "principal not yet resolved; call get_instructions first", kind="error")
@@ -412,7 +419,7 @@ def register_full_tools(
                     from ..findings import FindingsTracker
 
                     ft = FindingsTracker(db, actor=principal)
-                    ft.link(id, kind=kind, target_item=target)
+                    ft.link(id, kind=kind, target_item=target_item, target_finding=target_finding, note=note)
                     return ok({"id": id, "linked": kind})
                 except TodoDBError as exc:
                     return err(getattr(exc, "code", None) or "E_ERROR", str(exc))
@@ -420,7 +427,15 @@ def register_full_tools(
         return await run_in_worker(_work)
 
     @server.tool(name="finding_promote", description="Promote a finding to an item.")
-    async def finding_promote_tool(id: str, ctx: Context = None) -> dict[str, Any]:  # type: ignore[assignment]
+    async def finding_promote_tool(  # type: ignore[assignment]
+        id: str,
+        new_item_id: str,
+        title: str | None = None,
+        priority: str = "medium",
+        worktree: str | None = None,
+        description: str | None = None,
+        ctx: Context = None,
+    ) -> dict[str, Any]:
         principal = _principal(holder, ctx)
         if not principal:
             return err(E_NO_PRINCIPAL, "principal not yet resolved; call get_instructions first", kind="error")
@@ -431,8 +446,8 @@ def register_full_tools(
                     from ..findings import FindingsTracker
 
                     ft = FindingsTracker(db, actor=principal)
-                    new_id = ft.promote(id) if hasattr(ft, "promote") else None
-                    return ok({"id": id, "new_item": new_id})
+                    ft.promote(id, new_item_id, title=title, priority=priority, worktree=worktree, description=description)
+                    return ok({"id": id, "new_item": new_item_id})
                 except TodoDBError as exc:
                     return err(getattr(exc, "code", None) or "E_ERROR", str(exc))
 
