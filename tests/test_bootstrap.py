@@ -70,25 +70,10 @@ def test_discovered_config_supplies_identity_and_db_from_a_subdirectory(
     assert db_path.exists(), "db must resolve against the config root, not the nested cwd"
     assert _bound_identity(db_path) == ("disc-test", "https://example.test/disc")
 
-    assert (
-        main(
-            [
-                "create",
-                "disc-item",
-                "--title",
-                "Discovered item",
-                "--worktree",
-                "local",
-                "--priority",
-                "medium",
-                "--description",
-                "Created with identity and db discovered from config.",
-            ]
-        )
-        == 0
-    )
-    assert main(["show", "disc-item", "--json"]) == 0
-    assert json.loads(capsys.readouterr().out.split("created disc-item\n")[-1])["id"] == "disc-item"
+    # A write verb (floor: sweep-stale) resolves identity and db from the discovered config.
+    assert main(["sweep-stale"]) == 0
+    # A read verb (floor: audit verify) resolves the same discovered boundary.
+    assert main(["audit", "verify"]) == 0
 
 
 def test_config_db_entry_resolves_relative_to_the_config_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -173,55 +158,19 @@ def test_bound_database_serves_callers_that_supply_no_identity(
     assert main(["--db", str(db_path), "init", "--project-id", "bound-test", "--repository", "todo-db"]) == 0
     capsys.readouterr()
 
-    assert (
-        main(
-            [
-                "--db",
-                str(db_path),
-                "create",
-                "bound-item",
-                "--title",
-                "Bound item",
-                "--worktree",
-                "local",
-                "--priority",
-                "medium",
-                "--description",
-                "Written without any caller-supplied identity.",
-            ]
-        )
-        == 0
-    )
-    assert main(["--db", str(db_path), "list"]) == 0
-    assert "bound-item" in capsys.readouterr().out
+    # A write verb against the bound database needs no caller-supplied identity.
+    assert main(["--db", str(db_path), "sweep-stale"]) == 0
+    assert main(["--db", str(db_path), "audit", "verify"]) == 0
 
     # The mismatch guard still enforces when the caller asserts an identity.
-    assert main(["--db", str(db_path), "list", "--project-id", "other", "--repository", "todo-db"]) == 2
+    assert main(["--db", str(db_path), "audit", "verify", "--project-id", "other", "--repository", "todo-db"]) == 2
     assert "project identity mismatch" in capsys.readouterr().err
 
 
 def test_unbound_database_refuses_identityless_writes(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     from todo_db.cli import main
 
-    assert (
-        main(
-            [
-                "--db",
-                str(tmp_path / "fresh.sqlite"),
-                "create",
-                "orphan-item",
-                "--title",
-                "Orphan",
-                "--worktree",
-                "local",
-                "--priority",
-                "medium",
-                "--description",
-                "Must not bind an identity implicitly.",
-            ]
-        )
-        == 2
-    )
+    assert main(["--db", str(tmp_path / "fresh.sqlite"), "sweep-stale"]) == 2
     assert "no bound project identity" in capsys.readouterr().err
 
 
@@ -256,8 +205,7 @@ def test_init_project_scaffolds_config_gitignore_and_wrapper(
     assert "--project-id" not in content, "identity comes from the config file, not hardcoded flags"
 
     # The scaffolded repo now serves identityless calls via discovery.
-    assert main(["stats"]) == 0
-    assert json.loads(capsys.readouterr().out)["items_by_state"] == {}
+    assert main(["audit", "verify"]) == 0
 
 
 def test_init_project_is_idempotent_only_with_force(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -301,7 +249,7 @@ def test_init_project_records_a_custom_db_target_in_the_config(tmp_path: Path) -
     assert (tmp_path / "state" / "tracker.sqlite").exists()
 
     # Discovery resolves the recorded relative path against the config root.
-    assert main(["list"]) == 0
+    assert main(["audit", "verify"]) == 0
 
 
 WRAPPER_URL = "libsql://wrapper-test.aws-us-east-1.turso.io"
@@ -597,7 +545,7 @@ def test_e_no_project_pre_open_guard(tmp_path: Path, monkeypatch: pytest.MonkeyP
     monkeypatch.delenv("TODO_DB_PROJECT_ID", raising=False)
     monkeypatch.delenv("TODO_DB_REPOSITORY", raising=False)
 
-    assert main(["ready"]) == 2
+    assert main(["audit", "verify"]) == 2
     err = capsys.readouterr().err
     assert "E_NO_PROJECT" in err
 
@@ -613,29 +561,24 @@ def test_env_db_without_identity_refuses_writes_but_allows_reads(
 
     from todo_db.cli import main
 
+    from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase, TodoTracker
+
     other_db = tmp_path / "other.sqlite"
     assert main(["--db", str(other_db), "init", "--project-id", "other-proj", "--repository", "https://example.test/other"]) == 0
     capsys.readouterr()
-    assert (
-        main(
-            [
-                "--db",
-                str(other_db),
-                "create",
-                "other-item",
-                "--title",
-                "Other item title",
-                "--worktree",
-                "todo-db",
-                "--priority",
-                "medium",
-                "--description",
-                "Other item description long enough.",
-            ]
-        )
-        == 0
+    _other_config = DatabaseConfig(
+        path=other_db,
+        identity=ProjectIdentity(project_id="other-proj", repository="https://example.test/other"),
     )
-    capsys.readouterr()
+    _other = TodoDatabase.open(_other_config)
+    TodoTracker(_other, actor="seed").create_item(
+        item_id="other-item",
+        title="Other item title",
+        worktree="todo-db",
+        priority="medium",
+        description="Other item description long enough.",
+    )
+    _other.close()
 
     clean_dir = tmp_path / "clean"
     clean_dir.mkdir()
@@ -646,52 +589,25 @@ def test_env_db_without_identity_refuses_writes_but_allows_reads(
     monkeypatch.setenv("TODO_DB_PATH", str(other_db))
     monkeypatch.delenv("TODO_DB_URL", raising=False)
 
-    assert (
-        main(
-            [
-                "create",
-                "stale-item",
-                "--title",
-                "Stale item",
-                "--worktree",
-                "todo-db",
-                "--priority",
-                "medium",
-                "--description",
-                "Stale item description long enough.",
-            ]
-        )
-        == 2
-    )
+    # A write verb (sweep-stale) is refused: env-sourced DB with identity from nowhere.
+    assert main(["sweep-stale"]) == 2
     err = capsys.readouterr().err
     assert "refusing to write" in err
     assert "TODO_DB_PATH/TODO_DB_URL" in err
     assert "--db" in err
 
-    assert main(["list", "--json"]) == 0
-    listed = json.loads(capsys.readouterr().out)
-    assert any(row["id"] == "other-item" for row in listed)
+    # A read verb still succeeds against the env-sourced DB.
+    assert main(["audit", "verify"]) == 0
 
     import sqlite3
 
     assert [row[0] for row in sqlite3.connect(other_db).execute("SELECT id FROM items ORDER BY id")] == ["other-item"]
 
-    assert main(["agent", "take", "other-item"]) == 2
-    assert "refusing to write" in capsys.readouterr().err
-
+    # An explicit identity assertion unblocks the write.
     assert (
         main(
             [
-                "create",
-                "explicit-ok",
-                "--title",
-                "Explicit ok",
-                "--worktree",
-                "todo-db",
-                "--priority",
-                "medium",
-                "--description",
-                "Explicit desc long enough here.",
+                "sweep-stale",
                 "--project-id",
                 "other-proj",
                 "--repository",
@@ -701,28 +617,11 @@ def test_env_db_without_identity_refuses_writes_but_allows_reads(
         == 0
     )
     capsys.readouterr()
-    assert main(["--db", str(other_db), "create", "via-db", "--title", "Via DB", "--worktree", "todo-db", "--priority", "medium", "--description", "Via DB desc long enough."]) == 0
+    assert main(["--db", str(other_db), "sweep-stale"]) == 0
     capsys.readouterr()
 
     monkeypatch.delenv("TODO_DB_PATH", raising=False)
     monkeypatch.setenv("TODO_DB_URL", str(other_db))
-    assert (
-        main(
-            [
-                "create",
-                "url-stale",
-                "--title",
-                "URL stale",
-                "--worktree",
-                "todo-db",
-                "--priority",
-                "medium",
-                "--description",
-                "URL stale desc long enough.",
-            ]
-        )
-        == 2
-    )
+    assert main(["sweep-stale"]) == 2
     assert "TODO_DB_PATH/TODO_DB_URL" in capsys.readouterr().err
-    assert main(["list", "--json"]) == 0
-    capsys.readouterr()
+    assert main(["audit", "verify"]) == 0

@@ -52,13 +52,31 @@ def test_two_process_hosted_claim_race(tmp_path: Path) -> None:
     primary = tmp_path / "primary.sqlite"
     _init_primary(primary)
 
-    # Subprocess command using python -c with fake_hrana loaded
+    # Subprocess command using python -c with fake_hrana loaded. The `claim` CLI
+    # verb was removed in 0.6.0 (MCP is the agent surface); the cross-process
+    # BEGIN IMMEDIATE contention invariant is exercised via the tracker API,
+    # which is exactly what both the CLI floor and the MCP server call.
     script = """
 import sys
 from fake_hrana import install_fake_hrana
 install_fake_hrana(sys.argv[1])
-from todo_db.cli import main
-sys.exit(main(["--db", "libsql://test.turso.io", "--project-id", "latency-test", "--repository", "https://example.test/hosted", "--actor", sys.argv[2], "claim", "item-01"]))
+from todo_db import CredentialMode, DatabaseConfig, ProjectIdentity, TodoDatabase, TodoTracker
+from todo_db.errors import TodoError
+config = DatabaseConfig(
+    path="libsql://test.turso.io",
+    identity=ProjectIdentity(project_id="latency-test", repository="https://example.test/hosted"),
+    auth_token="test-token",
+    credential_mode=CredentialMode.READ_WRITE,
+)
+db = TodoDatabase.open(config)
+try:
+    TodoTracker(db, actor=sys.argv[2]).claim("item-01")
+except TodoError as exc:
+    print(exc, file=sys.stderr)
+    sys.exit(2)
+finally:
+    db.close()
+sys.exit(0)
 """
 
     env = dict(os.environ)

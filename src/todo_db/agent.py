@@ -275,7 +275,6 @@ class AgentWorkflow:
                     "item_id": top["id"],
                     "tool": "take",
                     "arguments": {"id": top["id"]},
-                    "command": f"todo agent take {top['id']}",
                 },
             }
 
@@ -502,7 +501,6 @@ class AgentWorkflow:
                 "details": item["blocked_reason"],
                 "tool": "unblock",
                 "arguments": {"id": item_id},
-                "command": f"todo unblock {item_id}",
             }
         elif sections["open_deferrals"]:
             next_action = {
@@ -510,7 +508,6 @@ class AgentWorkflow:
                 "details": "resolve every open deferral",
                 "tool": "dismiss_deferral",
                 "arguments": {"id": sections["open_deferrals"][0]["id"], "reason": "<reason>"},
-                "commands": [f"todo dismiss {entry['id']} --reason '<reason>'" for entry in sections["open_deferrals"]],
             }
         elif unmet_items:
             next_action = {"action": "wait", "details": f"unmet item dependencies: {', '.join(unmet_items)}"}
@@ -520,7 +517,6 @@ class AgentWorkflow:
                 "item_id": item_id,
                 "tool": "take",
                 "arguments": {"id": item_id},
-                "command": f"todo agent take {item_id}",
             }
         elif not item.get("claim_token"):
             next_action = {
@@ -529,7 +525,6 @@ class AgentWorkflow:
                 "details": "adopt this legacy claim to create a generation token before mutation",
                 "tool": "take",
                 "arguments": {"id": item_id, "session": "<session-id>"},
-                "command": f"todo agent take {item_id} --session <session-id>",
             }
         elif ready_units:
             unit = ready_units[0]
@@ -545,7 +540,6 @@ class AgentWorkflow:
                     "evidence": "<evidence>",
                     "claim_token": item.get("claim_token") or "<claim-token>",
                 },
-                "command": f"todo agent progress {item_id} {unit['id']} --evidence '<evidence>'",
             }
         elif unfinished:
             next_action = {
@@ -553,7 +547,6 @@ class AgentWorkflow:
                 "details": "unfinished work units have no executable dependency order; repair the plan",
                 "tool": "show_item",
                 "arguments": {"id": item_id},
-                "command": f"todo show {item_id} --json",
             }
         else:
             next_action = {
@@ -561,7 +554,6 @@ class AgentWorkflow:
                 "item_id": item_id,
                 "tool": "finish",
                 "arguments": {"id": item_id, "claim_token": item.get("claim_token") or "<claim-token>"},
-                "command": f"todo agent finish {item_id} --claim-token <claim-token>",
             }
 
         git_state = self.git_engine.capture_state()

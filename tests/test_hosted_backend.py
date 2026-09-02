@@ -333,7 +333,7 @@ def test_cli_maps_hosted_auth_error_to_exit_4_with_redacted_output(
     fake.connect = unauthorized_connect
     monkeypatch.setitem(sys.modules, "libsql", fake)
 
-    assert main(["--db", url, "list"]) == 4
+    assert main(["--db", url, "audit", "verify"]) == 4
     err = capsys.readouterr().err
     assert "replace the bounded credential from TODO_DB_RO_AUTH_TOKEN" in err
     assert "turso" not in err.lower()
@@ -359,7 +359,7 @@ def test_cli_uses_legacy_safe_exit_2_without_v2_contract(
     fake.connect = unauthorized_connect
     monkeypatch.setitem(sys.modules, "libsql", fake)
 
-    assert main(["--db", "libsql://legacy-contract.example.test", "list"]) == 2
+    assert main(["--db", "libsql://legacy-contract.example.test", "audit", "verify"]) == 2
     error = capsys.readouterr().err
     assert "E_AUTH_REJECTED" in error
     assert "legacy-safe exit 2" in error
@@ -381,7 +381,7 @@ def test_cli_missing_token_exit_depends_on_v2_contract(
     if contract:
         monkeypatch.setenv("TODO_DB_AUTH_CONTRACT", contract)
 
-    assert main(["--db", "libsql://missing-token.example.test", "list"]) == expected
+    assert main(["--db", "libsql://missing-token.example.test", "audit", "verify"]) == expected
     error = capsys.readouterr().err
     assert "E_AUTH_MISSING" in error
     assert ("legacy-safe exit 2" in error) is (contract is None)
@@ -422,7 +422,7 @@ def test_cli_keeps_non_auth_hosted_errors_generic_with_exit_2(
     fake.connect = unreachable_connect
     monkeypatch.setitem(sys.modules, "libsql", fake)
 
-    assert main(["--db", "libsql://outage-cli.example.test", "list"]) == 2
+    assert main(["--db", "libsql://outage-cli.example.test", "audit", "verify"]) == 2
     err = capsys.readouterr().err
     assert "hosted backend connection failed" in err
     assert "credential rejected" not in err

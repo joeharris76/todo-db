@@ -1633,8 +1633,8 @@ class TodoTracker:
                     ):
                         raise TodoError(
                             f"cannot complete {item_id!r}: verification seq={row['seq']} is not attested "
-                            "to the current workspace; run `todo agent finish "
-                            f"{item_id} --run-verifications` after reviewing the commands",
+                            f"to the current workspace; run `todo-db verify-run {item_id} --claim-token <token> --actor <principal>` "
+                            "after reviewing the commands",
                             code=E_VERIFY_GATE,
                         )
             elif model_assert:

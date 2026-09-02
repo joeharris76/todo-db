@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
@@ -36,56 +35,6 @@ def test_version_handshake(capsys: pytest.CaptureFixture[str]) -> None:
         main(["--version"])
     assert raised.value.code == 0
     assert capsys.readouterr().out == f"todo-db {metadata.version('todo-db')}\n"
-
-
-def test_policy_findings_return_one_with_legacy_output(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase, TodoTracker
-    from todo_db.cli import main
-
-    path = tmp_path / "todo.sqlite"
-    identity = ProjectIdentity(project_id="cli-parity", repository="todo-db")
-    database = TodoDatabase.open(DatabaseConfig(path=path, identity=identity))
-    TodoTracker(database, actor="test").create_item(
-        item_id="lint-item",
-        title="Lint item",
-        worktree="local",
-        priority="medium",
-        description="Item intentionally missing verification rows.",
-        work=[{"id": "w0", "summary": "Exercise policy output"}],
-        scope=[("only_modify", "src/**")],
-    )
-    database.close()
-    common = ["--db", str(path), "--project-id", identity.project_id, "--repository", identity.repository]
-
-    assert main([*common, "lint", "lint-item"]) == 1
-    output = capsys.readouterr()
-    assert output.err == ""
-    assert "lint-item: no verification steps recorded" in output.out
-    assert "1 finding(s) across 1 item(s)" in output.out
-    assert main([*common, "check-scope", "lint-item", "docs/outside.md"]) == 1
-    output = capsys.readouterr()
-    assert output.err == ""
-    assert output.out == "docs/outside.md: outside only_modify allowlist\n"
-
-
-def test_create_from_ignores_benign_unknown_payload_keys(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    from todo_db.cli import main
-
-    path = tmp_path / "todo.sqlite"
-    payload = {
-        "id": "payload-item",
-        "title": "Payload item",
-        "worktree": "local",
-        "priority": "medium",
-        "description": "Payload containing a compatibility-only key.",
-        "compatibility_note": "ignored",
-    }
-    monkeypatch.setattr("sys.stdin.read", lambda: json.dumps(payload))
-    common = ["--db", str(path), "--project-id", "cli-parity", "--repository", "todo-db"]
-    assert main([*common, "create", "--from", "-"]) == 0
-    assert "created payload-item" in capsys.readouterr().out
 
 
 def test_local_import_replace_is_refused_without_deleting_state(

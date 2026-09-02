@@ -414,7 +414,7 @@ def test_context_pagination_and_blocked_remediation(tmp_path: Path) -> None:
         assert second["preserves"] == ["two"]
         assert second["completeness"]["preserves"]["complete"] is True
         assert first["blocked_reason"] == "human decision needed"
-        assert first["next_action"]["command"] == "todo unblock item-pages"
+        assert first["next_action"]["tool"] == "unblock"
     finally:
         db.close()
 
