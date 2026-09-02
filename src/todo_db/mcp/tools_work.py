@@ -14,7 +14,7 @@ from typing import Any
 from mcp.server.fastmcp import Context, FastMCP
 
 from ..agent import AgentWorkflow, GitScopeEngine
-from ..errors import E_MULTIPLE_CLAIMS, TodoDBError
+from ..errors import E_MULTIPLE_CLAIMS, E_NO_PRINCIPAL, TodoDBError
 from ..tracker import TodoTracker
 from .dbpool import database_for_tool
 from .envelope import MAX_BYTES, err, ok
@@ -83,7 +83,7 @@ def register_work_tools(
     async def next_tool(ctx: Context = None) -> dict[str, Any]:  # type: ignore[assignment]
         principal = _principal(holder, ctx)
         if not principal:
-            return err("E_NO_PRINCIPAL", "principal not yet resolved; call get_instructions first", kind="error")
+            return err(E_NO_PRINCIPAL, "principal not yet resolved; call get_instructions first", kind="error")
 
         def _work():
             with database_for_tool(_target(), "next", allow_hosted=allow_hosted) as db:
@@ -115,7 +115,7 @@ def register_work_tools(
     async def take_tool(id: str | None = None, ctx: Context = None) -> dict[str, Any]:  # type: ignore[assignment]
         principal = _principal(holder, ctx)
         if not principal:
-            return err("E_NO_PRINCIPAL", "principal not yet resolved; call get_instructions first", kind="error")
+            return err(E_NO_PRINCIPAL, "principal not yet resolved; call get_instructions first", kind="error")
 
         def _work():
             with database_for_tool(_target(), "take", allow_hosted=allow_hosted) as db:
@@ -143,7 +143,7 @@ def register_work_tools(
     ) -> dict[str, Any]:  # type: ignore[assignment]
         principal = _principal(holder, ctx)
         if not principal:
-            return err("E_NO_PRINCIPAL", "principal not yet resolved; call get_instructions first", kind="error")
+            return err(E_NO_PRINCIPAL, "principal not yet resolved; call get_instructions first", kind="error")
 
         def _work():
             with database_for_tool(_target(), "context", allow_hosted=allow_hosted) as db:
@@ -172,7 +172,7 @@ def register_work_tools(
     async def progress_tool(id: str, wid: str, evidence: str, claim_token: str, ctx: Context = None) -> dict[str, Any]:  # type: ignore[assignment]
         principal = _principal(holder, ctx)
         if not principal:
-            return err("E_NO_PRINCIPAL", "principal not yet resolved; call get_instructions first", kind="error")
+            return err(E_NO_PRINCIPAL, "principal not yet resolved; call get_instructions first", kind="error")
 
         def _work():
             with database_for_tool(_target(), "progress", allow_hosted=allow_hosted) as db:
@@ -194,7 +194,7 @@ def register_work_tools(
     async def finish_tool(id: str, claim_token: str, ctx: Context = None) -> dict[str, Any]:  # type: ignore[assignment]
         principal = _principal(holder, ctx)
         if not principal:
-            return err("E_NO_PRINCIPAL", "principal not yet resolved; call get_instructions first", kind="error")
+            return err(E_NO_PRINCIPAL, "principal not yet resolved; call get_instructions first", kind="error")
 
         def _work():
             with database_for_tool(_target(), "finish", allow_hosted=allow_hosted) as db:
@@ -212,7 +212,7 @@ def register_work_tools(
     async def release_tool(id: str, claim_token: str, ctx: Context = None) -> dict[str, Any]:  # type: ignore[assignment]
         principal = _principal(holder, ctx)
         if not principal:
-            return err("E_NO_PRINCIPAL", "principal not yet resolved; call get_instructions first", kind="error")
+            return err(E_NO_PRINCIPAL, "principal not yet resolved; call get_instructions first", kind="error")
 
         def _work():
             with database_for_tool(_target(), "release", allow_hosted=allow_hosted) as db:
@@ -230,7 +230,7 @@ def register_work_tools(
     async def claims_tool(ctx: Context = None) -> dict[str, Any]:  # type: ignore[assignment]
         principal = _principal(holder, ctx)
         if not principal:
-            return err("E_NO_PRINCIPAL", "principal not yet resolved; call get_instructions first", kind="error")
+            return err(E_NO_PRINCIPAL, "principal not yet resolved; call get_instructions first", kind="error")
 
         def _work():
             with database_for_tool(_target(), "claims", allow_hosted=allow_hosted) as db:

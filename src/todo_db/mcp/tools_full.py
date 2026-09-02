@@ -20,8 +20,8 @@ from typing import Any
 from mcp.server.fastmcp import Context, FastMCP
 
 from ..database import TodoDatabase
-from ..errors import TodoDBError
-from ..findings import default_drafts_dir
+from ..errors import E_NO_PRINCIPAL, TodoDBError, TodoError
+from ..findings import GATE_ATTESTATION, default_drafts_dir
 from ..models import CredentialMode, DatabaseConfig, ProjectIdentity
 from ..tracker import TodoTracker
 from .dbpool import database_for_tool
@@ -71,7 +71,7 @@ def register_full_tools(
     ) -> dict[str, Any]:
         principal = _principal(holder, ctx)
         if not principal:
-            return err("E_NO_PRINCIPAL", "principal not yet resolved; call get_instructions first", kind="error")
+            return err(E_NO_PRINCIPAL, "principal not yet resolved; call get_instructions first", kind="error")
 
         def _work():
             with database_for_tool(_target(), "create_item", allow_hosted=allow_hosted) as db:
@@ -124,7 +124,7 @@ def register_full_tools(
     ) -> dict[str, Any]:
         principal = _principal(holder, ctx)
         if not principal:
-            return err("E_NO_PRINCIPAL", "principal not yet resolved; call get_instructions first", kind="error")
+            return err(E_NO_PRINCIPAL, "principal not yet resolved; call get_instructions first", kind="error")
 
         def _work():
             with database_for_tool(_target(), "update_item", allow_hosted=allow_hosted) as db:
@@ -166,7 +166,7 @@ def register_full_tools(
     async def add_dependency_tool(id: str, needs: str, ctx: Context = None) -> dict[str, Any]:  # type: ignore[assignment]
         principal = _principal(holder, ctx)
         if not principal:
-            return err("E_NO_PRINCIPAL", "principal not yet resolved; call get_instructions first", kind="error")
+            return err(E_NO_PRINCIPAL, "principal not yet resolved; call get_instructions first", kind="error")
 
         def _work():
             with database_for_tool(_target(), "add_dependency", allow_hosted=allow_hosted) as db:
@@ -183,7 +183,7 @@ def register_full_tools(
     async def defer_tool(id: str, summary: str, reason: str | None = None, ctx: Context = None) -> dict[str, Any]:  # type: ignore[assignment]
         principal = _principal(holder, ctx)
         if not principal:
-            return err("E_NO_PRINCIPAL", "principal not yet resolved; call get_instructions first", kind="error")
+            return err(E_NO_PRINCIPAL, "principal not yet resolved; call get_instructions first", kind="error")
 
         def _work():
             with database_for_tool(_target(), "defer", allow_hosted=allow_hosted) as db:
@@ -200,7 +200,7 @@ def register_full_tools(
     async def promote_deferral_tool(deferral_id: int, ctx: Context = None) -> dict[str, Any]:  # type: ignore[assignment]
         principal = _principal(holder, ctx)
         if not principal:
-            return err("E_NO_PRINCIPAL", "principal not yet resolved; call get_instructions first", kind="error")
+            return err(E_NO_PRINCIPAL, "principal not yet resolved; call get_instructions first", kind="error")
 
         def _work():
             with database_for_tool(_target(), "promote_deferral", allow_hosted=allow_hosted) as db:
@@ -217,7 +217,7 @@ def register_full_tools(
     async def dismiss_deferral_tool(deferral_id: int, reason: str, ctx: Context = None) -> dict[str, Any]:  # type: ignore[assignment]
         principal = _principal(holder, ctx)
         if not principal:
-            return err("E_NO_PRINCIPAL", "principal not yet resolved; call get_instructions first", kind="error")
+            return err(E_NO_PRINCIPAL, "principal not yet resolved; call get_instructions first", kind="error")
 
         def _work():
             with database_for_tool(_target(), "dismiss_deferral", allow_hosted=allow_hosted) as db:
@@ -234,7 +234,7 @@ def register_full_tools(
     async def block_tool(id: str, reason: str, ctx: Context = None) -> dict[str, Any]:  # type: ignore[assignment]
         principal = _principal(holder, ctx)
         if not principal:
-            return err("E_NO_PRINCIPAL", "principal not yet resolved; call get_instructions first", kind="error")
+            return err(E_NO_PRINCIPAL, "principal not yet resolved; call get_instructions first", kind="error")
 
         def _work():
             with database_for_tool(_target(), "block", allow_hosted=allow_hosted) as db:
@@ -251,7 +251,7 @@ def register_full_tools(
     async def unblock_tool(id: str, ctx: Context = None) -> dict[str, Any]:  # type: ignore[assignment]
         principal = _principal(holder, ctx)
         if not principal:
-            return err("E_NO_PRINCIPAL", "principal not yet resolved; call get_instructions first", kind="error")
+            return err(E_NO_PRINCIPAL, "principal not yet resolved; call get_instructions first", kind="error")
 
         def _work():
             with database_for_tool(_target(), "unblock", allow_hosted=allow_hosted) as db:
@@ -268,7 +268,7 @@ def register_full_tools(
     async def drop_tool(id: str, reason: str | None = None, ctx: Context = None) -> dict[str, Any]:  # type: ignore[assignment]
         principal = _principal(holder, ctx)
         if not principal:
-            return err("E_NO_PRINCIPAL", "principal not yet resolved; call get_instructions first", kind="error")
+            return err(E_NO_PRINCIPAL, "principal not yet resolved; call get_instructions first", kind="error")
 
         def _work():
             with database_for_tool(_target(), "drop", allow_hosted=allow_hosted) as db:
@@ -284,12 +284,16 @@ def register_full_tools(
     # ------------------------------------------------------------------ findings
     @server.tool(name="finding_create", description="Create a finding draft file only, never the DB.")
     async def finding_create_tool(
-        id: str,
         title: str,
-        finding_text: str,
-        why_matters: str,
-        next_steps: str,
-        disposition: str = "open",
+        finding_kind: str,
+        review_context: str,
+        gate: str = GATE_ATTESTATION,
+        finding: str | None = None,
+        why: str | None = None,
+        next_steps: str | None = None,
+        fixed_by: str | None = None,
+        slug: str | None = None,
+        observed_sha: str | None = None,
         ctx: Context = None,  # type: ignore[assignment]
     ) -> dict[str, Any]:
         try:
@@ -310,16 +314,22 @@ def register_full_tools(
             try:
                 path = create_draft(
                     drafts_dir=drafts_dir,
-                    finding_id=id,
                     title=title,
-                    finding_text=finding_text,
-                    why_matters=why_matters,
+                    finding_kind=finding_kind,
+                    review_context=review_context,
+                    gate=gate,
+                    fixed_by=fixed_by,
+                    slug=slug,
+                    finding=finding,
+                    why=why,
                     next_steps=next_steps,
-                    disposition=disposition,
+                    observed_sha=observed_sha,
                 )
-                return ok({"id": id, "draft": str(path)})
-            except TodoDBError as exc:
+                return ok({"id": path.stem, "draft": str(path)})
+            except (TodoDBError, TodoError) as exc:
                 return err(getattr(exc, "code", None) or "E_ERROR", str(exc))
+            except Exception as exc:
+                return err("E_ERROR", str(exc))
 
         return await run_in_worker(_work)
 
@@ -327,7 +337,7 @@ def register_full_tools(
     async def finding_list_tool(ctx: Context = None) -> dict[str, Any]:  # type: ignore[assignment]
         principal = _principal(holder, ctx)
         if not principal:
-            return err("E_NO_PRINCIPAL", "principal not yet resolved; call get_instructions first", kind="error")
+            return err(E_NO_PRINCIPAL, "principal not yet resolved; call get_instructions first", kind="error")
 
         def _work():
             with database_for_tool(_target(), "finding_list", allow_hosted=allow_hosted) as db:
@@ -348,7 +358,7 @@ def register_full_tools(
     async def finding_show_tool(id: str, ctx: Context = None) -> dict[str, Any]:  # type: ignore[assignment]
         principal = _principal(holder, ctx)
         if not principal:
-            return err("E_NO_PRINCIPAL", "principal not yet resolved; call get_instructions first", kind="error")
+            return err(E_NO_PRINCIPAL, "principal not yet resolved; call get_instructions first", kind="error")
 
         def _work():
             with database_for_tool(_target(), "finding_show", allow_hosted=allow_hosted) as db:
@@ -375,7 +385,7 @@ def register_full_tools(
     ) -> dict[str, Any]:
         principal = _principal(holder, ctx)
         if not principal:
-            return err("E_NO_PRINCIPAL", "principal not yet resolved; call get_instructions first", kind="error")
+            return err(E_NO_PRINCIPAL, "principal not yet resolved; call get_instructions first", kind="error")
 
         def _work():
             with database_for_tool(_target(), "finding_triage", allow_hosted=allow_hosted) as db:
@@ -394,7 +404,7 @@ def register_full_tools(
     async def finding_link_tool(id: str, kind: str, target: str | None = None, ctx: Context = None) -> dict[str, Any]:  # type: ignore[assignment]
         principal = _principal(holder, ctx)
         if not principal:
-            return err("E_NO_PRINCIPAL", "principal not yet resolved; call get_instructions first", kind="error")
+            return err(E_NO_PRINCIPAL, "principal not yet resolved; call get_instructions first", kind="error")
 
         def _work():
             with database_for_tool(_target(), "finding_link", allow_hosted=allow_hosted) as db:
@@ -413,7 +423,7 @@ def register_full_tools(
     async def finding_promote_tool(id: str, ctx: Context = None) -> dict[str, Any]:  # type: ignore[assignment]
         principal = _principal(holder, ctx)
         if not principal:
-            return err("E_NO_PRINCIPAL", "principal not yet resolved; call get_instructions first", kind="error")
+            return err(E_NO_PRINCIPAL, "principal not yet resolved; call get_instructions first", kind="error")
 
         def _work():
             with database_for_tool(_target(), "finding_promote", allow_hosted=allow_hosted) as db:
@@ -432,7 +442,7 @@ def register_full_tools(
     async def finding_dismiss_tool(id: str, reason: str, ctx: Context = None) -> dict[str, Any]:  # type: ignore[assignment]
         principal = _principal(holder, ctx)
         if not principal:
-            return err("E_NO_PRINCIPAL", "principal not yet resolved; call get_instructions first", kind="error")
+            return err(E_NO_PRINCIPAL, "principal not yet resolved; call get_instructions first", kind="error")
 
         def _work():
             with database_for_tool(_target(), "finding_dismiss", allow_hosted=allow_hosted) as db:
@@ -500,7 +510,7 @@ def register_full_tools(
     async def config_get_tool(key: str, ctx: Context = None) -> dict[str, Any]:  # type: ignore[assignment]
         principal = _principal(holder, ctx)
         if not principal:
-            return err("E_NO_PRINCIPAL", "principal not yet resolved; call get_instructions first", kind="error")
+            return err(E_NO_PRINCIPAL, "principal not yet resolved; call get_instructions first", kind="error")
 
         def _work():
             with database_for_tool(_target(), "config_get", allow_hosted=allow_hosted) as db:

@@ -608,3 +608,71 @@ def test_full_tools_return_E_NO_PRINCIPAL_without_resolved_principal(tmp_path, m
                 assert data2["kind"] == "error"
 
     anyio.run(go)
+
+
+def test_deferrals_returns_E_NO_PRINCIPAL_without_resolved_principal(tmp_path, monkeypatch):
+    monkeypatch.delenv("TODO_DB_ACTOR", raising=False)
+    _make_project(tmp_path)
+    launch = resolve_launch_config(_args("--repo-root", str(tmp_path)))
+    assert launch.identity.actor_pending
+    server = build_server(launch)
+
+    import json as _json
+    from unittest.mock import patch
+
+    import mcp.types as types
+    from mcp.shared.memory import create_connected_server_and_client_session as connect
+
+    from todo_db.mcp.identity import PrincipalHolder
+
+    async def go():
+        async with connect(server, client_info=types.Implementation(name="test-no-principal-deferrals", version="0")) as session:
+            with patch.object(PrincipalHolder, "ensure", return_value=None):
+                result = await session.call_tool("deferrals", {})
+                data = _json.loads(result.content[0].text)
+                assert data["ok"] is False
+                assert data["code"] == "E_NO_PRINCIPAL"
+                assert data["kind"] == "error"
+
+    anyio.run(go)
+
+
+def test_finding_create_writes_draft_on_full_profile(tmp_path):
+    _make_project(tmp_path)
+    server = build_server(resolve_launch_config(_args("--repo-root", str(tmp_path), "--actor", "tester", "--profile", "full")))
+
+    import json as _json
+
+    import mcp.types as types
+    from mcp.shared.memory import create_connected_server_and_client_session as connect
+
+    drafts_dir = tmp_path / "finding-drafts"
+    drafts_dir.mkdir(exist_ok=True)
+
+    async def go():
+        async with connect(server, client_info=types.Implementation(name="test-finding-create", version="0")) as session:
+            import os as _os
+
+            _os.environ["TODO_DB_FINDING_DRAFTS_DIR"] = str(drafts_dir)
+            try:
+                result = await session.call_tool(
+                    "finding_create",
+                    {
+                        "title": "Missing review axis",
+                        "finding_kind": "missed-axis",
+                        "review_context": "periodic review",
+                        "gate": "class-not-instance",
+                        "finding": "review never checks error taxonomy",
+                        "why": "classes of blind spots recur",
+                        "next_steps": "- [ ] add checklist item",
+                    },
+                )
+                data = _json.loads(result.content[0].text)
+                assert data["ok"] is True, f"finding_create should succeed: {data}"
+                draft_path = pathlib.Path(data["data"]["draft"])
+                assert draft_path.exists(), f"draft not written: {draft_path}"
+                assert data["data"]["id"] == draft_path.stem
+            finally:
+                _os.environ.pop("TODO_DB_FINDING_DRAFTS_DIR", None)
+
+    anyio.run(go)
