@@ -642,6 +642,14 @@ class AgentWorkflow:
         lint_issues = self.tracker.lint(item_id)
         if lint_issues:
             structural_commands.insert(0, f"todo lint {item_id}")
+        if lint_issues and not structural_commands[1:]:
+            # Lint-only failure retains the claim so the agent can repair and retry (ADR 0006 G7).
+            details = "; ".join(lint_issues)
+            commands = "; then ".join(structural_commands)
+            raise TodoError(
+                f"cannot finish {item_id!r}: {details}; claim retained; run `{commands}`",
+                code=E_LINT_GATE,
+            )
         if lint_issues or structural_commands:
             self.release(item_id, claim_token)
             details = "; ".join(lint_issues) if lint_issues else "structural blockers remain"
