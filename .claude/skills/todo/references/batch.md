@@ -32,7 +32,7 @@ the complete file. Only the serial controller writes it; concurrency is unsuppor
 
 ```text
 TODO: <id>
-STATUS: pending|in_progress|pr_open|waiting|done|blocked
+STATUS: pending|in_progress|pr_open|waiting|done|blocked|auth_blocked
 TRACKER_STATE: <observed state>
 BRANCH: <branch or none>
 WORKTREE: <path or none>
@@ -42,13 +42,46 @@ HEAD: <sha or none>
 VERIFICATION: <concise result>
 GATE_SNAPSHOT: <gate, concise result/link, or none>
 BLOCKER: <owner/reason or none>
+PENDING_WRITES: <none | SEQ:VERB ARGS [; SEQ:VERB ARGS ...]>
 NEXT_ACTION: <exact action>
 ---
 ```
 
+`PENDING_WRITES` (`pending_writes`) is the ordered replay queue for tracker writes that could not
+be flushed due to an auth outage. Each entry records `verb` (e.g. `done`,
+`complete`), full `args` (including evidence, PR linkage, deferral args), and a
+monotonic `sequence` preserving the original order. `none` means no pending
+writes; otherwise entries are `1:done w0 --evidence "..."` ; `2:complete --pr 42`
+in sequence order. Without verb+args+order the done-evidence and PR linkage are
+unrecoverable after an outage.
+
 These are cached observations, not authority for a mutation. Before acting,
 revalidate the facts required by `NEXT_ACTION` under the implementation guide,
 change framework, and repository policy.
+
+### Auth halt and replay
+
+On exit code 4 (hosted auth failure) halt before the next tracker write:
+
+1. Set `STATUS` to `auth_blocked` for every item with an unflushed write.
+2. Append each pending tracker write to `PENDING_WRITES` with its verb, full
+   args, and next sequence number. Do not coarsen, deduplicate, or drop order.
+3. Persist the ledger atomically and stop the batch invocation. Do not advance
+   tracker state, discard evidence, or retry writes while auth is blocked.
+
+After auth recovers (`todo doctor` passes):
+
+1. Replay `PENDING_WRITES` in `sequence` order against live tracker state,
+   executing each verb+args verbatim.
+2. Verify each replay succeeds; on success remove that entry, persist the ledger
+   atomically, and continue to the next sequence.
+3. If a replay conflicts with live state (already applied, claim drift, or
+   validation failure), reconcile against authoritative tracker/Git state, adjust
+   the queued args only as required, and re-record before retrying.
+4. Clear `PENDING_WRITES` to `none` only when the queue is empty; then restore
+   `STATUS` from `auth_blocked` to the revalidated tracker-derived status.
+
+Keep `PENDING_WRITES` out of Git; it lives only in the ignored ledger.
 
 ## Schedule bounded work
 
@@ -63,12 +96,15 @@ At each scheduler boundary:
    hard tracker blocker through the documented tracker command.
 3. Select an item only when its dependencies, including required integration
    merges, are satisfied, tracker state permits claim or resume, and no existing
-   branch, worktree, or PR must be reconciled first.
+   branch, worktree, or PR must be reconciled first. If `STATUS` is
+   `auth_blocked`, require successful auth recovery and replay of
+   `PENDING_WRITES` before selecting that item for new writes.
 4. Start or resume it with `references/implement.md` in a fresh isolated linked
    worktree from the current integration branch. Refresh after dependency merges
    and remove that clean worktree after merge under repository policy.
 5. After one focused retry, classify externally resolvable failures as waiting
    and non-resolvable failures as blocked; record the owner and next action.
+   Auth failures (exit 4) are `auth_blocked`, not `waiting` or `blocked`.
 
 If no item is eligible and the remainder waits on external gates, checkpoint,
 report, and end the batch invocation. Resumption is a new invocation; do not
@@ -87,11 +123,12 @@ Return the envelope above:
 
 - after successful item closeout;
 - before intentionally ending or compacting a worker context; or
-- after a failure that requires later resumption.
+- after a failure that requires later resumption (including `auth_blocked`).
 
 Store the envelope before selecting more work; add no per-operation
 acknowledgements. After an unexpected end, inspect authoritative live state
-before retrying an operation with an unknown outcome.
+before retrying an operation with an unknown outcome. When replaying after
+auth recovery, retry the `PENDING_WRITES` queue before any new tracker writes.
 
 When another item depends on the PR, leave it `pr_open` or `waiting` until
 verified merged. Otherwise use the terminal tracker state after PR creation and
@@ -122,8 +159,11 @@ neither option exists and history grows large, stop with the ledger and resume a
 A resumed context must:
 
 1. confirm that the requested TODO set exactly matches the ledger;
-2. read the ledger once and select its current item and `NEXT_ACTION`;
-3. revalidate only the live facts required by that action; and
+2. read the ledger once and select its current item, `STATUS`, `PENDING_WRITES`,
+   and `NEXT_ACTION`;
+3. revalidate only the live facts required by that action; if `STATUS` is
+   `auth_blocked` or `PENDING_WRITES` is non-empty, recover auth and replay the
+   queue in sequence before issuing new tracker writes; and
 4. continue without replaying completed work orders, logs, or discussion.
 
 ## Final report
@@ -135,5 +175,6 @@ TODO | tracker state | PR/state | head | verification | blocker | next action
 ```
 
 Include the ledger path and distinguish open, merged, tracker-complete, waiting,
-and blocked work. If anything remains non-terminal, provide the exact resume
-action rather than waiting in the current context.
+blocked, and `auth_blocked` (with pending-write count) work. If anything
+remains non-terminal, provide the exact resume action rather than waiting in
+the current context.
