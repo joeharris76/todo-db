@@ -14,6 +14,7 @@ from .errors import (
     E_CLAIM_STALE,
     E_LINT_GATE,
     E_MULTIPLE_CLAIMS,
+    E_NOTHING_READY,
     E_SCOPE_GATE,
     E_VERIFY_GATE,
     TodoError,
@@ -343,7 +344,7 @@ class AgentWorkflow:
                 if not target_id:
                     ready = self.tracker.ready_items()
                     if not ready:
-                        raise TodoError("cannot take item: no ready items in queue")
+                        raise TodoError("cannot take item: no ready items in queue", code=E_NOTHING_READY)
                     target_id = ready[0]["id"]
 
                 self.tracker._claim_internal(
