@@ -13,15 +13,16 @@ import pathlib
 import sqlite3
 from contextlib import redirect_stdout
 
-import anyio
 import pytest
 
-from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase
-from todo_db.mcp import identity as identity_mod
-from todo_db.mcp.identity import Identity, resolve_identity
-from todo_db.mcp.server import build_parser, build_server, resolve_launch_config, startup_check
-from todo_db.mcp.target import resolve_target
-from todo_db.mcp.worker import run_in_worker, shutdown_worker
+anyio = pytest.importorskip("anyio")
+
+from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase  # noqa: E402
+from todo_db.mcp import identity as identity_mod  # noqa: E402
+from todo_db.mcp.identity import Identity, resolve_identity  # noqa: E402
+from todo_db.mcp.server import build_parser, build_server, resolve_launch_config, startup_check  # noqa: E402
+from todo_db.mcp.target import resolve_target  # noqa: E402
+from todo_db.mcp.worker import run_in_worker, shutdown_worker  # noqa: E402
 
 mcp = pytest.importorskip("mcp")
 
