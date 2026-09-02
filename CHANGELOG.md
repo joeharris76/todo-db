@@ -6,6 +6,10 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Removed
+
+- **Pi adapter removed.** `integrations/pi/` and the `@todo-db/pi-adapter` package are removed (ADR 0006 G1). Pi users configure the native MCP server `todo-db-mcp` per `docs/operations/mcp-clients.md`.
+
 ## [0.5.0] - 2026-09-02
 
 ### Added
