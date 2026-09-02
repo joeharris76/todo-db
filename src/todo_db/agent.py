@@ -740,6 +740,74 @@ class AgentWorkflow:
         )
         return {"id": item_id, "state": "done", "status": "completed"}
 
+    def verify_run(
+        self,
+        item_id: str,
+        *,
+        claim_token: str | None = None,
+    ) -> dict[str, Any]:
+        """Attest-only human verification run (ADR 0006 G6).
+
+        Previews every stored verification command, runs the ladder once,
+        re-checks scope before and after, and records the fingerprint
+        attestation. It does **not** complete the item -- the ``finish`` tool
+        remains the closer. The caller's ``--actor`` must be the claim holder.
+        """
+        item = self.tracker.get_item(item_id)
+        if item.get("claimed_by") != self.tracker.actor:
+            raise TodoError(f"{item_id!r} is not claimed by actor {self.tracker.actor!r}")
+
+        tok = item.get("claim_token")
+        if tok:
+            if not claim_token:
+                raise TodoError(f"claim token required on {item_id!r}: E_CLAIM_STALE", code=E_CLAIM_STALE)
+            if tok != claim_token:
+                raise TodoError(f"claim token mismatch on {item_id!r}: E_CLAIM_STALE", code=E_CLAIM_STALE)
+
+        base = item.get("git_baseline")
+        pre_scope = self.tracker.check_scope(item_id, self.git_engine.changed_files(base=base))
+        if pre_scope:
+            raise TodoError(
+                f"cannot verify-run {item_id!r}: scope violations detected: {'; '.join(pre_scope)}",
+                code=E_SCOPE_GATE,
+            )
+
+        verifs = self.database.connection.execute(
+            "SELECT seq, command FROM verifications WHERE item_id = ? ORDER BY seq", (item_id,)
+        ).fetchall()
+        preview = [{"seq": row["seq"], "command": row["command"]} for row in verifs]
+
+        stable_fingerprint = self.git_engine.workspace_fingerprint()
+        for row in verifs:
+            result, output = self.tracker.run_verification(item_id, row["seq"], cwd=self.git_engine.repo_root)
+            if result != "pass":
+                raise TodoError(
+                    f"cannot verify-run {item_id!r}: verification seq {row['seq']} failed: {output.strip()[:200]}",
+                    code=E_VERIFY_GATE,
+                )
+            if self.git_engine.workspace_fingerprint() != stable_fingerprint:
+                raise TodoError(
+                    f"cannot verify-run {item_id!r}: verification seq {row['seq']} modified the Git workspace; "
+                    "review the change and rerun the full ladder",
+                    code=E_VERIFY_GATE,
+                )
+
+        post_scope = self.tracker.check_scope(item_id, self.git_engine.changed_files(base=base))
+        if post_scope:
+            raise TodoError(
+                f"cannot verify-run {item_id!r}: post-verification scope violations: {'; '.join(post_scope)}",
+                code=E_SCOPE_GATE,
+            )
+
+        fingerprint = self.git_engine.workspace_fingerprint()
+        self.tracker.attest_verifications(item_id, fingerprint)
+        return {
+            "id": item_id,
+            "status": "attested",
+            "verifications": preview,
+            "workspace_fingerprint": fingerprint,
+        }
+
     def release(self, item_id: str, claim_token: str | None) -> dict[str, Any]:
         self.tracker.release(item_id, claim_token=claim_token, require_claim_token=True)
         return {"id": item_id, "status": "released"}

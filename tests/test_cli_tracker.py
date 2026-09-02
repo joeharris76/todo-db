@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -151,6 +152,100 @@ def test_cli_yaml_import_requires_explicit_source_and_preserves_items(tmp_path: 
     database = TodoDatabase.open(config)
     try:
         assert TodoTracker(database, actor="check").get_item("yaml-item")["id"] == "yaml-item"
+    finally:
+        database.close()
+
+
+def _git_repo(tmp_path: Path) -> Path:
+    subprocess.run(["git", "init", "--quiet"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True)
+    (tmp_path / ".gitignore").write_text(".todo-db/\n*.sqlite*\n", encoding="utf-8")
+    subprocess.run(["git", "add", ".gitignore"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-m", "init", "--quiet"], cwd=tmp_path, check=True)
+    return tmp_path
+
+
+def test_cli_verify_run_previews_runs_and_attests_without_completing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    from todo_db.cli import main
+
+    _git_repo(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".todo-db").mkdir()
+    db_path = tmp_path / ".todo-db" / "standalone.sqlite"
+    common = ["--db", str(db_path), "--project-id", "vr-cli", "--repository", "todo-db", "--actor", "srv-principal"]
+    assert main([*common, "init"]) == 0
+    capsys.readouterr()
+
+    config = DatabaseConfig(path=db_path, identity=ProjectIdentity(project_id="vr-cli", repository="todo-db"))
+    database = TodoDatabase.open(config)
+    try:
+        TodoTracker(database, actor="seed").create_item(
+            item_id="vr-item",
+            title="Verify-run CLI item",
+            worktree="todo-db",
+            priority="high",
+            description="A floor verify-run smoke item.",
+            verifications=[{"description": "smoke", "command": "true"}],
+        )
+        TodoTracker(database, actor="srv-principal").claim("vr-item")
+        token = TodoTracker(database, actor="srv-principal").get_item("vr-item")["claim_token"]
+    finally:
+        database.close()
+
+    # --actor is required and must name the claim holder.
+    assert main(["--db", str(db_path), "verify-run", "vr-item"]) == 2
+    assert "requires --actor" in capsys.readouterr().err
+
+    assert main([*common, "verify-run", "vr-item", "--claim-token", token]) == 0
+    out, err = capsys.readouterr()
+    assert "[1] true" in err  # every stored command is previewed
+    assert json.loads(out)["status"] == "attested"
+
+    database = TodoDatabase.open(config)
+    try:
+        assert TodoTracker(database, actor="check").get_item("vr-item")["state"] == "active"
+    finally:
+        database.close()
+
+
+def test_cli_rebaseline_records_an_audited_baseline(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys) -> None:
+    from todo_db.cli import main
+
+    _git_repo(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".todo-db").mkdir()
+    db_path = tmp_path / ".todo-db" / "standalone.sqlite"
+    common = ["--db", str(db_path), "--project-id", "rb-cli", "--repository", "todo-db", "--actor", "srv-principal"]
+    assert main([*common, "init"]) == 0
+    capsys.readouterr()
+
+    config = DatabaseConfig(path=db_path, identity=ProjectIdentity(project_id="rb-cli", repository="todo-db"))
+    database = TodoDatabase.open(config)
+    try:
+        TodoTracker(database, actor="seed").create_item(
+            item_id="rb-item",
+            title="Rebaseline CLI item",
+            worktree="todo-db",
+            priority="medium",
+            description="A floor rebaseline smoke item.",
+        )
+        TodoTracker(database, actor="srv-principal").claim("rb-item")
+        token = TodoTracker(database, actor="srv-principal").get_item("rb-item")["claim_token"]
+    finally:
+        database.close()
+
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=tmp_path, capture_output=True, text=True, check=True
+    ).stdout.strip()
+    assert main([*common, "rebaseline", "rb-item", "--reason", "confirm clean head", "--claim-token", token]) == 0
+    capsys.readouterr()
+
+    database = TodoDatabase.open(config)
+    try:
+        assert TodoTracker(database, actor="check").get_item("rb-item")["git_baseline"] == head
     finally:
         database.close()
 

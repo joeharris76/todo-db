@@ -194,6 +194,18 @@ The `todo` skill is `install_mode: mirror`, `tracked: true`, sourced from the pi
 
 Emitting MCP registration files via `skill-sync` is a **feature request against `skill-sync.git`** (it has `settings generate` / `agent-config capture|validate|restore` over a fixed six-file snapshot, not a generic file renderer). That request is tracked separately and sits on the 0.6.0 critical path.
 
+## Migrating from the `_project/scripts/todo` wrapper (0.6.0)
+
+The generated `_project/scripts/todo` wrapper, the `init-project --wrapper` /
+`refresh-wrapper` surface, and `doctor`'s wrapper check were all removed in
+0.6.0. Invoke the floor CLI as `todo-db` directly (it discovers
+`.todo-db/config.json` the same way the wrapper did) or drive the tracker
+through the MCP server.
+
+One-line config migration: **delete the `"wrapper"` key from
+`.todo-db/config.json`.** `todo-db doctor` ignores the stale key rather than
+failing, so this is not urgent, but the key is dead.
+
 ## Hosted backends
 
 Hosted (Turso/libSQL) is **deferred** and gated by `--allow-hosted` plus `TODO_DB_AUTH_TOKEN` / `TODO_DB_CREDENTIAL_COMMAND`. A day-long stdio server against a hosted primary has no reconnect/keepalive; a mid-session 401 → `E_AUTH_REJECTED` (“fresh process”). The server is local-SQLite-first; HTTP/SSE + hosted support is one additive follow-up after ADR 0003 §2.9's harness certifies commit-outcome fault behavior.
