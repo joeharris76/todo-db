@@ -449,38 +449,100 @@
     "description": "Create a finding draft file only, never the DB.",
     "inputSchema": {
       "properties": {
-        "id": {
-          "title": "Id",
-          "type": "string"
-        },
         "title": {
           "title": "Title",
           "type": "string"
         },
-        "finding_text": {
-          "title": "Finding Text",
+        "finding_kind": {
+          "title": "Finding Kind",
           "type": "string"
         },
-        "why_matters": {
-          "title": "Why Matters",
+        "review_context": {
+          "title": "Review Context",
           "type": "string"
+        },
+        "gate": {
+          "default": "class-not-instance",
+          "title": "Gate",
+          "type": "string"
+        },
+        "finding": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Finding"
+        },
+        "why": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Why"
         },
         "next_steps": {
-          "title": "Next Steps",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Next Steps"
         },
-        "disposition": {
-          "default": "open",
-          "title": "Disposition",
-          "type": "string"
+        "fixed_by": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fixed By"
+        },
+        "slug": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Slug"
+        },
+        "observed_sha": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed Sha"
         }
       },
       "required": [
-        "id",
         "title",
-        "finding_text",
-        "why_matters",
-        "next_steps"
+        "finding_kind",
+        "review_context"
       ],
       "title": "finding_create_toolArguments",
       "type": "object"

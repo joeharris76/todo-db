@@ -38,6 +38,7 @@ GATE_CODES = frozenset(
         "E_SCHEMA_BEHIND",
         "E_SCHEMA_DIVERGED",
         "E_IDENTITY",
+        "E_NO_PRINCIPAL",
         "E_AUDIT",
         "E_OUTPUT_TRUNCATED",
         "E_HOSTED",
