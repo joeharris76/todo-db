@@ -101,6 +101,57 @@ def test_target_config_flag_carries_identity(tmp_path):
     assert target.identity == IDENT
 
 
+def test_target_env_db_path_wins_over_url(monkeypatch, tmp_path):
+    _make_project(tmp_path)
+    monkeypatch.setenv("TODO_DB_PATH", "/tmp/from-path.sqlite")
+    monkeypatch.setenv("TODO_DB_URL", "libsql://example.turso.io")
+    target = resolve_target(repo_root=str(tmp_path))
+    assert target.db_target == "/tmp/from-path.sqlite"
+
+
+def test_target_identity_env_wins_over_config_payload(tmp_path, monkeypatch):
+    _make_project(tmp_path)
+    monkeypatch.setenv("TODO_DB_PROJECT_ID", "env-project")
+    monkeypatch.setenv("TODO_DB_REPOSITORY", "https://example.com/env")
+    target = resolve_target(repo_root=str(tmp_path))
+    assert target.identity is not None
+    assert target.identity.project_id == "env-project"
+    assert target.identity.repository == "https://example.com/env"
+
+
+def test_target_partial_identity_raises(tmp_path):
+    (tmp_path / ".git").mkdir(exist_ok=True)
+    cfgdir = tmp_path / ".todo-db"
+    cfgdir.mkdir(exist_ok=True)
+    (cfgdir / "config.json").write_text(json.dumps({"project_id": "only-id"}))
+    with pytest.raises(Exception) as excinfo:
+        resolve_target(repo_root=str(tmp_path))
+    assert "partial project identity" in str(excinfo.value).lower()
+
+    (cfgdir / "config.json").write_text(json.dumps({"repository": "https://example.com/r"}))
+    with pytest.raises(Exception) as excinfo:
+        resolve_target(repo_root=str(tmp_path))
+    assert "partial project identity" in str(excinfo.value).lower()
+
+
+def test_target_partial_identity_env_raises(tmp_path, monkeypatch):
+    # Use an explicit --db so discovery is bypassed and only env+empty payload matters.
+    # With only one of the two env vars set, _identity_from should raise.
+    monkeypatch.setenv("TODO_DB_PROJECT_ID", "only-env-id")
+    monkeypatch.delenv("TODO_DB_REPOSITORY", raising=False)
+    monkeypatch.delenv("TODO_DB_CONFIG", raising=False)
+    monkeypatch.delenv("TODO_DB_PATH", raising=False)
+    monkeypatch.delenv("TODO_DB_URL", raising=False)
+    with pytest.raises(Exception) as excinfo:
+        resolve_target(db="/tmp/test-partial.sqlite", repo_root=str(tmp_path))
+    assert "partial project identity" in str(excinfo.value).lower()
+    monkeypatch.delenv("TODO_DB_PROJECT_ID", raising=False)
+    monkeypatch.setenv("TODO_DB_REPOSITORY", "https://example.com/r")
+    with pytest.raises(Exception) as excinfo:
+        resolve_target(db="/tmp/test-partial.sqlite", repo_root=str(tmp_path))
+    assert "partial project identity" in str(excinfo.value).lower()
+
+
 # --------------------------------------------------------------------------- #
 # startup READ_ONLY open never migrates
 # --------------------------------------------------------------------------- #
@@ -109,6 +160,7 @@ def test_startup_readonly_does_not_migrate_behind_schema(tmp_path):
 
     # Simulate a database one migration behind the package.
     raw = sqlite3.connect(db_path)
+    before_versions = [r[0] for r in raw.execute("SELECT version FROM schema_migrations ORDER BY version").fetchall()]
     raw.execute("DELETE FROM schema_migrations WHERE version = (SELECT max(version) FROM schema_migrations)")
     raw.commit()
     raw.close()
@@ -120,14 +172,16 @@ def test_startup_readonly_does_not_migrate_behind_schema(tmp_path):
         startup_check(target)
     message = str(excinfo.value)
     assert "E_SCHEMA" in message and "migrate" in message
+    assert getattr(excinfo.value, "code", None) == "E_SCHEMA"
 
     after = db_path.stat()
     assert (before.st_size, before.st_mtime_ns) == (after.st_size, after.st_mtime_ns)
 
-    # And no migration row was re-added.
+    # And no migration row was re-added (version list byte-identical to the behind state).
     raw = sqlite3.connect(db_path)
-    versions = [r[0] for r in raw.execute("SELECT version FROM schema_migrations").fetchall()]
+    versions = [r[0] for r in raw.execute("SELECT version FROM schema_migrations ORDER BY version").fetchall()]
     raw.close()
+    assert versions == before_versions[:-1]
     assert len(versions) >= 1
 
 
@@ -190,6 +244,67 @@ def test_identity_session_id_is_stable_and_overridable():
     assert ident.session_id == "sess-123"
     generated = resolve_identity("a", None)
     assert generated.session_id and generated.session_id != Identity("x").session_id
+
+
+def test_identity_sanitizes_client_name():
+    from todo_db.mcp.identity import principal_from_client_info
+
+    class _CI:
+        name = "bad: name\nwith spaces/and:colons"
+
+    principal = principal_from_client_info(_CI())
+    # ':' and newline should be sanitized to '-'
+    assert ":" not in principal.split("mcp:")[1].split(":")[0]
+    assert "\n" not in principal
+    assert principal.startswith("mcp:")
+
+    class _Empty:
+        name = "   "
+
+    assert principal_from_client_info(_Empty()).split(":")[1] == "unknown"
+
+    class _Long:
+        name = "a" * 200
+
+    assert len(principal_from_client_info(_Long()).split(":")[1]) <= 64
+
+
+def test_principal_pinned_via_get_instructions(tmp_path):
+    _make_project(tmp_path)
+    # No --actor, so principal is pending until first tool call
+    launch = resolve_launch_config(_args("--repo-root", str(tmp_path)))
+    assert launch.identity.actor_pending
+    server = build_server(launch)
+
+    import mcp.types as types
+    from mcp.shared.memory import create_connected_server_and_client_session as connect
+
+    async def go():
+        async with connect(server, client_info=types.Implementation(name="my-agent", version="0")) as session:
+            await session.call_tool("get_instructions", {})
+            # After the tool call the holder should be pinned
+            # Access via server's closed-over principal holder is not directly exposed,
+            # but we can verify the tool succeeded and no error was raised.
+            result = await session.call_tool("get_instructions", {})
+            assert "Autonomous Agent Workflow Protocol" in result.content[0].text
+
+    anyio.run(go)
+
+
+def test_main_startup_gate_returns_clean_exit_on_behind_schema(tmp_path, monkeypatch, capsys):
+    from todo_db.mcp.server import main
+
+    db_path = _make_project(tmp_path)
+    raw = sqlite3.connect(db_path)
+    raw.execute("DELETE FROM schema_migrations WHERE version = (SELECT max(version) FROM schema_migrations)")
+    raw.commit()
+    raw.close()
+
+    code = main(["--repo-root", str(tmp_path), "--actor", "tester"])
+    assert code == 2
+    captured = capsys.readouterr()
+    assert "E_SCHEMA" in captured.err
+    assert captured.out == ""
 
 
 # --------------------------------------------------------------------------- #

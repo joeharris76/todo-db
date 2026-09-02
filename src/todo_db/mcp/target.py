@@ -25,6 +25,18 @@ CONFIG_DIRNAME = ".todo-db"
 CONFIG_FILENAME = "config.json"
 DEFAULT_DB_RELATIVE = f"{CONFIG_DIRNAME}/standalone.sqlite"
 
+IDENTITY_SOURCES_HINT = (
+    "supply --project-id/--repository, set TODO_DB_PROJECT_ID/TODO_DB_REPOSITORY, "
+    f"or run from a repo with a discovered {CONFIG_DIRNAME}/{CONFIG_FILENAME} "
+    "(scaffold one with `todo-db init-project`)"
+)
+
+
+def _env_db() -> str | None:
+    """Env-supplied database target. TODO_DB_PATH wins over TODO_DB_URL (matches cli `_resolve_db`)."""
+
+    return os.environ.get("TODO_DB_PATH") or os.environ.get("TODO_DB_URL")
+
 
 @dataclass(frozen=True)
 class ResolvedTarget:
@@ -81,10 +93,15 @@ def _discover_config(repo_root: Path) -> tuple[Path, dict] | None:
 
 
 def _identity_from(payload: dict) -> ProjectIdentity | None:
-    project_id = payload.get("project_id") or os.environ.get("TODO_DB_PROJECT_ID")
-    repository = payload.get("repository") or os.environ.get("TODO_DB_REPOSITORY")
+    # Precedence mirrors cli `_resolve_identity`: env before the discovered config
+    # payload. (The MCP server has no per-field launch flags, so env is the top tier.)
+    project_id = os.environ.get("TODO_DB_PROJECT_ID") or payload.get("project_id")
+    repository = os.environ.get("TODO_DB_REPOSITORY") or payload.get("repository")
     if project_id and repository:
         return ProjectIdentity(project_id=project_id, repository=repository)
+    if project_id or repository:
+        missing = "--repository" if project_id else "--project-id"
+        raise TodoError(f"partial project identity: {missing} is also required ({IDENTITY_SOURCES_HINT})")
     return None
 
 
@@ -113,11 +130,11 @@ def resolve_target(
     # Tier 1/2: an explicit config file (flag or env).
     config_ref = config or os.environ.get("TODO_DB_CONFIG")
     if config_ref:
-        path = Path(config_ref).expanduser()
+        path = Path(config_ref).expanduser().resolve()
         if not path.is_file():
             raise TodoError(f"--config/TODO_DB_CONFIG points to a missing file: {path}")
         payload = _load_config(path)
-        explicit_db = db or os.environ.get("TODO_DB_URL") or os.environ.get("TODO_DB_PATH")
+        explicit_db = db or _env_db()
         db_target = explicit_db or _db_from_config(path, payload)
         return ResolvedTarget(
             db_target=db_target,
@@ -128,7 +145,7 @@ def resolve_target(
         )
 
     # Tier 1/2: an explicit db (flag or env), no config file.
-    explicit_db = db or os.environ.get("TODO_DB_URL") or os.environ.get("TODO_DB_PATH")
+    explicit_db = db or _env_db()
     if explicit_db:
         return ResolvedTarget(
             db_target=explicit_db,

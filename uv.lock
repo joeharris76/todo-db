@@ -1071,7 +1071,7 @@ dev = [
 requires-dist = [
     { name = "cryptography", marker = "extra == 'audit'", specifier = ">=42" },
     { name = "libsql", marker = "extra == 'hosted'", specifier = ">=0.1.11" },
-    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.9.0,<2" },
+    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.10.0,<2" },
     { name = "pyyaml", marker = "extra == 'findings'", specifier = ">=6" },
     { name = "pyyaml", marker = "extra == 'legacy'", specifier = ">=6" },
     { name = "tomli", marker = "python_full_version < '3.11'", specifier = ">=2" },

@@ -21,41 +21,38 @@ from typing import Any, Callable, TypeVar
 
 _T = TypeVar("_T")
 
-# A 1-worker pool *is* the intra-process mutation guard (every DB/git call is
-# serialised through this single thread). WORKER_LOCK is kept as an explicit,
-# documented handle for code that wants to assert/hold the guard directly.
+# A 1-worker pool *is* the intra-process mutation guard: every DB/git call is
+# serialised through this single thread, so no additional lock is needed on the
+# work path. ``_worker_lock`` only guards lazy executor creation/teardown.
 _executor: ThreadPoolExecutor | None = None
 _executor_lock = threading.Lock()
-WORKER_LOCK = threading.RLock()
 
 
 def _get_executor() -> ThreadPoolExecutor:
     global _executor
     with _executor_lock:
         if _executor is None:
-            _executor = ThreadPoolExecutor(
-                max_workers=1, thread_name_prefix="todo-db-mcp-worker"
-            )
+            _executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="todo-db-mcp-worker")
         return _executor
-
-
-def _run_guarded(fn: Callable[..., _T], *args: Any, **kwargs: Any) -> _T:
-    with WORKER_LOCK:
-        return fn(*args, **kwargs)
 
 
 async def run_in_worker(fn: Callable[..., _T], *args: Any, **kwargs: Any) -> _T:
     """Await ``fn(*args, **kwargs)`` executed on the dedicated worker thread."""
 
     loop = asyncio.get_running_loop()
-    call = functools.partial(_run_guarded, fn, *args, **kwargs)
+    call = functools.partial(fn, *args, **kwargs)
     return await loop.run_in_executor(_get_executor(), call)
 
 
 def run_in_worker_sync(fn: Callable[..., _T], *args: Any, **kwargs: Any) -> _T:
-    """Blocking variant for startup paths that run before the event loop."""
+    """Run ``fn`` on the dedicated worker thread and block for its result.
 
-    future = _get_executor().submit(_run_guarded, fn, *args, **kwargs)
+    For startup paths that run before the event loop (e.g. the schema/identity
+    gate in :func:`todo_db.mcp.server.main`). MUST NOT be called from within a
+    worker task -- the single worker thread would wait on itself (self-deadlock).
+    """
+
+    future = _get_executor().submit(fn, *args, **kwargs)
     return future.result()
 
 

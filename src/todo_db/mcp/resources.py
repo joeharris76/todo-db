@@ -8,18 +8,41 @@ Clients differ in what they support, so the text is offered three ways:
   do not surface resources or prompts (and the only tool this foundation ships).
 - ``todo/workflow`` prompt           -- additive; Claude Code surfaces it as a
   slash command, other clients ignore it.
+
+``get_instructions`` doubles as the first-tool-call seam that pins the principal
+from the ``initialize`` handshake when no ``--actor`` was supplied.
 """
 
 from __future__ import annotations
 
-from mcp.server.fastmcp import FastMCP
+import logging
 
+from mcp.server.fastmcp import Context, FastMCP
+
+from .identity import PrincipalHolder
 from .instructions import INSTRUCTIONS
 
 _RESOURCE_URI = "todo://instructions"
+LOG = logging.getLogger("todo_db.mcp")
 
 
-def register_instructions(server: FastMCP) -> None:
+def _client_info(ctx: Context | None):
+    if ctx is None:
+        return None
+    try:
+        return ctx.request_context.session.client_params.clientInfo
+    except AttributeError:
+        return None
+
+
+def register_instructions(server: FastMCP, principal: PrincipalHolder | None = None) -> None:
+    def _pin_principal(ctx: Context | None) -> None:
+        if principal is None or not principal.pending:
+            return
+        pinned = principal.ensure(_client_info(ctx))
+        if pinned is not None:
+            LOG.info("principal: %s (derived from initialize clientInfo)", pinned)
+
     @server.resource(
         _RESOURCE_URI,
         name="todo-instructions",
@@ -38,7 +61,8 @@ def register_instructions(server: FastMCP) -> None:
             "todo/workflow prompt."
         ),
     )
-    def get_instructions() -> str:
+    def get_instructions(ctx: Context = None) -> str:  # type: ignore[assignment]
+        _pin_principal(ctx)
         return INSTRUCTIONS
 
     @server.prompt(

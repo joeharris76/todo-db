@@ -15,10 +15,22 @@ from __future__ import annotations
 
 import getpass
 import os
+import re
 import socket
 from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
+
+_UNSAFE_NAME_CHARS = re.compile(r"[^A-Za-z0-9._-]")
+_MAX_NAME_LEN = 64
+
+
+def _sanitize_client_name(raw: Any) -> str:
+    """Normalise an untrusted ``clientInfo.name`` into a principal-safe token."""
+
+    text = (raw or "").strip() if isinstance(raw, str) else ""
+    text = _UNSAFE_NAME_CHARS.sub("-", text)[:_MAX_NAME_LEN]
+    return text or "unknown"
 
 
 def _user_host() -> str:
@@ -32,7 +44,7 @@ def _user_host() -> str:
 def principal_from_client_info(client_info: Any) -> str:
     """Derive ``mcp:<clientInfo.name>:<user>@<host>`` from an ``initialize`` peer."""
 
-    name = getattr(client_info, "name", None) or "unknown"
+    name = _sanitize_client_name(getattr(client_info, "name", None))
     return f"mcp:{name}:{_user_host()}"
 
 
@@ -62,6 +74,29 @@ class Identity:
         if self.actor:
             return self
         return Identity(session_id=self.session_id, actor=principal_from_client_info(client_info))
+
+
+class PrincipalHolder:
+    """Mutable slot for the resolved principal.
+
+    ``LaunchConfig`` / :class:`Identity` are frozen, so the actor derived from the
+    first ``initialize`` handshake needs somewhere to live. Created at
+    ``build_server`` time and captured by the tool closures; the first tool call
+    pins the principal if ``--actor`` / ``TODO_DB_ACTOR`` left it unset.
+    """
+
+    def __init__(self, identity: Identity) -> None:
+        self._identity = identity
+        self.principal: str | None = identity.actor
+
+    @property
+    def pending(self) -> bool:
+        return self.principal is None
+
+    def ensure(self, client_info: Any | None) -> str | None:
+        if self.principal is None and client_info is not None:
+            self.principal = principal_from_client_info(client_info)
+        return self.principal
 
 
 def resolve_identity(actor: str | None, session: str | None) -> Identity:

@@ -11,16 +11,17 @@ from __future__ import annotations
 
 import argparse
 import logging
+import sqlite3
 import sys
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
-from ..errors import SchemaBehindError, SchemaMismatchError, TodoError
+from ..errors import HostedAuthError, SchemaBehindError, SchemaMismatchError, TodoDBError, TodoError
 from ..models import CredentialMode
-from .identity import Identity, resolve_identity
+from .identity import Identity, PrincipalHolder, resolve_identity
 from .instructions import INSTRUCTIONS
 from .target import ResolvedTarget, resolve_target
-from .worker import run_in_worker, shutdown_worker
+from .worker import run_in_worker_sync, shutdown_worker
 
 LOG = logging.getLogger("todo_db.mcp")
 
@@ -75,7 +76,8 @@ def resolve_launch_config(args: argparse.Namespace) -> LaunchConfig:
     if target.is_hosted and not args.allow_hosted:
         raise TodoError(
             f"refusing to start against a hosted target ({target.db_target!r}): the MCP server is "
-            "local-SQLite-first; pass --allow-hosted to override (experimental, plan §12)."
+            "local-SQLite-first; pass --allow-hosted to override (experimental, plan §12).",
+            code="E_HOSTED",
         )
     identity = resolve_identity(args.actor, args.session)
     return LaunchConfig(
@@ -101,32 +103,35 @@ def startup_check(target: ResolvedTarget) -> None:
     try:
         database = TodoDatabase.open(ro_config)
     except SchemaBehindError as exc:
-        raise TodoError(f"E_SCHEMA: database schema is behind this package; run `todo-db migrate` ({exc})") from exc
+        raise TodoError(
+            f"E_SCHEMA: database schema is behind this package; run `todo-db migrate` ({exc})",
+            code="E_SCHEMA",
+        ) from exc
     except SchemaMismatchError as exc:
         raise TodoError(
-            f"E_SCHEMA: database schema diverged from this package; the package may be stale ({exc})"
+            f"E_SCHEMA: database schema diverged from this package; the package may be stale ({exc})",
+            code="E_SCHEMA",
         ) from exc
     database.close()
 
 
 @asynccontextmanager
-async def _lifespan(server: "FastMCP", launch: LaunchConfig):  # noqa: F821 - forward ref, mcp optional
+async def _lifespan(server: "FastMCP", launch: LaunchConfig, principal: PrincipalHolder):  # noqa: F821 - forward ref, mcp optional
     ident = launch.identity
     LOG.info("session id: %s", ident.session_id)
-    if ident.actor_pending:
+    if principal.pending:
         LOG.info("principal: pending (no --actor/TODO_DB_ACTOR; derived at initialize)")
     else:
-        LOG.info("principal: %s", ident.actor)
+        LOG.info("principal: %s", principal.principal)
     LOG.info(
         "target: %s (source=%s, repo_root=%s)",
         launch.target.db_target,
         launch.target.source,
         launch.target.repo_root,
     )
-    await run_in_worker(startup_check, launch.target)
     LOG.info("startup schema/identity check passed (READ_ONLY, no migration)")
     try:
-        yield {"launch": launch, "identity": ident, "target": launch.target}
+        yield {"launch": launch, "identity": ident, "target": launch.target, "principal": principal}
     finally:
         shutdown_worker(wait=True)
 
@@ -136,18 +141,19 @@ def build_server(launch: LaunchConfig) -> "FastMCP":  # noqa: F821
 
     from .resources import register_instructions
 
+    principal = PrincipalHolder(launch.identity)
+
     @asynccontextmanager
     async def lifespan(server: FastMCP):
-        async with _lifespan(server, launch) as ctx:
+        async with _lifespan(server, launch, principal) as ctx:
             yield ctx
 
     server = FastMCP(
         name="todo-db",
         instructions=INSTRUCTIONS,
-        log_level=launch.log_level.upper(),
         lifespan=lifespan,
     )
-    register_instructions(server)
+    register_instructions(server, principal)
     return server
 
 
@@ -163,12 +169,34 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         launch = resolve_launch_config(args)
+        # Run the startup gate BEFORE entering the MCP run loop, inside the
+        # same try/except that handles all startup failures (B2/B3). This gives
+        # a clean one-line message + exit 2 instead of an uncaught traceback.
+        run_in_worker_sync(startup_check, launch.target)
+        LOG.info("startup schema/identity check passed (READ_ONLY, no migration)")
         server = build_server(launch)
-    except TodoError as exc:
-        print(f"todo-db-mcp: {exc}", file=sys.stderr)
+    except HostedAuthError as exc:
+        label = f"error [{exc.code}]" if exc.code else "error"
+        print(f"{label}: {exc}", file=sys.stderr)
+        return 2
+    except (TodoDBError, TodoError, OSError, ValueError, sqlite3.Error) as exc:
+        msg = str(exc)
+        # Helpful hint for the common first-run failure: no database file yet.
+        if (
+            isinstance(exc, (OSError, sqlite3.OperationalError))
+            or "unable to open" in msg.lower()
+            or "no such file" in msg.lower()
+        ):
+            print(f"error: {exc} (hint: run `todo-db init-project` or `todo-db migrate` first)", file=sys.stderr)
+        else:
+            print(f"error: {exc}", file=sys.stderr)
         return 2
 
-    server.run("stdio")
+    try:
+        server.run("stdio")
+    except (TodoDBError, HostedAuthError, OSError, ValueError, sqlite3.Error) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     return 0
 
 

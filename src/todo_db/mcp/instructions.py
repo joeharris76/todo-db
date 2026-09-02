@@ -1,29 +1,29 @@
 """Workflow instructions surface for the MCP server.
 
-The text below is copied verbatim from ``todo_db.cli`` ``_agent_instructions``
-(the ``todo agent instructions`` output). It is duplicated here on purpose: the
-MCP package must not import from ``cli.py`` (scope + layering). Keep the two in
-sync until the CLI copy is removed in the 0.6.0 destructive phase.
+MCP-shaped guidance: the agent drives the tracker through typed tool calls, not
+shell commands. Verification execution and rebaseline are deliberately **not**
+tools (ADR 0006 G6 / plan §7) -- a human runs those from the floor CLI.
 """
 
 from __future__ import annotations
 
 INSTRUCTIONS = (
     "# Autonomous Agent Workflow Protocol\n\n"
-    "1. Inspect queue or existing claim:\n"
-    "   `todo agent next`\n\n"
-    "2. Claim ready work or re-adopt active claim:\n"
-    "   `todo agent take [id] [--session <session-id>]`\n\n"
-    "3. Retrieve bounded context with guardrails:\n"
-    "   `todo agent context <id>`\n\n"
-    "4. Execute work units sequentially and record progress:\n"
-    "   `todo agent progress <id> <wid> --evidence '<description of completed unit>'`\n\n"
-    "5. Ask the no-shell finish gate to require a current verification attestation:\n"
-    "   `todo agent finish <id> --claim-token <token> --model-assert`\n\n"
-    "6. If verification is stale, a human reviews the printed commands and runs:\n"
-    "   `todo agent finish <id> --claim-token <token> --run-verifications`\n\n"
+    "Drive the tracker through these MCP tools. Every response carries a "
+    "`next_action` naming the tool and arguments to call next.\n\n"
+    "1. `next` -- inspect the ready queue or your existing claim.\n"
+    "2. `take` -- atomically claim a ready item (or re-adopt your active claim). "
+    "The server supplies its own session id.\n"
+    "3. `context` -- fetch bounded, guardrailed context for the claimed item; "
+    "also how you re-read `claim_token` and `next_action` after a restart.\n"
+    "4. `progress` -- mark each work unit done with evidence; this refreshes the lease.\n"
+    "5. `finish` -- the no-shell close gate. Model-assert only: it requires a "
+    "current workspace-fingerprint attestation and rejects a stale pass.\n"
+    "6. `release` -- hand the claim back without finishing.\n\n"
     "Notes:\n"
-    "- A single active claim is enforced per principal.\n"
-    "- Scope rules are checked before and after the single verification run.\n"
-    "- Diverged baselines require `todo agent rebaseline` from a clean worktree.\n"
+    "- One active claim is enforced per principal.\n"
+    "- Scope rules are checked on `progress` and `finish`.\n"
+    "- Verification execution and `rebaseline` are not tools. When `finish` "
+    "reports a stale attestation, a human runs `todo-db verify-run` (or "
+    "`todo-db rebaseline`) from the floor CLI; your `finish` call remains the closer.\n"
 )
