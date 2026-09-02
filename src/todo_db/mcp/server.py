@@ -140,6 +140,7 @@ def build_server(launch: LaunchConfig) -> "FastMCP":  # noqa: F821
     from mcp.server.fastmcp import FastMCP
 
     from .resources import register_instructions
+    from .tools_work import register_work_tools
 
     principal = PrincipalHolder(launch.identity)
 
@@ -154,6 +155,30 @@ def build_server(launch: LaunchConfig) -> "FastMCP":  # noqa: F821
         lifespan=lifespan,
     )
     register_instructions(server, principal)
+    register_work_tools(server, launch.target, principal, launch.identity.session_id, allow_hosted=launch.allow_hosted)
+    # Query and full-profile tools are registered by later items; work tools
+    # are the hot path and are always loaded.
+    if launch.profile == "full":
+        try:
+            from .tools_query import register_query_tools  # type: ignore[import]
+
+            register_query_tools(server, launch.target, principal, launch.identity.session_id, allow_hosted=launch.allow_hosted)
+        except ImportError:
+            pass
+        try:
+            from .tools_full import register_full_tools  # type: ignore[import]
+
+            register_full_tools(server, launch.target, principal, launch.identity.session_id, allow_hosted=launch.allow_hosted)
+        except ImportError:
+            pass
+    else:
+        # Default profile also includes query tools per plan §5 (cheap + constantly wanted).
+        try:
+            from .tools_query import register_query_tools  # type: ignore[import]
+
+            register_query_tools(server, launch.target, principal, launch.identity.session_id, allow_hosted=launch.allow_hosted)
+        except ImportError:
+            pass
     return server
 
 

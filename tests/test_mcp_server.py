@@ -64,7 +64,12 @@ def test_server_starts_and_lists_only_get_instructions(tmp_path):
     async def go():
         async with connect(server, client_info=types.Implementation(name="x", version="0")) as session:
             tools = await session.list_tools()
-            assert [t.name for t in tools.tools] == ["get_instructions"]
+            names = {t.name for t in tools.tools}
+            # Foundation had only get_instructions; after mcp-tools-work the
+            # six hot-path tools plus claims are always loaded (plan §5).
+            assert "get_instructions" in names
+            for expected in ("next", "take", "context", "progress", "finish", "release", "claims"):
+                assert expected in names, f"missing work tool {expected!r} in {sorted(names)}"
             result = await session.call_tool("get_instructions", {})
             assert "Autonomous Agent Workflow Protocol" in result.content[0].text
             resources = await session.list_resources()
@@ -373,3 +378,160 @@ def test_package_source_never_prints_to_stdout():
             if stripped.startswith("print(") and "file=sys.stderr" not in line:
                 offenders.append(f"{path.name}:{lineno}")
     assert not offenders, f"stdout print() calls found: {offenders}"
+
+
+# --------------------------------------------------------------------------- #
+# work tools (mcp-tools-work)
+# --------------------------------------------------------------------------- #
+def _make_item(db_path, ident, item_id="item-work", title="Work item for MCP"):
+    from todo_db import DatabaseConfig, TodoDatabase, TodoTracker
+
+    db = TodoDatabase.open(DatabaseConfig(path=str(db_path), identity=ident))
+    tracker = TodoTracker(db, actor="tester")
+    tracker.create_item(
+        item_id=item_id,
+        title=title,
+        worktree="todo-db",
+        priority="high",
+        description="desc for test item with enough length to pass validation",
+        work=[{"id": "w0", "summary": "step for w0"}],
+        scope={"only_modify": ["src/**"]},
+        verifications=[{"description": "pass", "command": "true", "expected": ""}],
+    )
+    db.close()
+
+
+def test_work_tools_next_take_progress_context_finish_flow(tmp_path):
+    import subprocess
+
+    db_path = _make_project(tmp_path)
+    subprocess.run(["git", "init", "--quiet"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True)
+    _make_item(db_path, IDENT, item_id="item-flow", title="Flow item for work tools")
+    server = build_server(resolve_launch_config(_args("--repo-root", str(tmp_path), "--actor", "tester")))
+
+    import json as _json
+
+    import mcp.types as types
+    from mcp.shared.memory import create_connected_server_and_client_session as connect
+
+    async def go():
+        async with connect(server, client_info=types.Implementation(name="test-work", version="0")) as session:
+            # next -> ready
+            nxt = await session.call_tool("next", {})
+            nxt_data = _json.loads(nxt.content[0].text)
+            assert nxt_data["ok"] is True
+            assert nxt_data["data"]["status"] == "ready"
+            assert nxt_data["data"]["next_action"]["tool"] == "take"
+
+            # take
+            took = await session.call_tool("take", {"id": "item-flow"})
+            took_data = _json.loads(took.content[0].text)
+            assert took_data["ok"] is True
+            assert took_data["data"]["id"] == "item-flow"
+            token = took_data["data"]["claim_token"]
+            assert token
+
+            # context re-reads claim_token and next_action
+            ctx = await session.call_tool("context", {"id": "item-flow"})
+            ctx_data = _json.loads(ctx.content[0].text)
+            assert ctx_data["ok"] is True
+            assert ctx_data["data"]["claim_token"] == token
+            assert ctx_data["data"]["next_action"]["tool"] == "progress"
+
+            # progress
+            prog = await session.call_tool(
+                "progress", {"id": "item-flow", "wid": "w0", "evidence": "did w0", "claim_token": token}
+            )
+            prog_data = _json.loads(prog.content[0].text)
+            assert prog_data["ok"] is True
+            # after progress, next_action should be finish (tool)
+            assert prog_data["data"]["next_action"]["tool"] == "finish"
+
+            # finish without attest -> E_VERIFY_GATE gate
+            fin = await session.call_tool("finish", {"id": "item-flow", "claim_token": token})
+            fin_data = _json.loads(fin.content[0].text)
+            assert fin_data["ok"] is False
+            assert fin_data["code"] == "E_VERIFY_GATE"
+            assert fin_data["kind"] == "gate"
+
+            # release
+            rel = await session.call_tool("release", {"id": "item-flow", "claim_token": token})
+            rel_data = _json.loads(rel.content[0].text)
+            assert rel_data["ok"] is True
+
+    anyio.run(go)
+
+
+def test_work_tools_envelope_and_claims_recovery(tmp_path):
+    import subprocess
+
+    db_path = _make_project(tmp_path)
+    subprocess.run(["git", "init", "--quiet"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True)
+    _make_item(db_path, IDENT, item_id="item-a", title="Item A for claims test")
+    _make_item(db_path, IDENT, item_id="item-b", title="Item B for claims test")
+    server = build_server(resolve_launch_config(_args("--repo-root", str(tmp_path), "--actor", "tester")))
+
+    import json as _json
+
+    import mcp.types as types
+    from mcp.shared.memory import create_connected_server_and_client_session as connect
+
+    async def go():
+        async with connect(server, client_info=types.Implementation(name="test-claims", version="0")) as session:
+            # take first item
+            await session.call_tool("take", {"id": "item-a"})
+            # manually create a second active claim for same principal to force E_MULTIPLE_CLAIMS
+            # (tracker.claim bypasses workflow, so we do it directly on DB)
+            from todo_db import DatabaseConfig, TodoDatabase, TodoTracker
+
+            db = TodoDatabase.open(DatabaseConfig(path=str(db_path), identity=IDENT))
+            tracker = TodoTracker(db, actor="tester")
+            tracker.claim("item-b")
+            db.close()
+
+            nxt = await session.call_tool("next", {})
+            nxt_data = _json.loads(nxt.content[0].text)
+            assert nxt_data["ok"] is False
+            assert nxt_data["code"] == "E_MULTIPLE_CLAIMS"
+            assert nxt_data["kind"] == "gate"
+            # recovery should carry both ids and tokens
+            assert any("item-a" in r for r in nxt_data["recovery"])
+            assert any("item-b" in r for r in nxt_data["recovery"])
+
+            # claims tool should list both
+            claims = await session.call_tool("claims", {})
+            claims_data = _json.loads(claims.content[0].text)
+            assert claims_data["ok"] is True
+            ids = {c["id"] for c in claims_data["data"]["claims"]}
+            assert {"item-a", "item-b"} <= ids
+
+    anyio.run(go)
+
+
+def test_take_empty_queue_returns_nothing_ready(tmp_path):
+    import subprocess
+
+    _make_project(tmp_path)
+    subprocess.run(["git", "init", "--quiet"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True)
+    server = build_server(resolve_launch_config(_args("--repo-root", str(tmp_path), "--actor", "tester")))
+
+    import json as _json
+
+    import mcp.types as types
+    from mcp.shared.memory import create_connected_server_and_client_session as connect
+
+    async def go():
+        async with connect(server, client_info=types.Implementation(name="test-empty", version="0")) as session:
+            res = await session.call_tool("take", {})
+            data = _json.loads(res.content[0].text)
+            assert data["ok"] is False
+            assert data["code"] == "E_NOTHING_READY"
+            assert data["kind"] == "gate"
+
+    anyio.run(go)
