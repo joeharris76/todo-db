@@ -593,7 +593,7 @@
           "title": "Kind",
           "type": "string"
         },
-        "target": {
+        "target_item": {
           "anyOf": [
             {
               "type": "string"
@@ -603,7 +603,31 @@
             }
           ],
           "default": null,
-          "title": "Target"
+          "title": "Target Item"
+        },
+        "target_finding": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target Finding"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note"
         }
       },
       "required": [
@@ -641,10 +665,56 @@
         "id": {
           "title": "Id",
           "type": "string"
+        },
+        "new_item_id": {
+          "title": "New Item Id",
+          "type": "string"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        },
+        "priority": {
+          "default": "medium",
+          "title": "Priority",
+          "type": "string"
+        },
+        "worktree": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Worktree"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
         }
       },
       "required": [
-        "id"
+        "id",
+        "new_item_id"
       ],
       "title": "finding_promote_toolArguments",
       "type": "object"
