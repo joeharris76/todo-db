@@ -1,5 +1,7 @@
 # `@todo-db/pi-adapter`
 
+> **Deprecated — will be removed in 0.6.0.** Use the MCP server `todo-db-mcp` (`todo-db[mcp]`, `docs/operations/mcp-clients.md`) instead. This adapter still works in 0.5.0 but is deleted in 0.6.0. See ADR 0006 and `docs/design/mcp-interface-migration.md`.
+
 Pi extension for the claim-coordinated `todo-db` agent workflow.
 
 ## Safety contract

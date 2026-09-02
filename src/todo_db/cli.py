@@ -1435,7 +1435,9 @@ def _run_finding(database: TodoDatabase, args: argparse.Namespace, project_id: s
 def _agent_offline(args: argparse.Namespace) -> int:
     if args.agent_command == "instructions":
         print(
-            "# Autonomous Agent Workflow Protocol\n\n"
+            "# Autonomous Agent Workflow Protocol — deprecated, will be removed in 0.6.0\n"
+            "# Use the MCP server `todo-db-mcp` (`todo-db[mcp]`, `docs/operations/mcp-clients.md`) instead.\n"
+            "# This `todo agent instructions` output still works in 0.5.0 (ADR 0006).\n\n"
             "1. Inspect queue or existing claim:\n"
             "   `todo agent next`\n\n"
             "2. Claim ready work or re-adopt active claim:\n"
