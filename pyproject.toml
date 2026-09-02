@@ -9,9 +9,14 @@ description = "A project-isolated database-backed TODO tracker"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
+authors = [
+    { name = "Joe Harris" },
+]
+keywords = ["todo", "tracker", "database", "sqlite", "turso"]
 dependencies = [
     "tomli>=2; python_version < '3.11'",
 ]
+urls = { Homepage = "https://github.com/joeharris76/todo-db", Repository = "https://github.com/joeharris76/todo-db", Issues = "https://github.com/joeharris76/todo-db/issues", Changelog = "https://github.com/joeharris76/todo-db/blob/main/CHANGELOG.md" }
 classifiers = [
     "Development Status :: 3 - Alpha",
     "License :: OSI Approved :: MIT License",
@@ -20,11 +25,16 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Office/Business :: Scheduling",
 ]
 
 [project.scripts]
 todo-db = "todo_db.cli:main"
-todo = "todo_db.cli:main"
+# `todo` alias is opt-in to avoid colliding with an existing `todo` binary on
+# `uv tool install` (the name is generic). Enable it locally with:
+#   ln -s "$(which todo-db)" ~/.local/bin/todo   # or: alias todo=todo-db
 
 [project.optional-dependencies]
 hosted = [
