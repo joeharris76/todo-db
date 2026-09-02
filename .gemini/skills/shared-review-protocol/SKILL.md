@@ -121,18 +121,11 @@ Layer 2 captures gaps in the review framework, not defects already found.
 This protocol governs behavior. Project documentation governs storage formats,
 locations, and sweep workflows; it must not duplicate behavioral rules.
 
-For projects without their own binding (capture -> landing -> triage):
+For projects without their own binding:
 
-1. **Capture:** Save `~/.todo-db/finding-drafts/<project-id>/YYYY-MM-DD-HHMMSS-<slug>.md` (prefer
-   `todo finding create --title ... --finding-kind ... --review-context ... --gate class-not-instance` so the
-   skeleton is valid). Hand-written drafts must still satisfy the validator below.
-2. **Frontmatter + body:** include frontmatter `id` (= filename stem), `date`, `status` (`open`), `finding_kind`,
-   `review_context`, and optional `related_paths`, `suggested_sweep`, `todo_id`; and body headings
-   `# <title>` followed by exactly `## Finding`, `## Why this matters`, `## Suggested next steps` (missing any of
-   those three headings fails `finding sync` validation — see `todo/references/findings.md`).
-3. **Landing:** Run `todo finding sync` — the sole credentialed step that validates drafts and inserts them into the
-   tracker (credential-free `finding create`/`candidates` never touch the DB). Report the draft path; promote landed
-   findings through `finding triage` / `finding promote` / `finding dismiss` / `finding link`.
+1. Save `~/.todo-db/finding-drafts/<project-id>/YYYY-MM-DD-HHMMSS-<slug>.md`.
+2. Add frontmatter: `id`, `date`, `status`, `finding_kind`, `review_context`, `related_paths`, `suggested_sweep`, and `todo_id`.
+3. Report the path. Promote through the tracker's deferral or finding flow when available.
 
 ## 6. Solution Fit [REVIEW-FIT-001]
 
@@ -142,13 +135,13 @@ solution that would satisfy that outcome. When no requested outcome is on
 record, restate the outcome from the task or tracker, or note its absence.
 
 For the standard of proof, treat plans, acceptance criteria, tests, CI, and
-self-reports as claims per `references/adversarial-review.md` lines 21-22 and
+self-reports as claims per `references/adversarial-review.md` (§ Review method — "Treat self-reports, commit messages, and PR descriptions as claims") and
 [REVIEW-DEPTH-001]. They do not establish that the chosen design is appropriate.
 
 Flag a mechanism whose purpose is not supported by a concrete requirement or
 failure case in the task, the repository, or the tracker, and for which a
 smaller solution meets the same requirement. Cite the evidence for each flag.
-Also flag a mechanism that:
+Also flag a mechanism (with file:line and cited requirement) that:
 
 - freezes incidental wording or repository shape
 - duplicates enforcement that already exists
@@ -183,6 +176,8 @@ and their semantics:
 - `REVIEW-FIT-001`
 - `REVIEW-PARITY-001`
 - `REVIEW-PLAN-RECON-001`
+- `REVIEW-NARROWING-001`
+- `REVIEW-UX-001`
 
 Wording and layout may differ. Missing IDs or contradictory semantics are
 drift. Until reconciled, this skill governs behavior and the project document
@@ -201,3 +196,15 @@ plan's scope touches:
 
 The plan must cite each one or explicitly supersede it. An unexplained
 demotion of recorded priority, or a dropped open gate, is a plan defect.
+
+## 9. Accepted narrowing must be re-homed [REVIEW-NARROWING-001]
+
+When a review finding that narrows an item's scope is accepted, the removed
+scope must be re-homed to a named item or killed with a recorded reason in
+the same disposition. "Removed from scope" alone is not a valid disposition.
+
+## 10. User-experience lens [REVIEW-UX-001]
+
+Apply a user-experience lens distinct from security and correctness: ask who
+performs each remaining manual step after the change lands and flag steps
+with no owner.
