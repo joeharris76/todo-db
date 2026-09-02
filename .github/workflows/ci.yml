@@ -29,6 +29,10 @@ jobs:
         run: |
           bash -n scripts/turso_acceptance.sh
           bash -n scripts/hosted_auth_acceptance.sh
+          python -m py_compile scripts/parity_conformance.py
+
+      - name: Parity conformance (CLI help, exit codes, tracker+findings DDL)
+        run: uv run python scripts/parity_conformance.py --check
 
       # The hosted run stays out of CI on purpose: CI injects credentials into
       # the environment, which is the condition that hid the v0.4.2 failure.

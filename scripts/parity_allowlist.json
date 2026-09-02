@@ -1,0 +1,9 @@
+{
+  "help": [
+    "standalone command 'refresh-wrapper'",
+    "standalone command 'init-project'"
+  ],
+  "exit_codes": [],
+  "ddl": [],
+  "freeze": []
+}

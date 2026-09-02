@@ -1,0 +1,2949 @@
+{
+  "commands": {
+    "agent": {
+      "args": [
+        {
+          "choices": [
+            "instructions",
+            "next",
+            "take",
+            "context",
+            "progress",
+            "finish",
+            "claims",
+            "adopt",
+            "release",
+            "rebaseline"
+          ],
+          "dest": "agent_command",
+          "help": "",
+          "option_strings": [],
+          "required": true
+        }
+      ],
+      "help": "",
+      "subcommands": {
+        "adopt": {
+          "args": [
+            {
+              "choices": null,
+              "dest": "fields",
+              "option_strings": [
+                "--fields"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "limit",
+              "option_strings": [
+                "--limit"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "max_bytes",
+              "option_strings": [
+                "--max-bytes"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "id",
+              "option_strings": [],
+              "required": true
+            },
+            {
+              "choices": null,
+              "dest": "session",
+              "option_strings": [
+                "--session"
+              ],
+              "required": true
+            },
+            {
+              "choices": null,
+              "dest": "project_id",
+              "option_strings": [
+                "--project-id"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "repository",
+              "option_strings": [
+                "--repository"
+              ],
+              "required": false
+            }
+          ],
+          "help": ""
+        },
+        "claims": {
+          "args": [
+            {
+              "choices": null,
+              "dest": "fields",
+              "option_strings": [
+                "--fields"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "limit",
+              "option_strings": [
+                "--limit"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "max_bytes",
+              "option_strings": [
+                "--max-bytes"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "principal",
+              "option_strings": [
+                "--principal"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "project_id",
+              "option_strings": [
+                "--project-id"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "repository",
+              "option_strings": [
+                "--repository"
+              ],
+              "required": false
+            }
+          ],
+          "help": ""
+        },
+        "context": {
+          "args": [
+            {
+              "choices": null,
+              "dest": "fields",
+              "option_strings": [
+                "--fields"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "limit",
+              "option_strings": [
+                "--limit"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "max_bytes",
+              "option_strings": [
+                "--max-bytes"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "id",
+              "option_strings": [],
+              "required": true
+            },
+            {
+              "choices": null,
+              "dest": "unit_limit",
+              "option_strings": [
+                "--unit-limit"
+              ],
+              "required": false
+            },
+            {
+              "choices": [
+                "work_units",
+                "scope",
+                "preserves",
+                "anti_patterns",
+                "verifications",
+                "item_dependencies",
+                "open_deferrals",
+                "prior_art"
+              ],
+              "dest": "section",
+              "option_strings": [
+                "--section"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "cursor",
+              "option_strings": [
+                "--cursor"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "project_id",
+              "option_strings": [
+                "--project-id"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "repository",
+              "option_strings": [
+                "--repository"
+              ],
+              "required": false
+            }
+          ],
+          "help": ""
+        },
+        "finish": {
+          "args": [
+            {
+              "choices": null,
+              "dest": "id",
+              "option_strings": [],
+              "required": true
+            },
+            {
+              "choices": null,
+              "dest": "claim_token",
+              "option_strings": [
+                "--claim-token"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "model_assert",
+              "option_strings": [
+                "--model-assert"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "run_verifications",
+              "option_strings": [
+                "--run-verifications"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "pr",
+              "option_strings": [
+                "--pr"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "project_id",
+              "option_strings": [
+                "--project-id"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "repository",
+              "option_strings": [
+                "--repository"
+              ],
+              "required": false
+            }
+          ],
+          "help": ""
+        },
+        "instructions": {
+          "args": [
+            {
+              "choices": null,
+              "dest": "project_id",
+              "option_strings": [
+                "--project-id"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "repository",
+              "option_strings": [
+                "--repository"
+              ],
+              "required": false
+            }
+          ],
+          "help": ""
+        },
+        "next": {
+          "args": [
+            {
+              "choices": null,
+              "dest": "fields",
+              "option_strings": [
+                "--fields"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "limit",
+              "option_strings": [
+                "--limit"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "max_bytes",
+              "option_strings": [
+                "--max-bytes"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "principal",
+              "option_strings": [
+                "--principal"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "project_id",
+              "option_strings": [
+                "--project-id"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "repository",
+              "option_strings": [
+                "--repository"
+              ],
+              "required": false
+            }
+          ],
+          "help": ""
+        },
+        "progress": {
+          "args": [
+            {
+              "choices": null,
+              "dest": "fields",
+              "option_strings": [
+                "--fields"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "limit",
+              "option_strings": [
+                "--limit"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "max_bytes",
+              "option_strings": [
+                "--max-bytes"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "id",
+              "option_strings": [],
+              "required": true
+            },
+            {
+              "choices": null,
+              "dest": "wid",
+              "option_strings": [],
+              "required": true
+            },
+            {
+              "choices": null,
+              "dest": "evidence",
+              "option_strings": [
+                "--evidence"
+              ],
+              "required": true
+            },
+            {
+              "choices": null,
+              "dest": "notes",
+              "option_strings": [
+                "--notes"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "claim_token",
+              "option_strings": [
+                "--claim-token"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "project_id",
+              "option_strings": [
+                "--project-id"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "repository",
+              "option_strings": [
+                "--repository"
+              ],
+              "required": false
+            }
+          ],
+          "help": ""
+        },
+        "rebaseline": {
+          "args": [
+            {
+              "choices": null,
+              "dest": "id",
+              "option_strings": [],
+              "required": true
+            },
+            {
+              "choices": null,
+              "dest": "reason",
+              "option_strings": [
+                "--reason"
+              ],
+              "required": true
+            },
+            {
+              "choices": null,
+              "dest": "claim_token",
+              "option_strings": [
+                "--claim-token"
+              ],
+              "required": true
+            },
+            {
+              "choices": null,
+              "dest": "new_baseline",
+              "option_strings": [
+                "--new-baseline"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "project_id",
+              "option_strings": [
+                "--project-id"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "repository",
+              "option_strings": [
+                "--repository"
+              ],
+              "required": false
+            }
+          ],
+          "help": ""
+        },
+        "release": {
+          "args": [
+            {
+              "choices": null,
+              "dest": "id",
+              "option_strings": [],
+              "required": true
+            },
+            {
+              "choices": null,
+              "dest": "claim_token",
+              "option_strings": [
+                "--claim-token"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "project_id",
+              "option_strings": [
+                "--project-id"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "repository",
+              "option_strings": [
+                "--repository"
+              ],
+              "required": false
+            }
+          ],
+          "help": ""
+        },
+        "take": {
+          "args": [
+            {
+              "choices": null,
+              "dest": "fields",
+              "option_strings": [
+                "--fields"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "limit",
+              "option_strings": [
+                "--limit"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "max_bytes",
+              "option_strings": [
+                "--max-bytes"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "id",
+              "option_strings": [],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "session",
+              "option_strings": [
+                "--session"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "worktree",
+              "option_strings": [
+                "--worktree"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "branch",
+              "option_strings": [
+                "--branch"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "project_id",
+              "option_strings": [
+                "--project-id"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "repository",
+              "option_strings": [
+                "--repository"
+              ],
+              "required": false
+            }
+          ],
+          "help": ""
+        }
+      },
+      "usage": "usage: todo-db agent [-h]\n                     {instructions,next,take,context,progress,finish,claims,adopt,release,rebaseline}\n                     ..."
+    },
+    "audit": {
+      "args": [
+        {
+          "choices": [
+            "verify"
+          ],
+          "dest": "audit_command",
+          "help": "",
+          "option_strings": [],
+          "required": true
+        }
+      ],
+      "help": "",
+      "subcommands": {
+        "verify": {
+          "args": [
+            {
+              "choices": null,
+              "dest": "project_id",
+              "option_strings": [
+                "--project-id"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "repository",
+              "option_strings": [
+                "--repository"
+              ],
+              "required": false
+            }
+          ],
+          "help": ""
+        }
+      },
+      "usage": "usage: todo-db audit [-h] {verify} ..."
+    },
+    "block": {
+      "args": [
+        {
+          "choices": null,
+          "dest": "id",
+          "help": "",
+          "option_strings": [],
+          "required": true
+        },
+        {
+          "choices": null,
+          "dest": "reason",
+          "help": "",
+          "option_strings": [
+            "--reason"
+          ],
+          "required": true
+        },
+        {
+          "choices": null,
+          "dest": "project_id",
+          "help": "",
+          "option_strings": [
+            "--project-id"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "repository",
+          "help": "",
+          "option_strings": [
+            "--repository"
+          ],
+          "required": false
+        }
+      ],
+      "help": "",
+      "subcommands": {},
+      "usage": "usage: todo-db block [-h] --reason REASON [--project-id PROJECT_ID]\n                     [--repository REPOSITORY]\n                     id"
+    },
+    "check-scope": {
+      "args": [
+        {
+          "choices": null,
+          "dest": "id",
+          "help": "",
+          "option_strings": [],
+          "required": true
+        },
+        {
+          "choices": null,
+          "dest": "files",
+          "help": "",
+          "option_strings": [],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "base",
+          "help": "",
+          "option_strings": [
+            "--base"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "project_id",
+          "help": "",
+          "option_strings": [
+            "--project-id"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "repository",
+          "help": "",
+          "option_strings": [
+            "--repository"
+          ],
+          "required": false
+        }
+      ],
+      "help": "",
+      "subcommands": {},
+      "usage": "usage: todo-db check-scope [-h] [--base BASE] [--project-id PROJECT_ID]\n                           [--repository REPOSITORY]\n                           id [files ...]"
+    },
+    "claim": {
+      "args": [
+        {
+          "choices": null,
+          "dest": "id",
+          "help": "",
+          "option_strings": [],
+          "required": true
+        },
+        {
+          "choices": null,
+          "dest": "project_id",
+          "help": "",
+          "option_strings": [
+            "--project-id"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "repository",
+          "help": "",
+          "option_strings": [
+            "--repository"
+          ],
+          "required": false
+        }
+      ],
+      "help": "",
+      "subcommands": {},
+      "usage": "usage: todo-db claim [-h] [--project-id PROJECT_ID] [--repository REPOSITORY]\n                     id"
+    },
+    "complete": {
+      "args": [
+        {
+          "choices": null,
+          "dest": "id",
+          "help": "",
+          "option_strings": [],
+          "required": true
+        },
+        {
+          "choices": null,
+          "dest": "pr",
+          "help": "",
+          "option_strings": [
+            "--pr"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "override_verification",
+          "help": "skip the verification ladder and record this override reason in the completion audit event",
+          "option_strings": [
+            "--override-verification"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "project_id",
+          "help": "",
+          "option_strings": [
+            "--project-id"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "repository",
+          "help": "",
+          "option_strings": [
+            "--repository"
+          ],
+          "required": false
+        }
+      ],
+      "help": "",
+      "subcommands": {},
+      "usage": "usage: todo-db complete [-h] [--pr PR] [--override-verification REASON]\n                        [--project-id PROJECT_ID] [--repository REPOSITORY]\n                        id"
+    },
+    "config": {
+      "args": [
+        {
+          "choices": null,
+          "dest": "key",
+          "help": "",
+          "option_strings": [],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "value",
+          "help": "",
+          "option_strings": [],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "project_id",
+          "help": "",
+          "option_strings": [
+            "--project-id"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "repository",
+          "help": "",
+          "option_strings": [
+            "--repository"
+          ],
+          "required": false
+        }
+      ],
+      "help": "",
+      "subcommands": {},
+      "usage": "usage: todo-db config [-h] [--project-id PROJECT_ID] [--repository REPOSITORY]\n                      [key] [value]"
+    },
+    "create": {
+      "args": [
+        {
+          "choices": null,
+          "dest": "id",
+          "help": "",
+          "option_strings": [],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "from_source",
+          "help": "",
+          "option_strings": [
+            "--from"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "title",
+          "help": "",
+          "option_strings": [
+            "--title"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "worktree",
+          "help": "",
+          "option_strings": [
+            "--worktree"
+          ],
+          "required": false
+        },
+        {
+          "choices": [
+            "critical",
+            "high",
+            "medium-high",
+            "medium",
+            "low"
+          ],
+          "dest": "priority",
+          "help": "",
+          "option_strings": [
+            "--priority"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "description",
+          "help": "",
+          "option_strings": [
+            "--description"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "category",
+          "help": "",
+          "option_strings": [
+            "--category"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "approach",
+          "help": "",
+          "option_strings": [
+            "--approach"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "work",
+          "help": "",
+          "option_strings": [
+            "--work"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "needs",
+          "help": "",
+          "option_strings": [
+            "--needs"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "only_modify",
+          "help": "",
+          "option_strings": [
+            "--only-modify"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "do_not_modify",
+          "help": "",
+          "option_strings": [
+            "--do-not-modify"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "preserve",
+          "help": "",
+          "option_strings": [
+            "--preserve"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "verify",
+          "help": "",
+          "option_strings": [
+            "--verify"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "project_id",
+          "help": "",
+          "option_strings": [
+            "--project-id"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "repository",
+          "help": "",
+          "option_strings": [
+            "--repository"
+          ],
+          "required": false
+        }
+      ],
+      "help": "",
+      "subcommands": {},
+      "usage": "usage: todo-db create [-h] [--from - | FILE] [--title TITLE]\n                      [--worktree WORKTREE]\n                      [--priority {critical,high,medium-high,medium,low}]\n                      [--description DESCRIPTION] [--category CATEGORY]\n                      [--approach APPROACH] [--work WID:SUMMARY[:needs=w1,w2]]\n                      [--needs NEEDS] [--only-modify ONLY_MODIFY]\n                      [--do-not-modify DO_NOT_MODIFY] [--preserve PRESERVE]\n                      [--verify DESC[::COMMAND[::EXPECTED]]]\n                      [--project-id PROJECT_ID] [--repository REPOSITORY]\n                      [id]"
+    },
+    "defer": {
+      "args": [
+        {
+          "choices": null,
+          "dest": "id",
+          "help": "",
+          "option_strings": [],
+          "required": true
+        },
+        {
+          "choices": null,
+          "dest": "summary",
+          "help": "",
+          "option_strings": [
+            "--summary"
+          ],
+          "required": true
+        },
+        {
+          "choices": null,
+          "dest": "reason",
+          "help": "",
+          "option_strings": [
+            "--reason"
+          ],
+          "required": true
+        },
+        {
+          "choices": null,
+          "dest": "project_id",
+          "help": "",
+          "option_strings": [
+            "--project-id"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "repository",
+          "help": "",
+          "option_strings": [
+            "--repository"
+          ],
+          "required": false
+        }
+      ],
+      "help": "",
+      "subcommands": {},
+      "usage": "usage: todo-db defer [-h] --summary SUMMARY --reason REASON\n                     [--project-id PROJECT_ID] [--repository REPOSITORY]\n                     id"
+    },
+    "deps": {
+      "args": [
+        {
+          "choices": null,
+          "dest": "id",
+          "help": "",
+          "option_strings": [],
+          "required": true
+        },
+        {
+          "choices": null,
+          "dest": "project_id",
+          "help": "",
+          "option_strings": [
+            "--project-id"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "repository",
+          "help": "",
+          "option_strings": [
+            "--repository"
+          ],
+          "required": false
+        }
+      ],
+      "help": "",
+      "subcommands": {},
+      "usage": "usage: todo-db deps [-h] [--project-id PROJECT_ID] [--repository REPOSITORY]\n                    id"
+    },
+    "dismiss": {
+      "args": [
+        {
+          "choices": null,
+          "dest": "deferral_id",
+          "help": "",
+          "option_strings": [],
+          "required": true
+        },
+        {
+          "choices": null,
+          "dest": "reason",
+          "help": "",
+          "option_strings": [
+            "--reason"
+          ],
+          "required": true
+        },
+        {
+          "choices": null,
+          "dest": "project_id",
+          "help": "",
+          "option_strings": [
+            "--project-id"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "repository",
+          "help": "",
+          "option_strings": [
+            "--repository"
+          ],
+          "required": false
+        }
+      ],
+      "help": "",
+      "subcommands": {},
+      "usage": "usage: todo-db dismiss [-h] --reason REASON [--project-id PROJECT_ID]\n                       [--repository REPOSITORY]\n                       deferral_id"
+    },
+    "doctor": {
+      "args": [
+        {
+          "choices": null,
+          "dest": "json",
+          "help": "",
+          "option_strings": [
+            "--json"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "rw",
+          "help": "also probe the hosted read-write connection",
+          "option_strings": [
+            "--rw"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "project_id",
+          "help": "",
+          "option_strings": [
+            "--project-id"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "repository",
+          "help": "",
+          "option_strings": [
+            "--repository"
+          ],
+          "required": false
+        }
+      ],
+      "help": "",
+      "subcommands": {},
+      "usage": "usage: todo-db doctor [-h] [--json] [--rw] [--project-id PROJECT_ID]\n                      [--repository REPOSITORY]"
+    },
+    "done": {
+      "args": [
+        {
+          "choices": null,
+          "dest": "id",
+          "help": "",
+          "option_strings": [],
+          "required": true
+        },
+        {
+          "choices": null,
+          "dest": "wid",
+          "help": "",
+          "option_strings": [],
+          "required": true
+        },
+        {
+          "choices": null,
+          "dest": "evidence",
+          "help": "",
+          "option_strings": [
+            "--evidence"
+          ],
+          "required": true
+        },
+        {
+          "choices": null,
+          "dest": "project_id",
+          "help": "",
+          "option_strings": [
+            "--project-id"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "repository",
+          "help": "",
+          "option_strings": [
+            "--repository"
+          ],
+          "required": false
+        }
+      ],
+      "help": "",
+      "subcommands": {},
+      "usage": "usage: todo-db done [-h] --evidence EVIDENCE [--project-id PROJECT_ID]\n                    [--repository REPOSITORY]\n                    id wid"
+    },
+    "drop": {
+      "args": [
+        {
+          "choices": null,
+          "dest": "id",
+          "help": "",
+          "option_strings": [],
+          "required": true
+        },
+        {
+          "choices": null,
+          "dest": "reason",
+          "help": "",
+          "option_strings": [
+            "--reason"
+          ],
+          "required": true
+        },
+        {
+          "choices": null,
+          "dest": "project_id",
+          "help": "",
+          "option_strings": [
+            "--project-id"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "repository",
+          "help": "",
+          "option_strings": [
+            "--repository"
+          ],
+          "required": false
+        }
+      ],
+      "help": "",
+      "subcommands": {},
+      "usage": "usage: todo-db drop [-h] --reason REASON [--project-id PROJECT_ID]\n                    [--repository REPOSITORY]\n                    id"
+    },
+    "export": {
+      "args": [
+        {
+          "choices": null,
+          "dest": "project_id",
+          "help": "",
+          "option_strings": [
+            "--project-id"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "repository",
+          "help": "",
+          "option_strings": [
+            "--repository"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "output",
+          "help": "",
+          "option_strings": [
+            "--output",
+            "--out"
+          ],
+          "required": true
+        }
+      ],
+      "help": "",
+      "subcommands": {},
+      "usage": "usage: todo-db export [-h] [--project-id PROJECT_ID] [--repository REPOSITORY]\n                      --output OUTPUT"
+    },
+    "finding": {
+      "args": [
+        {
+          "choices": [
+            "create",
+            "candidates",
+            "list",
+            "show",
+            "sync",
+            "dismiss",
+            "triage",
+            "link",
+            "promote"
+          ],
+          "dest": "finding_command",
+          "help": "",
+          "option_strings": [],
+          "required": true
+        }
+      ],
+      "help": "",
+      "subcommands": {
+        "candidates": {
+          "args": [
+            {
+              "choices": null,
+              "dest": "drafts_dir",
+              "option_strings": [
+                "--drafts-dir"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "project_id",
+              "option_strings": [
+                "--project-id"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "repository",
+              "option_strings": [
+                "--repository"
+              ],
+              "required": false
+            }
+          ],
+          "help": ""
+        },
+        "create": {
+          "args": [
+            {
+              "choices": null,
+              "dest": "title",
+              "option_strings": [
+                "--title"
+              ],
+              "required": true
+            },
+            {
+              "choices": [
+                "assumption",
+                "bug-class",
+                "framework-gap",
+                "missed-axis",
+                "other",
+                "scope-creep"
+              ],
+              "dest": "finding_kind",
+              "option_strings": [
+                "--finding-kind"
+              ],
+              "required": true
+            },
+            {
+              "choices": null,
+              "dest": "review_context",
+              "option_strings": [
+                "--review-context"
+              ],
+              "required": true
+            },
+            {
+              "choices": null,
+              "dest": "gate",
+              "option_strings": [
+                "--gate"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "fixed_by",
+              "option_strings": [
+                "--fixed-by"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "slug",
+              "option_strings": [
+                "--slug"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "finding",
+              "option_strings": [
+                "--finding"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "why",
+              "option_strings": [
+                "--why"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "next_steps",
+              "option_strings": [
+                "--next-steps"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "observed_sha",
+              "option_strings": [
+                "--observed-sha"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "drafts_dir",
+              "option_strings": [
+                "--drafts-dir"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "project_id",
+              "option_strings": [
+                "--project-id"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "repository",
+              "option_strings": [
+                "--repository"
+              ],
+              "required": false
+            }
+          ],
+          "help": ""
+        },
+        "dismiss": {
+          "args": [
+            {
+              "choices": null,
+              "dest": "id",
+              "option_strings": [],
+              "required": true
+            },
+            {
+              "choices": null,
+              "dest": "reason",
+              "option_strings": [
+                "--reason"
+              ],
+              "required": true
+            },
+            {
+              "choices": null,
+              "dest": "project_id",
+              "option_strings": [
+                "--project-id"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "repository",
+              "option_strings": [
+                "--repository"
+              ],
+              "required": false
+            }
+          ],
+          "help": ""
+        },
+        "link": {
+          "args": [
+            {
+              "choices": null,
+              "dest": "id",
+              "option_strings": [],
+              "required": true
+            },
+            {
+              "choices": [
+                "informs",
+                "resolved-by",
+                "related-finding",
+                "duplicate-of"
+              ],
+              "dest": "kind",
+              "option_strings": [
+                "--kind"
+              ],
+              "required": true
+            },
+            {
+              "choices": null,
+              "dest": "to_item",
+              "option_strings": [
+                "--to-item"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "to_finding",
+              "option_strings": [
+                "--to-finding"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "note",
+              "option_strings": [
+                "--note"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "project_id",
+              "option_strings": [
+                "--project-id"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "repository",
+              "option_strings": [
+                "--repository"
+              ],
+              "required": false
+            }
+          ],
+          "help": ""
+        },
+        "list": {
+          "args": [
+            {
+              "choices": [
+                "open",
+                "actionable",
+                "actioned",
+                "dismissed",
+                "promoted"
+              ],
+              "dest": "disposition",
+              "option_strings": [
+                "--disposition"
+              ],
+              "required": false
+            },
+            {
+              "choices": [
+                "urgency",
+                "breadth",
+                "confidence"
+              ],
+              "dest": "rank",
+              "option_strings": [
+                "--rank"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "json",
+              "option_strings": [
+                "--json"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "project_id",
+              "option_strings": [
+                "--project-id"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "repository",
+              "option_strings": [
+                "--repository"
+              ],
+              "required": false
+            }
+          ],
+          "help": ""
+        },
+        "promote": {
+          "args": [
+            {
+              "choices": null,
+              "dest": "id",
+              "option_strings": [],
+              "required": true
+            },
+            {
+              "choices": null,
+              "dest": "to_item",
+              "option_strings": [
+                "--to-item"
+              ],
+              "required": true
+            },
+            {
+              "choices": null,
+              "dest": "title",
+              "option_strings": [
+                "--title"
+              ],
+              "required": false
+            },
+            {
+              "choices": [
+                "critical",
+                "high",
+                "medium-high",
+                "medium",
+                "low"
+              ],
+              "dest": "priority",
+              "option_strings": [
+                "--priority"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "worktree",
+              "option_strings": [
+                "--worktree"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "description",
+              "option_strings": [
+                "--description"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "project_id",
+              "option_strings": [
+                "--project-id"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "repository",
+              "option_strings": [
+                "--repository"
+              ],
+              "required": false
+            }
+          ],
+          "help": ""
+        },
+        "show": {
+          "args": [
+            {
+              "choices": null,
+              "dest": "id",
+              "option_strings": [],
+              "required": true
+            },
+            {
+              "choices": null,
+              "dest": "json",
+              "option_strings": [
+                "--json"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "project_id",
+              "option_strings": [
+                "--project-id"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "repository",
+              "option_strings": [
+                "--repository"
+              ],
+              "required": false
+            }
+          ],
+          "help": ""
+        },
+        "sync": {
+          "args": [
+            {
+              "choices": null,
+              "dest": "drafts_dir",
+              "option_strings": [
+                "--drafts-dir"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "project_id",
+              "option_strings": [
+                "--project-id"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "repository",
+              "option_strings": [
+                "--repository"
+              ],
+              "required": false
+            }
+          ],
+          "help": ""
+        },
+        "triage": {
+          "args": [
+            {
+              "choices": null,
+              "dest": "id",
+              "option_strings": [],
+              "required": true
+            },
+            {
+              "choices": null,
+              "dest": "urgency",
+              "option_strings": [
+                "--urgency"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "breadth",
+              "option_strings": [
+                "--breadth"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "confidence",
+              "option_strings": [
+                "--confidence"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "reconsider_after",
+              "option_strings": [
+                "--reconsider-after"
+              ],
+              "required": false
+            },
+            {
+              "choices": [
+                "actionable",
+                "actioned"
+              ],
+              "dest": "disposition",
+              "option_strings": [
+                "--disposition"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "reason",
+              "option_strings": [
+                "--reason"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "project_id",
+              "option_strings": [
+                "--project-id"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "repository",
+              "option_strings": [
+                "--repository"
+              ],
+              "required": false
+            }
+          ],
+          "help": ""
+        }
+      },
+      "usage": "usage: todo-db finding [-h]\n                       {create,candidates,list,show,sync,dismiss,triage,link,promote}\n                       ..."
+    },
+    "import-yaml": {
+      "args": [
+        {
+          "choices": null,
+          "dest": "todo_dir",
+          "help": "",
+          "option_strings": [
+            "--todo-dir"
+          ],
+          "required": true
+        },
+        {
+          "choices": null,
+          "dest": "done_dir",
+          "help": "",
+          "option_strings": [
+            "--done-dir"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "skip_done",
+          "help": "",
+          "option_strings": [
+            "--skip-done"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "dry_run",
+          "help": "",
+          "option_strings": [
+            "--dry-run"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "verbose",
+          "help": "",
+          "option_strings": [
+            "--verbose"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "replace",
+          "help": "",
+          "option_strings": [
+            "--replace"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "project_id",
+          "help": "",
+          "option_strings": [
+            "--project-id"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "repository",
+          "help": "",
+          "option_strings": [
+            "--repository"
+          ],
+          "required": false
+        }
+      ],
+      "help": "",
+      "subcommands": {},
+      "usage": "usage: todo-db import-yaml [-h] --todo-dir TODO_DIR [--done-dir DONE_DIR]\n                           [--skip-done] [--dry-run] [--verbose] [--replace]\n                           [--project-id PROJECT_ID] [--repository REPOSITORY]"
+    },
+    "init": {
+      "args": [
+        {
+          "choices": null,
+          "dest": "project_id",
+          "help": "",
+          "option_strings": [
+            "--project-id"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "repository",
+          "help": "",
+          "option_strings": [
+            "--repository"
+          ],
+          "required": false
+        }
+      ],
+      "help": "",
+      "subcommands": {},
+      "usage": "usage: todo-db init [-h] [--project-id PROJECT_ID] [--repository REPOSITORY]"
+    },
+    "init-project": {
+      "args": [
+        {
+          "choices": null,
+          "dest": "project_id",
+          "help": "",
+          "option_strings": [
+            "--project-id"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "repository",
+          "help": "",
+          "option_strings": [
+            "--repository"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "db",
+          "help": "local path (default .todo-db/standalone.sqlite) or libsql:// URL, recorded in the config file",
+          "option_strings": [
+            "--db"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "wrapper",
+          "help": "also write an executable wrapper script (default location _project/scripts/todo)",
+          "option_strings": [
+            "--wrapper"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "force",
+          "help": "overwrite an existing config/wrapper",
+          "option_strings": [
+            "--force"
+          ],
+          "required": false
+        }
+      ],
+      "help": "",
+      "subcommands": {},
+      "usage": "usage: todo-db init-project [-h] [--project-id PROJECT_ID]\n                            [--repository REPOSITORY] [--db DB]\n                            [--wrapper [PATH]] [--force]"
+    },
+    "lint": {
+      "args": [
+        {
+          "choices": null,
+          "dest": "id",
+          "help": "",
+          "option_strings": [],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "all",
+          "help": "",
+          "option_strings": [
+            "--all"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "project_id",
+          "help": "",
+          "option_strings": [
+            "--project-id"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "repository",
+          "help": "",
+          "option_strings": [
+            "--repository"
+          ],
+          "required": false
+        }
+      ],
+      "help": "",
+      "subcommands": {},
+      "usage": "usage: todo-db lint [-h] [--all] [--project-id PROJECT_ID]\n                    [--repository REPOSITORY]\n                    [id]"
+    },
+    "list": {
+      "args": [
+        {
+          "choices": null,
+          "dest": "fields",
+          "help": "comma-separated list of fields to project for list, ready, and show",
+          "option_strings": [
+            "--fields"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "limit",
+          "help": "maximum number of items to return",
+          "option_strings": [
+            "--limit"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "max_bytes",
+          "help": "maximum bytes for command output with truncation marker",
+          "option_strings": [
+            "--max-bytes"
+          ],
+          "required": false
+        },
+        {
+          "choices": [
+            "planning",
+            "active",
+            "done",
+            "dropped"
+          ],
+          "dest": "state",
+          "help": "",
+          "option_strings": [
+            "--state"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "worktree",
+          "help": "",
+          "option_strings": [
+            "--worktree"
+          ],
+          "required": false
+        },
+        {
+          "choices": [
+            "critical",
+            "high",
+            "medium-high",
+            "medium",
+            "low"
+          ],
+          "dest": "priority",
+          "help": "",
+          "option_strings": [
+            "--priority"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "json",
+          "help": "",
+          "option_strings": [
+            "--json"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "project_id",
+          "help": "",
+          "option_strings": [
+            "--project-id"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "repository",
+          "help": "",
+          "option_strings": [
+            "--repository"
+          ],
+          "required": false
+        }
+      ],
+      "help": "",
+      "subcommands": {},
+      "usage": "usage: todo-db list [-h] [--fields FIELDS] [--limit LIMIT]\n                    [--max-bytes MAX_BYTES]\n                    [--state {planning,active,done,dropped}]\n                    [--worktree WORKTREE]\n                    [--priority {critical,high,medium-high,medium,low}]\n                    [--json] [--project-id PROJECT_ID]\n                    [--repository REPOSITORY]"
+    },
+    "migrate": {
+      "args": [
+        {
+          "choices": null,
+          "dest": "project_id",
+          "help": "",
+          "option_strings": [
+            "--project-id"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "repository",
+          "help": "",
+          "option_strings": [
+            "--repository"
+          ],
+          "required": false
+        }
+      ],
+      "help": "",
+      "subcommands": {},
+      "usage": "usage: todo-db migrate [-h] [--project-id PROJECT_ID]\n                       [--repository REPOSITORY]"
+    },
+    "promote": {
+      "args": [
+        {
+          "choices": null,
+          "dest": "deferral_id",
+          "help": "",
+          "option_strings": [],
+          "required": true
+        },
+        {
+          "choices": null,
+          "dest": "to_item",
+          "help": "",
+          "option_strings": [
+            "--to-item"
+          ],
+          "required": true
+        },
+        {
+          "choices": null,
+          "dest": "title",
+          "help": "",
+          "option_strings": [
+            "--title"
+          ],
+          "required": false
+        },
+        {
+          "choices": [
+            "critical",
+            "high",
+            "medium-high",
+            "medium",
+            "low"
+          ],
+          "dest": "priority",
+          "help": "",
+          "option_strings": [
+            "--priority"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "worktree",
+          "help": "",
+          "option_strings": [
+            "--worktree"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "description",
+          "help": "",
+          "option_strings": [
+            "--description"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "project_id",
+          "help": "",
+          "option_strings": [
+            "--project-id"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "repository",
+          "help": "",
+          "option_strings": [
+            "--repository"
+          ],
+          "required": false
+        }
+      ],
+      "help": "",
+      "subcommands": {},
+      "usage": "usage: todo-db promote [-h] --to-item TO_ITEM [--title TITLE]\n                       [--priority {critical,high,medium-high,medium,low}]\n                       [--worktree WORKTREE] [--description DESCRIPTION]\n                       [--project-id PROJECT_ID] [--repository REPOSITORY]\n                       deferral_id"
+    },
+    "ready": {
+      "args": [
+        {
+          "choices": null,
+          "dest": "fields",
+          "help": "comma-separated list of fields to project for list, ready, and show",
+          "option_strings": [
+            "--fields"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "limit",
+          "help": "maximum number of items to return",
+          "option_strings": [
+            "--limit"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "max_bytes",
+          "help": "maximum bytes for command output with truncation marker",
+          "option_strings": [
+            "--max-bytes"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "json",
+          "help": "",
+          "option_strings": [
+            "--json"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "project_id",
+          "help": "",
+          "option_strings": [
+            "--project-id"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "repository",
+          "help": "",
+          "option_strings": [
+            "--repository"
+          ],
+          "required": false
+        }
+      ],
+      "help": "",
+      "subcommands": {},
+      "usage": "usage: todo-db ready [-h] [--fields FIELDS] [--limit LIMIT]\n                     [--max-bytes MAX_BYTES] [--json]\n                     [--project-id PROJECT_ID] [--repository REPOSITORY]"
+    },
+    "refresh-wrapper": {
+      "args": [
+        {
+          "choices": null,
+          "dest": "wrapper",
+          "help": "wrapper path relative to the project root (default: config value or _project/scripts/todo)",
+          "option_strings": [
+            "--wrapper"
+          ],
+          "required": false
+        }
+      ],
+      "help": "",
+      "subcommands": {},
+      "usage": "usage: todo-db refresh-wrapper [-h] [--wrapper PATH]"
+    },
+    "release": {
+      "args": [
+        {
+          "choices": null,
+          "dest": "id",
+          "help": "",
+          "option_strings": [],
+          "required": true
+        },
+        {
+          "choices": null,
+          "dest": "project_id",
+          "help": "",
+          "option_strings": [
+            "--project-id"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "repository",
+          "help": "",
+          "option_strings": [
+            "--repository"
+          ],
+          "required": false
+        }
+      ],
+      "help": "",
+      "subcommands": {},
+      "usage": "usage: todo-db release [-h] [--project-id PROJECT_ID]\n                       [--repository REPOSITORY]\n                       id"
+    },
+    "restore": {
+      "args": [
+        {
+          "choices": null,
+          "dest": "project_id",
+          "help": "",
+          "option_strings": [
+            "--project-id"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "repository",
+          "help": "",
+          "option_strings": [
+            "--repository"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "input",
+          "help": "",
+          "option_strings": [
+            "--input"
+          ],
+          "required": true
+        },
+        {
+          "choices": null,
+          "dest": "replace",
+          "help": "confirm replacement of current tracker state",
+          "option_strings": [
+            "--replace"
+          ],
+          "required": false
+        }
+      ],
+      "help": "",
+      "subcommands": {},
+      "usage": "usage: todo-db restore [-h] [--project-id PROJECT_ID]\n                       [--repository REPOSITORY] --input INPUT [--replace]"
+    },
+    "restore-legacy": {
+      "args": [
+        {
+          "choices": null,
+          "dest": "project_id",
+          "help": "",
+          "option_strings": [
+            "--project-id"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "repository",
+          "help": "",
+          "option_strings": [
+            "--repository"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "input",
+          "help": "",
+          "option_strings": [
+            "--input"
+          ],
+          "required": true
+        },
+        {
+          "choices": null,
+          "dest": "replace",
+          "help": "confirm replacement of current tracker state",
+          "option_strings": [
+            "--replace"
+          ],
+          "required": false
+        }
+      ],
+      "help": "",
+      "subcommands": {},
+      "usage": "usage: todo-db restore-legacy [-h] [--project-id PROJECT_ID]\n                              [--repository REPOSITORY] --input INPUT\n                              [--replace]"
+    },
+    "show": {
+      "args": [
+        {
+          "choices": null,
+          "dest": "fields",
+          "help": "comma-separated list of fields to project for list, ready, and show",
+          "option_strings": [
+            "--fields"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "limit",
+          "help": "maximum number of items to return",
+          "option_strings": [
+            "--limit"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "max_bytes",
+          "help": "maximum bytes for command output with truncation marker",
+          "option_strings": [
+            "--max-bytes"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "id",
+          "help": "",
+          "option_strings": [],
+          "required": true
+        },
+        {
+          "choices": null,
+          "dest": "json",
+          "help": "",
+          "option_strings": [
+            "--json"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "project_id",
+          "help": "",
+          "option_strings": [
+            "--project-id"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "repository",
+          "help": "",
+          "option_strings": [
+            "--repository"
+          ],
+          "required": false
+        }
+      ],
+      "help": "",
+      "subcommands": {},
+      "usage": "usage: todo-db show [-h] [--fields FIELDS] [--limit LIMIT]\n                    [--max-bytes MAX_BYTES] [--json] [--project-id PROJECT_ID]\n                    [--repository REPOSITORY]\n                    id"
+    },
+    "start": {
+      "args": [
+        {
+          "choices": null,
+          "dest": "id",
+          "help": "",
+          "option_strings": [],
+          "required": true
+        },
+        {
+          "choices": null,
+          "dest": "wid",
+          "help": "",
+          "option_strings": [],
+          "required": true
+        },
+        {
+          "choices": null,
+          "dest": "project_id",
+          "help": "",
+          "option_strings": [
+            "--project-id"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "repository",
+          "help": "",
+          "option_strings": [
+            "--repository"
+          ],
+          "required": false
+        }
+      ],
+      "help": "",
+      "subcommands": {},
+      "usage": "usage: todo-db start [-h] [--project-id PROJECT_ID] [--repository REPOSITORY]\n                     id wid"
+    },
+    "stats": {
+      "args": [
+        {
+          "choices": null,
+          "dest": "json",
+          "help": "",
+          "option_strings": [
+            "--json"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "project_id",
+          "help": "",
+          "option_strings": [
+            "--project-id"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "repository",
+          "help": "",
+          "option_strings": [
+            "--repository"
+          ],
+          "required": false
+        }
+      ],
+      "help": "",
+      "subcommands": {},
+      "usage": "usage: todo-db stats [-h] [--json] [--project-id PROJECT_ID]\n                     [--repository REPOSITORY]"
+    },
+    "sweep-stale": {
+      "args": [
+        {
+          "choices": null,
+          "dest": "ttl_hours",
+          "help": "",
+          "option_strings": [
+            "--ttl-hours"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "project_id",
+          "help": "",
+          "option_strings": [
+            "--project-id"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "repository",
+          "help": "",
+          "option_strings": [
+            "--repository"
+          ],
+          "required": false
+        }
+      ],
+      "help": "",
+      "subcommands": {},
+      "usage": "usage: todo-db sweep-stale [-h] [--ttl-hours TTL_HOURS]\n                           [--project-id PROJECT_ID] [--repository REPOSITORY]"
+    },
+    "unblock": {
+      "args": [
+        {
+          "choices": null,
+          "dest": "id",
+          "help": "",
+          "option_strings": [],
+          "required": true
+        },
+        {
+          "choices": null,
+          "dest": "project_id",
+          "help": "",
+          "option_strings": [
+            "--project-id"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "repository",
+          "help": "",
+          "option_strings": [
+            "--repository"
+          ],
+          "required": false
+        }
+      ],
+      "help": "",
+      "subcommands": {},
+      "usage": "usage: todo-db unblock [-h] [--project-id PROJECT_ID]\n                       [--repository REPOSITORY]\n                       id"
+    },
+    "update": {
+      "args": [
+        {
+          "choices": null,
+          "dest": "id",
+          "help": "",
+          "option_strings": [],
+          "required": true
+        },
+        {
+          "choices": null,
+          "dest": "title",
+          "help": "",
+          "option_strings": [
+            "--title"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "description",
+          "help": "",
+          "option_strings": [
+            "--description"
+          ],
+          "required": false
+        },
+        {
+          "choices": [
+            "critical",
+            "high",
+            "medium-high",
+            "medium",
+            "low"
+          ],
+          "dest": "priority",
+          "help": "",
+          "option_strings": [
+            "--priority"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "worktree",
+          "help": "",
+          "option_strings": [
+            "--worktree"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "approach",
+          "help": "",
+          "option_strings": [
+            "--approach"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "category",
+          "help": "",
+          "option_strings": [
+            "--category"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "add_work",
+          "help": "",
+          "option_strings": [
+            "--add-work"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "edit_work",
+          "help": "",
+          "option_strings": [
+            "--edit-work"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "add_work_need",
+          "help": "",
+          "option_strings": [
+            "--add-work-need"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "drop_work_need",
+          "help": "",
+          "option_strings": [
+            "--drop-work-need"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "add_verify",
+          "help": "",
+          "option_strings": [
+            "--add-verify"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "drop_verify",
+          "help": "",
+          "option_strings": [
+            "--drop-verify"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "add_only_modify",
+          "help": "",
+          "option_strings": [
+            "--add-only-modify"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "drop_only_modify",
+          "help": "",
+          "option_strings": [
+            "--drop-only-modify"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "add_do_not_modify",
+          "help": "",
+          "option_strings": [
+            "--add-do-not-modify"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "drop_do_not_modify",
+          "help": "",
+          "option_strings": [
+            "--drop-do-not-modify"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "add_needs",
+          "help": "",
+          "option_strings": [
+            "--add-needs"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "drop_needs",
+          "help": "",
+          "option_strings": [
+            "--drop-needs"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "add_preserve",
+          "help": "",
+          "option_strings": [
+            "--add-preserve"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "drop_preserve",
+          "help": "",
+          "option_strings": [
+            "--drop-preserve"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "add_anti_pattern",
+          "help": "",
+          "option_strings": [
+            "--add-anti-pattern"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "drop_anti_pattern",
+          "help": "",
+          "option_strings": [
+            "--drop-anti-pattern"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "add_prior_art",
+          "help": "",
+          "option_strings": [
+            "--add-prior-art"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "drop_prior_art",
+          "help": "",
+          "option_strings": [
+            "--drop-prior-art"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "reason",
+          "help": "required for any edit to a done/dropped item, scope change, or a drop of verify/needs/preserve/anti-pattern/prior-art/work-need",
+          "option_strings": [
+            "--reason"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "project_id",
+          "help": "",
+          "option_strings": [
+            "--project-id"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "repository",
+          "help": "",
+          "option_strings": [
+            "--repository"
+          ],
+          "required": false
+        }
+      ],
+      "help": "",
+      "subcommands": {},
+      "usage": "usage: todo-db update [-h] [--title TITLE] [--description DESCRIPTION]\n                      [--priority {critical,high,medium-high,medium,low}]\n                      [--worktree WORKTREE] [--approach APPROACH]\n                      [--category CATEGORY]\n                      [--add-work WID:SUMMARY[:needs=w1,w2]]\n                      [--edit-work WID:NEW-SUMMARY]\n                      [--add-work-need WID:NEEDS_WID]\n                      [--drop-work-need WID:NEEDS_WID]\n                      [--add-verify DESC[::COMMAND[::EXPECTED]]]\n                      [--drop-verify SEQ] [--add-only-modify GLOB]\n                      [--drop-only-modify GLOB] [--add-do-not-modify GLOB]\n                      [--drop-do-not-modify GLOB] [--add-needs ITEM]\n                      [--drop-needs ITEM] [--add-preserve BEHAVIOR]\n                      [--drop-preserve BEHAVIOR]\n                      [--add-anti-pattern DONT -- because WHY -- INSTEAD]\n                      [--drop-anti-pattern DONT]\n                      [--add-prior-art PATH::CONCEPT::reuse|extend|supersede]\n                      [--drop-prior-art PATH::CONCEPT] [--reason REASON]\n                      [--project-id PROJECT_ID] [--repository REPOSITORY]\n                      id"
+    },
+    "verify": {
+      "args": [
+        {
+          "choices": null,
+          "dest": "id",
+          "help": "",
+          "option_strings": [],
+          "required": true
+        },
+        {
+          "choices": null,
+          "dest": "run",
+          "help": "",
+          "option_strings": [
+            "--run"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "project_id",
+          "help": "",
+          "option_strings": [
+            "--project-id"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "repository",
+          "help": "",
+          "option_strings": [
+            "--repository"
+          ],
+          "required": false
+        }
+      ],
+      "help": "",
+      "subcommands": {},
+      "usage": "usage: todo-db verify [-h] [--run RUN] [--project-id PROJECT_ID]\n                      [--repository REPOSITORY]\n                      id"
+    }
+  },
+  "exit_codes": {
+    "0": "success (doctor: every check passed; warnings allowed)",
+    "1": "findings reported (check-scope violations, lint findings, verify --run failures)",
+    "2": "generic error, or legacy-safe auth failure before the v2 contract is negotiated",
+    "4": "hosted authentication failure under TODO_DB_AUTH_CONTRACT=v2: set a valid bounded"
+  }
+}
