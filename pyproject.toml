@@ -32,6 +32,7 @@ classifiers = [
 
 [project.scripts]
 todo-db = "todo_db.cli:main"
+todo-db-mcp = "todo_db.mcp.server:main"
 # `todo` alias is opt-in to avoid colliding with an existing `todo` binary on
 # `uv tool install` (the name is generic). Enable it locally with:
 #   ln -s "$(which todo-db)" ~/.local/bin/todo   # or: alias todo=todo-db
@@ -48,6 +49,9 @@ legacy = [
 ]
 findings = [
     "pyyaml>=6",
+]
+mcp = [
+    "mcp>=1.9.0,<2",
 ]
 
 [tool.hatch.build.targets.wheel]
