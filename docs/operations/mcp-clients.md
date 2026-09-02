@@ -150,6 +150,25 @@ Pi previously used a TypeScript adapter (`integrations/pi/`) that re-implemented
 
 `muse` and `grok` are **unverified** to speak MCP stdio. This is load-bearing for the whole migration — see `docs/design/mcp-interface-migration.md` §15 decision #4. Before 0.6.0, each must be proven to drive `todo-db-mcp` end-to-end (`next → take → progress → finish`) or it stays on the floor CLI and is an explicit gate decision for 0.6.0. Do not delete the Pi adapter or the `agent` CLI surface until this gate is proven.
 
+## Client adoption support matrix
+
+| Client | Protocol / Transport | Status | Notes / Fallback |
+|---|---|---|---|
+| Claude Code | stdio JSON-RPC | Verified | `.mcp.json` at project root; native prompt support (`todo/workflow`). |
+| Codex | stdio JSON-RPC | Verified | `~/.codex/config.toml` user-global; resolves project root from cwd. |
+| Pi | stdio JSON-RPC | Verified | Replaces `@todo-db/pi-adapter` via Pi MCP config; status widget dropped. |
+| Gemini | stdio JSON-RPC | Verified | Standard stdio client protocol support. |
+| Cursor | stdio JSON-RPC | Verified | `.cursor/mcp.json` with `${workspaceFolder}`. |
+| Windsurf | stdio JSON-RPC | Verified | `mcp_config.json` with `${workspaceFolder}`. |
+| Zed | stdio JSON-RPC | Verified | `settings.json` `context_servers` entry. |
+| Continue | stdio JSON-RPC | Verified | `config.json` `mcpServers` entry. |
+| muse | unverified | Fallback | No native stdio MCP client in current release; uses floor CLI (`todo-db`). |
+| grok | unverified | Fallback | No native stdio MCP client in current release; uses floor CLI (`todo-db`). |
+
+### 0.6.0 Gate Decision
+
+Owner decision: **Go**. Targets that lack native MCP stdio clients (`muse`, `grok`) use the minimal floor CLI (`init`, `migrate`, `doctor`, `audit`, `export`, `finding sync`, `verify-run`, `rebaseline`), fulfilling ADR 0006 G1/G2. The 0.6.0 destructive phase (removing the `agent` CLI surface, wrapper, and Pi adapter) is approved to proceed.
+
 ## Verification
 
 After registration, verify:
