@@ -536,3 +536,75 @@ def test_take_empty_queue_returns_nothing_ready(tmp_path):
             assert data["kind"] == "gate"
 
     anyio.run(go)
+
+
+# --------------------------------------------------------------------------- #
+# fail-closed principal: query + full tools return E_NO_PRINCIPAL when unset
+# --------------------------------------------------------------------------- #
+def test_query_tools_return_E_NO_PRINCIPAL_without_resolved_principal(tmp_path, monkeypatch):
+    monkeypatch.delenv("TODO_DB_ACTOR", raising=False)
+    _make_project(tmp_path)
+    # No --actor, so identity is pending; do not call get_instructions before query tools.
+    launch = resolve_launch_config(_args("--repo-root", str(tmp_path)))
+    assert launch.identity.actor_pending
+    server = build_server(launch)
+
+    import json as _json
+    from unittest.mock import patch
+
+    import mcp.types as types
+    from mcp.shared.memory import create_connected_server_and_client_session as connect
+
+    from todo_db.mcp.identity import PrincipalHolder
+
+    async def go():
+        async with connect(server, client_info=types.Implementation(name="test-no-principal", version="0")) as session:
+            # Prevent handshake-derived auto-pinning so the guard is exercised.
+            with patch.object(PrincipalHolder, "ensure", return_value=None):
+                for tool in ("list_items", "stats"):
+                    kwargs = {}
+                    result = await session.call_tool(tool, kwargs)
+                    data = _json.loads(result.content[0].text)
+                    assert data["ok"] is False, f"{tool} should fail closed"
+                    assert data["code"] == "E_NO_PRINCIPAL", f"{tool} code"
+                    assert data["kind"] == "error", f"{tool} kind"
+
+    anyio.run(go)
+
+
+def test_full_tools_return_E_NO_PRINCIPAL_without_resolved_principal(tmp_path, monkeypatch):
+    monkeypatch.delenv("TODO_DB_ACTOR", raising=False)
+    _make_project(tmp_path)
+    launch = resolve_launch_config(_args("--repo-root", str(tmp_path), "--profile", "full"))
+    assert launch.identity.actor_pending
+    server = build_server(launch)
+
+    import json as _json
+    from unittest.mock import patch
+
+    import mcp.types as types
+    from mcp.shared.memory import create_connected_server_and_client_session as connect
+
+    from todo_db.mcp.identity import PrincipalHolder
+
+    async def go():
+        async with connect(server, client_info=types.Implementation(name="test-no-principal-full", version="0")) as session:
+            with patch.object(PrincipalHolder, "ensure", return_value=None):
+                # create_item is a full-profile mutation
+                result = await session.call_tool(
+                    "create_item",
+                    {"id": "new-item", "title": "New item title", "worktree": "todo-db"},
+                )
+                data = _json.loads(result.content[0].text)
+                assert data["ok"] is False
+                assert data["code"] == "E_NO_PRINCIPAL"
+                assert data["kind"] == "error"
+
+                # update_item is also full-profile and must fail closed
+                result2 = await session.call_tool("update_item", {"id": "new-item", "title": "patched"})
+                data2 = _json.loads(result2.content[0].text)
+                assert data2["ok"] is False
+                assert data2["code"] == "E_NO_PRINCIPAL"
+                assert data2["kind"] == "error"
+
+    anyio.run(go)
