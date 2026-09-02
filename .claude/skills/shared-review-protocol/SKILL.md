@@ -121,11 +121,18 @@ Layer 2 captures gaps in the review framework, not defects already found.
 This protocol governs behavior. Project documentation governs storage formats,
 locations, and sweep workflows; it must not duplicate behavioral rules.
 
-For projects without their own binding:
+For projects without their own binding (capture -> landing -> triage):
 
-1. Save `~/.todo-db/finding-drafts/<project-id>/YYYY-MM-DD-HHMMSS-<slug>.md`.
-2. Add frontmatter: `id`, `date`, `status`, `finding_kind`, `review_context`, `related_paths`, `suggested_sweep`, and `todo_id`.
-3. Report the path. Promote through the tracker's deferral or finding flow when available.
+1. **Capture:** Save `~/.todo-db/finding-drafts/<project-id>/YYYY-MM-DD-HHMMSS-<slug>.md` (prefer
+   `todo finding create --title ... --finding-kind ... --review-context ... --gate class-not-instance` so the
+   skeleton is valid). Hand-written drafts must still satisfy the validator below.
+2. **Frontmatter + body:** include frontmatter `id` (= filename stem), `date`, `status` (`open`), `finding_kind`,
+   `review_context`, and optional `related_paths`, `suggested_sweep`, `todo_id`; and body headings
+   `# <title>` followed by exactly `## Finding`, `## Why this matters`, `## Suggested next steps` (missing any of
+   those three headings fails `finding sync` validation — see `todo/references/findings.md`).
+3. **Landing:** Run `todo finding sync` — the sole credentialed step that validates drafts and inserts them into the
+   tracker (credential-free `finding create`/`candidates` never touch the DB). Report the draft path; promote landed
+   findings through `finding triage` / `finding promote` / `finding dismiss` / `finding link`.
 
 ## 6. Solution Fit [REVIEW-FIT-001]
 

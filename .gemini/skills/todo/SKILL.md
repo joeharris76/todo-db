@@ -22,6 +22,9 @@ If one request combines review or validation with close-out, perform the read-on
 
 ### Failures and claims
 
+- Exit code 1 means findings were reported or verification/scope gates failed (`check-scope` violations, `lint` findings,
+  or `verify --run <seq>` failures). It is not a generic error; fix the finding or re-run the named verification and
+  retry the gate. `todo --help` documents the exit-code table.
 - Exit code 2 means a general failure.
 - Exit code 4 means the hosted database rejected the credentials (missing or rejected). Stop writes, run `todo doctor`,
   and follow the remediation in `docs/operations/hosted-credentials.md` (provision or rotate the credential via `TODO_DB_CREDENTIAL_COMMAND`).
@@ -47,11 +50,12 @@ If one request combines review or validation with close-out, perform the read-on
 | `create`, `update`, `list`, `show`, `stats`, `deps`, `export`, `block`, `unblock`, `release`, `sweep-stale`, `drop` | You query or change items | `references/queries.md` |
 | `prioritize` — skill-only, no CLI command | You rank open items and group by topic | `references/prioritize.md` |
 | `lint` | You review an item | `references/review.md` |
-| `finding candidates`, `finding triage`, `finding import`, `finding sync`, `finding promote` | You triage findings | `references/implement.md` |
+| `finding create`, `finding candidates`, `finding list`, `finding show`, `finding sync`, `finding dismiss`, `finding triage`, `finding link`, `finding promote` — nine verbs, capture to landing | You capture, land, and triage findings | `references/findings.md` (pipeline) + `references/implement.md` (during implement) |
 | `batch` — skill-only, no CLI command | You implement several TODOs in order | `references/batch.md` |
 | `handoff` — skill-only, no CLI command | You create a self-contained batch handoff | `references/handoff.md` |
 | `closeout` — skill-only, no CLI command | You remediate a separately reviewed batch and close its items | `references/closeout.md` |
 | `help` | You need the action list | This table |
 
 `todo ready` and `todo stats` may warn on stderr about open findings or unsynced drafts without changing stdout. Run
-`todo finding candidates` when warned; no warning appears when there are no findings.
+`todo finding candidates` when warned (see `references/findings.md` for the capture-to-landing pipeline and `finding sync`
+as the credentialed landing step); no warning appears when there are no findings.
