@@ -312,7 +312,7 @@ class TodoDatabase:
         self._project_identity: ProjectIdentity | None = None
 
     @classmethod
-    def open(cls, config: DatabaseConfig) -> "TodoDatabase":
+    def open(cls, config: DatabaseConfig, *, migrate: bool = True) -> "TodoDatabase":
         connection = connect(config)
         database = cls(connection, config)
         try:
@@ -320,7 +320,11 @@ class TodoDatabase:
                 database._check_schema()
                 database._check_identity()
             else:
-                database._migrate()
+                if migrate:
+                    database._migrate()
+                else:
+                    database._check_schema()
+                    database._check_identity()
                 database._bind_identity()
                 database._upgrade_audit_history()
                 database._ensure_audit_head()
