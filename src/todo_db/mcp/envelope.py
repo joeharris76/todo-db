@@ -22,8 +22,9 @@ from typing import Any
 MAX_BYTES = 16 * 1024
 
 # ``gate`` codes are expected in-band results the model should act on, not
-# protocol failures. Must match the set in ``src/todo_db/errors.py`` plus the
-# server-added ones.
+# protocol failures. Subset of ``src/todo_db/errors.py`` plus server-added
+# ones. ``E_NO_PRINCIPAL`` is intentionally excluded: tools return it with
+# kind="error" (fail-closed auth, model must call get_instructions first).
 GATE_CODES = frozenset(
     {
         "E_CLAIM_STALE",
@@ -38,7 +39,6 @@ GATE_CODES = frozenset(
         "E_SCHEMA_BEHIND",
         "E_SCHEMA_DIVERGED",
         "E_IDENTITY",
-        "E_NO_PRINCIPAL",
         "E_AUDIT",
         "E_OUTPUT_TRUNCATED",
         "E_HOSTED",

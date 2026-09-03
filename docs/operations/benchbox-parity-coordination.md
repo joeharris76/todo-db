@@ -18,7 +18,7 @@ The surviving floor CLI verbs are:
 - Forensic/CI: `audit` (verify), `export`, `restore`, `restore-legacy`, `import-yaml`
 - Human recovery / credentials: `finding sync`, `config` (get, set), `sweep-stale`, `complete`
 - Gated recovery: `verify-run` (attests only), `rebaseline`
-- Discoverability: `mcp` (alias for `todo-db-mcp`)
+- Discoverability: `mcp` floor alias for `todo-db-mcp` is **proposed** (`docs/design/mcp-interface-migration.md`) but **not implemented** in 0.6.0; use the `todo-db-mcp` entry point or `python -m todo_db.mcp`.
 
 ## Parity Allowlist Expansion
 
@@ -28,6 +28,6 @@ To prevent parity failures before BenchBox cuts its corresponding adapter update
 "help: BenchBox command '(agent|create|update|list|show|ready|stats|deps|start|done|defer|promote|dismiss|block|unblock|release|claim|check-scope|verify|lint|drop)' not in standalone"
 ```
 
-and the new floor CLI verbs (`verify-run`, `rebaseline`, `mcp`) are recorded in the freeze and help allowlists.
+and the new floor CLI verbs (`verify-run`, `rebaseline`) are recorded in the freeze and help allowlists (`mcp` stays out until the alias lands).
 
 The DDL tables, exit codes (0, 1, 2, 4), and epilog keyword requirements remain 100% synchronized and enforced without exception.

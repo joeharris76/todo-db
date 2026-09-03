@@ -19,7 +19,10 @@ Both gates below are mandatory for a release whose diff touches any of:
 - the `TODO_DB_AUTH_CONTRACT` handshake or the credential/connection path in
   `src/todo_db/cli.py`;
 - the per-tool credential scoping or connection-per-call path in
-  `src/todo_db/mcp/`;
+  `src/todo_db/mcp/` — specifically `server.py` (database_config +
+  HostedAuthError), `identity.py` (clientInfo + TODO_DB_ACTOR), `target.py`
+  (TODO_DB_PATH/URL/CONFIG), `dbpool.py` (CredentialMode + E_AUTH_REJECTED
+  retry);
 - `docs/adr/0004-hosted-credential-lifecycle.md`,
   `docs/adr/0005-hosted-credential-provider.md`,
   `docs/adr/0006-mcp-sole-agent-interface.md`, or

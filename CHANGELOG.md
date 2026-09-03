@@ -20,7 +20,7 @@ adheres to [Semantic Versioning](https://semver.org/).
 - **`next_action` drops `command`.** `next_action` objects returned by `AgentWorkflow` and MCP tools drop the legacy `command` string property and are strictly machine-readable (`tool` + `arguments`).
 - **Release gate 2.** Rewritten in `docs/operations/release-gates.md` against surviving floor verbs (`todo-db audit verify`, `todo-db export`, `todo-db doctor`).
 
-## [0.5.0] - 2026-09-02
+## [0.5.0] - 2026-09-02 (same-day, never tagged; superseded by 0.6.0 below)
 
 ### Added
 

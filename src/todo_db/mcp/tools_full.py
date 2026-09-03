@@ -296,6 +296,9 @@ def register_full_tools(
         observed_sha: str | None = None,
         ctx: Context = None,  # type: ignore[assignment]
     ) -> dict[str, Any]:
+        principal = _principal(holder, ctx)
+        if not principal:
+            return err(E_NO_PRINCIPAL, "principal not yet resolved; call get_instructions first", kind="error")
         try:
             from ..findings import create_draft
         except ImportError as exc:
@@ -345,7 +348,7 @@ def register_full_tools(
                     from ..findings import FindingsTracker
 
                     ft = FindingsTracker(db, actor=principal)
-                    findings = ft.list_findings() if hasattr(ft, "list_findings") else []
+                    findings = ft.list_findings()
                     return ok({"findings": findings})
                 except TodoDBError as exc:
                     return err(getattr(exc, "code", None) or "E_ERROR", str(exc))
@@ -366,7 +369,7 @@ def register_full_tools(
                     from ..findings import FindingsTracker
 
                     ft = FindingsTracker(db, actor=principal)
-                    finding = ft.get_finding(id) if hasattr(ft, "get_finding") else None
+                    finding = ft.get_finding(id)
                     if finding is None:
                         return err("E_NOT_FOUND", f"finding {id!r} not found")
                     return ok(finding)
@@ -465,10 +468,7 @@ def register_full_tools(
                     from ..findings import FindingsTracker
 
                     ft = FindingsTracker(db, actor=principal)
-                    if hasattr(ft, "dismiss"):
-                        ft.dismiss(id, reason=reason)
-                    else:
-                        ft.triage(id, disposition="dismissed", reason=reason)
+                    ft.dismiss(id, reason=reason)
                     return ok({"id": id, "status": "dismissed"})
                 except TodoDBError as exc:
                     return err(getattr(exc, "code", None) or "E_ERROR", str(exc))
@@ -478,6 +478,10 @@ def register_full_tools(
     # ------------------------------------------------------------------ admin
     @server.tool(name="init_project", description="Bootstrap a .todo-db/config.json for the project.")
     async def init_project_tool(project_id: str, repository: str, force: bool = False, ctx: Context = None) -> dict[str, Any]:  # type: ignore[assignment]
+        principal = _principal(holder, ctx)
+        if not principal:
+            return err(E_NO_PRINCIPAL, "principal not yet resolved; call get_instructions first", kind="error")
+
         def _work():
             try:
                 from ..cli import CONFIG_DIRNAME, CONFIG_FILENAME, DEFAULT_DB_RELATIVE, SCAFFOLD_GITIGNORE

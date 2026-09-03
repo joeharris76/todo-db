@@ -14,6 +14,7 @@ import re
 import secrets
 import shlex
 import socket
+import sqlite3
 import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath, PureWindowsPath
@@ -478,24 +479,27 @@ class TodoTracker:
             raise TodoError(f"invalid state {state!r}")
         work_list = [dict(unit) for unit in work]
         dep_list = [str(dep) for dep in deps]
-        self.connection.execute(
-            "INSERT INTO items (id, title, worktree, priority, state, blocked_reason, category, description, approach, "
-            "created_at, completed_at, completed_pr) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                item_id,
-                title,
-                worktree,
-                priority,
-                state,
-                blocked_reason,
-                category,
-                description,
-                approach,
-                created_at or utc_now(),
-                completed_at,
-                completed_pr,
-            ),
-        )
+        try:
+            self.connection.execute(
+                "INSERT INTO items (id, title, worktree, priority, state, blocked_reason, category, description, approach, "
+                "created_at, completed_at, completed_pr) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    item_id,
+                    title,
+                    worktree,
+                    priority,
+                    state,
+                    blocked_reason,
+                    category,
+                    description,
+                    approach,
+                    created_at or utc_now(),
+                    completed_at,
+                    completed_pr,
+                ),
+            )
+        except sqlite3.IntegrityError as exc:
+            raise TodoError(f"cannot create item {item_id!r}: {exc}") from exc
         seen_wids: set[str] = set()
         for unit in work_list:
             wid = str(unit.get("id") or unit.get("wid") or "")

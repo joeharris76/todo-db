@@ -199,7 +199,7 @@ def test_promote_is_atomic_and_terminal(tmp_path: Path) -> None:
             description="Occupies the id a failed promote targets.",
         )
 
-        with pytest.raises(sqlite3.IntegrityError):
+        with pytest.raises(TodoError, match="cannot (promote|create item)"):
             service.promote(DRAFT_STEM, "existing-item")
         finding = service.get_finding(DRAFT_STEM)
         assert finding["disposition"] == "open"

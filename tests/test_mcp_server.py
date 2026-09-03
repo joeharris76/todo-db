@@ -788,3 +788,75 @@ def test_finding_link_finding_to_finding_and_validation(tmp_path):
             assert "exactly one" in data3["error"].lower()
 
     anyio.run(go)
+
+
+def test_finding_create_and_init_project_fail_closed_without_principal(tmp_path, monkeypatch):
+    monkeypatch.delenv("TODO_DB_ACTOR", raising=False)
+    _make_project(tmp_path)
+    launch = resolve_launch_config(_args("--repo-root", str(tmp_path), "--profile", "full"))
+    assert launch.identity.actor_pending
+    server = build_server(launch)
+
+    import json as _json
+    from unittest.mock import patch
+
+    import mcp.types as types
+    from mcp.shared.memory import create_connected_server_and_client_session as connect
+
+    from todo_db.mcp.identity import PrincipalHolder
+
+    async def go():
+        async with connect(server, client_info=types.Implementation(name="test-fail-closed", version="0")) as session:
+            with patch.object(PrincipalHolder, "ensure", return_value=None):
+                result = await session.call_tool(
+                    "finding_create",
+                    {"title": "t", "finding_kind": "k", "review_context": "c"},
+                )
+                data = _json.loads(result.content[0].text)
+                assert data["ok"] is False
+                assert data["code"] == "E_NO_PRINCIPAL"
+                assert data["kind"] == "error"
+
+                result2 = await session.call_tool(
+                    "init_project",
+                    {"project_id": "p", "repository": "https://example.com/p"},
+                )
+                data2 = _json.loads(result2.content[0].text)
+                assert data2["ok"] is False
+                assert data2["code"] == "E_NO_PRINCIPAL"
+                assert data2["kind"] == "error"
+
+    anyio.run(go)
+
+
+def test_finding_promote_duplicate_item_returns_coded_error(tmp_path):
+    db_path = _make_project(tmp_path)
+    fid = _seed_finding(db_path)
+    server = build_server(resolve_launch_config(_args("--repo-root", str(tmp_path), "--actor", "tester", "--profile", "full")))
+
+    import json as _json
+
+    import mcp.types as types
+    from mcp.shared.memory import create_connected_server_and_client_session as connect
+
+    from todo_db import DatabaseConfig, TodoDatabase, TodoTracker
+
+    db = TodoDatabase.open(DatabaseConfig(path=str(db_path), identity=IDENT))
+    TodoTracker(db, actor="tester").create_item(
+        item_id="taken-id",
+        title="Existing item title",
+        worktree="todo-db",
+        priority="medium",
+        description="Occupies the duplicate promote target id.",
+    )
+    db.close()
+
+    async def go():
+        async with connect(server, client_info=types.Implementation(name="test-promote-dup", version="0")) as session:
+            result = await session.call_tool("finding_promote", {"id": fid, "new_item_id": "taken-id"})
+            data = _json.loads(result.content[0].text)
+            assert data["ok"] is False, f"duplicate promote should fail closed: {data}"
+            assert data["code"] not in ("E_NO_PRINCIPAL",)
+            assert "taken-id" in data["error"]
+
+    anyio.run(go)

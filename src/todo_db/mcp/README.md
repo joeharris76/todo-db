@@ -1,9 +1,11 @@
-# `todo_db.mcp` — MCP stdio server foundation
+# `todo_db.mcp` — MCP stdio server (sole agent interface, ADR 0006)
 
-Skeleton for the MCP server that ADR 0006 makes the sole agent interface. This
-package builds the server and everything the lifecycle tools plug into; it does
-**not** implement the lifecycle tools (`next`, `take`, `context`, `progress`,
-`finish`, `release`, planning/findings/admin). Those are later migration items.
+This package builds the server and the lifecycle tools. The six hot-path
+tools (`next`, `take`, `context`, `progress`, `finish`, `release` plus
+`claims`), read-only queries, and `--profile full` planning/findings/admin
+tools are implemented here (`tools_work.py`, `tools_query.py`,
+`tools_full.py`) over `AgentWorkflow` with connection-per-call credentials
+and one dedicated worker thread.
 
 ## What is here
 

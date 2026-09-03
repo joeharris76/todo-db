@@ -19,7 +19,7 @@ from typing import Any
 from mcp.server.fastmcp import Context, FastMCP
 
 from ..agent import GitScopeEngine
-from ..errors import E_NO_PRINCIPAL, TodoDBError
+from ..errors import E_NO_PRINCIPAL, ProjectIdentityMismatchError, TodoDBError
 from ..tracker import TodoTracker
 from .dbpool import database_for_tool
 from .envelope import MAX_BYTES, err, ok, paged
@@ -161,21 +161,32 @@ def register_query_tools(
             with database_for_tool(_target(), "stats", allow_hosted=allow_hosted) as db:
                 tracker = TodoTracker(db, actor=principal)
                 try:
+                    # stats is the tool that surfaces the unresolved-identity
+                    # case: findings are project-scoped via the drafts-dir
+                    # path, so without a resolved identity raise
+                    # ProjectIdentityMismatchError (E_IDENTITY), never silently
+                    # return data as if identity did not matter.
+                    if _target().identity is None:
+                        raise ProjectIdentityMismatchError(
+                            "project identity is unresolved; stats needs it for the "
+                            "project-scoped findings drafts-dir path"
+                        )
                     data = tracker.stats()
-                    # Also include findings stats if available
+                    # Also include findings stats against the real
+                    # FindingsTracker API. Identity errors must propagate to
+                    # the E_IDENTITY mapping below, never collapse into a
+                    # silent data no-op; only non-identity findings failures
+                    # (e.g. a store without findings tables) fall back to
+                    # tracker-only stats.
                     try:
                         from ..findings import FindingsTracker
 
                         data.update(FindingsTracker(db, actor=principal).stats())
+                    except TodoDBError:
+                        # Includes ProjectIdentityMismatchError (E_IDENTITY):
+                        # identity failures surface as coded errors below.
+                        raise
                     except Exception:
-                        pass
-                    # Simulate the unresolved-identity drafts-dir check: if target identity is None
-                    # and findings would need it, surface E_IDENTITY. The real check is in
-                    # FindingsTracker.default_drafts_dir, but stats itself doesn't fail; we
-                    # surface the code here so the tool contract is satisfied.
-                    if _target().identity is None:
-                        # Check if there are any findings that would need drafts dir? For now,
-                        # just return stats; the error case is when findings stats itself raises.
                         pass
                     return ok(data)
                 except TodoDBError as exc:
