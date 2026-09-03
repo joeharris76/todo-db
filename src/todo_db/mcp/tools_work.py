@@ -14,7 +14,7 @@ from typing import Any
 from mcp.server.fastmcp import Context, FastMCP
 
 from ..agent import AgentWorkflow, GitScopeEngine
-from ..errors import E_MULTIPLE_CLAIMS, E_NO_PRINCIPAL, TodoDBError
+from ..errors import E_MULTIPLE_CLAIMS, E_NO_PRINCIPAL, E_VERIFY_GATE, TodoDBError
 from ..tracker import TodoTracker
 from .dbpool import database_for_tool
 from .envelope import MAX_BYTES, err, ok
@@ -51,7 +51,14 @@ def _claims_for_principal(db, principal: str) -> list[dict[str, Any]]:
     return [{"id": r["id"], "claim_token": r["claim_token"]} for r in rows]
 
 
-def _to_err(exc: BaseException, *, principal: str | None = None, db: Any | None = None) -> dict[str, Any]:
+def _to_err(
+    exc: BaseException,
+    *,
+    principal: str | None = None,
+    db: Any | None = None,
+    item_id: str | None = None,
+    claim_token: str | None = None,
+) -> dict[str, Any]:
     code = getattr(exc, "code", None) or "E_ERROR"
     msg = str(exc)
     # E_MULTIPLE_CLAIMS: enrich with item ids + tokens so the model can release.
@@ -62,6 +69,10 @@ def _to_err(exc: BaseException, *, principal: str | None = None, db: Any | None 
             return err(code, msg, recovery=recovery, kind="gate")
         except Exception:
             pass
+    # E_VERIFY_GATE: provide copy-pasteable operator command
+    if code == E_VERIFY_GATE and principal and item_id and claim_token:
+        cmd = f"todo-db --actor {principal} verify-run {item_id} --claim-token {claim_token}"
+        return err(code, msg, recovery=[cmd], kind="gate")
     # Heuristic gate vs error: codes in GATE_CODES are gates, others are errors.
     return err(code, msg, recovery=[], kind=None)
 
@@ -203,7 +214,7 @@ def register_work_tools(
                 try:
                     data = wf.finish(id, claim_token=claim_token, model_assert=True)
                 except TodoDBError as exc:
-                    return _to_err(exc, principal=principal, db=db)
+                    return _to_err(exc, principal=principal, db=db, item_id=id, claim_token=claim_token)
                 return ok(data)
 
         return await run_in_worker(_work)
@@ -238,3 +249,55 @@ def register_work_tools(
                 return ok({"claims": claims, "principal": principal})
 
         return await run_in_worker(_work)
+
+    @server.tool(name="defer", description="Defer an item.")
+    async def defer_tool(id: str, summary: str, reason: str | None = None, ctx: Context = None) -> dict[str, Any]:  # type: ignore[assignment]
+        principal = _principal(holder, ctx)
+        if not principal:
+            return err(E_NO_PRINCIPAL, "principal not yet resolved; call get_instructions first", kind="error")
+
+        def _work():
+            with database_for_tool(_target(), "defer", allow_hosted=allow_hosted) as db:
+                tracker = TodoTracker(db, actor=principal)
+                try:
+                    deferral_id = tracker.defer(id, summary=summary, reason=reason or "deferred via MCP")
+                    return ok({"id": id, "deferral_id": deferral_id})
+                except TodoDBError as exc:
+                    return err(getattr(exc, "code", None) or "E_ERROR", str(exc))
+
+        return await run_in_worker(_work)
+
+    @server.tool(name="promote_deferral", description="Promote a deferral to an item.")
+    async def promote_deferral_tool(deferral_id: int, ctx: Context = None) -> dict[str, Any]:  # type: ignore[assignment]
+        principal = _principal(holder, ctx)
+        if not principal:
+            return err(E_NO_PRINCIPAL, "principal not yet resolved; call get_instructions first", kind="error")
+
+        def _work():
+            with database_for_tool(_target(), "promote_deferral", allow_hosted=allow_hosted) as db:
+                tracker = TodoTracker(db, actor=principal)
+                try:
+                    new_id = tracker.promote_deferral(deferral_id)
+                    return ok({"deferral_id": deferral_id, "new_item": new_id})
+                except TodoDBError as exc:
+                    return err(getattr(exc, "code", None) or "E_ERROR", str(exc))
+
+        return await run_in_worker(_work)
+
+    @server.tool(name="dismiss_deferral", description="Dismiss a deferral.")
+    async def dismiss_deferral_tool(deferral_id: int, reason: str, ctx: Context = None) -> dict[str, Any]:  # type: ignore[assignment]
+        principal = _principal(holder, ctx)
+        if not principal:
+            return err(E_NO_PRINCIPAL, "principal not yet resolved; call get_instructions first", kind="error")
+
+        def _work():
+            with database_for_tool(_target(), "dismiss_deferral", allow_hosted=allow_hosted) as db:
+                tracker = TodoTracker(db, actor=principal)
+                try:
+                    tracker.dismiss_deferral(deferral_id, reason=reason)
+                    return ok({"deferral_id": deferral_id, "status": "dismissed"})
+                except TodoDBError as exc:
+                    return err(getattr(exc, "code", None) or "E_ERROR", str(exc))
+
+        return await run_in_worker(_work)
+

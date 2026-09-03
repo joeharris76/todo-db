@@ -1,8 +1,13 @@
 [
   {
+    "name": "check_scope",
     "description": "Inspect changed files vs scope \u2014 read-only. Provide a list of files to check.",
     "inputSchema": {
       "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
         "files": {
           "anyOf": [
             {
@@ -17,10 +22,6 @@
           ],
           "default": null,
           "title": "Files"
-        },
-        "id": {
-          "title": "Id",
-          "type": "string"
         }
       },
       "required": [
@@ -29,7 +30,6 @@
       "title": "check_scope_toolArguments",
       "type": "object"
     },
-    "name": "check_scope",
     "outputSchema": {
       "additionalProperties": true,
       "title": "check_scope_toolDictOutput",
@@ -37,13 +37,13 @@
     }
   },
   {
+    "name": "claims",
     "description": "List your active claims (for E_MULTIPLE_CLAIMS recovery).",
     "inputSchema": {
       "properties": {},
       "title": "claims_toolArguments",
       "type": "object"
     },
-    "name": "claims",
     "outputSchema": {
       "additionalProperties": true,
       "title": "claims_toolDictOutput",
@@ -51,13 +51,13 @@
     }
   },
   {
+    "name": "context",
     "description": "Fetch bounded, guardrailed context for the claimed item; also how you re-read claim_token and next_action after a restart. Supports section/cursor/limit and fields projection.",
     "inputSchema": {
       "properties": {
-        "cursor": {
-          "default": 0,
-          "title": "Cursor",
-          "type": "integer"
+        "id": {
+          "title": "Id",
+          "type": "string"
         },
         "fields": {
           "anyOf": [
@@ -74,15 +74,6 @@
           "default": null,
           "title": "Fields"
         },
-        "id": {
-          "title": "Id",
-          "type": "string"
-        },
-        "limit": {
-          "default": 20,
-          "title": "Limit",
-          "type": "integer"
-        },
         "section": {
           "anyOf": [
             {
@@ -94,6 +85,16 @@
           ],
           "default": null,
           "title": "Section"
+        },
+        "cursor": {
+          "default": 0,
+          "title": "Cursor",
+          "type": "integer"
+        },
+        "limit": {
+          "default": 20,
+          "title": "Limit",
+          "type": "integer"
         }
       },
       "required": [
@@ -102,7 +103,6 @@
       "title": "context_toolArguments",
       "type": "object"
     },
-    "name": "context",
     "outputSchema": {
       "additionalProperties": true,
       "title": "context_toolDictOutput",
@@ -110,13 +110,52 @@
     }
   },
   {
+    "name": "defer",
+    "description": "Defer an item.",
+    "inputSchema": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "summary": {
+          "title": "Summary",
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        }
+      },
+      "required": [
+        "id",
+        "summary"
+      ],
+      "title": "defer_toolArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "defer_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "name": "deferrals",
     "description": "List open deferrals.",
     "inputSchema": {
       "properties": {},
       "title": "deferrals_toolArguments",
       "type": "object"
     },
-    "name": "deferrals",
     "outputSchema": {
       "additionalProperties": true,
       "title": "deferrals_toolDictOutput",
@@ -124,6 +163,7 @@
     }
   },
   {
+    "name": "deps",
     "description": "Show item dependencies.",
     "inputSchema": {
       "properties": {
@@ -138,7 +178,6 @@
       "title": "deps_toolArguments",
       "type": "object"
     },
-    "name": "deps",
     "outputSchema": {
       "additionalProperties": true,
       "title": "deps_toolDictOutput",
@@ -146,13 +185,54 @@
     }
   },
   {
+    "name": "dismiss_deferral",
+    "description": "Dismiss a deferral.",
+    "inputSchema": {
+      "properties": {
+        "deferral_id": {
+          "title": "Deferral Id",
+          "type": "integer"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "deferral_id",
+        "reason"
+      ],
+      "title": "dismiss_deferral_toolArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "dismiss_deferral_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "name": "doctor",
+    "description": "Read-only tracker preflight check (database, schema, identity).",
+    "inputSchema": {
+      "properties": {},
+      "title": "doctor_toolArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "doctor_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "name": "export",
     "description": "Export all items and verifications for backup/audit.",
     "inputSchema": {
       "properties": {},
       "title": "export_toolArguments",
       "type": "object"
     },
-    "name": "export",
     "outputSchema": {
       "additionalProperties": true,
       "title": "export_toolDictOutput",
@@ -160,15 +240,16 @@
     }
   },
   {
+    "name": "finish",
     "description": "The no-shell close gate. Model-assert only: requires a current workspace-fingerprint attestation and rejects a stale pass.",
     "inputSchema": {
       "properties": {
-        "claim_token": {
-          "title": "Claim Token",
-          "type": "string"
-        },
         "id": {
           "title": "Id",
+          "type": "string"
+        },
+        "claim_token": {
+          "title": "Claim Token",
           "type": "string"
         }
       },
@@ -179,7 +260,6 @@
       "title": "finish_toolArguments",
       "type": "object"
     },
-    "name": "finish",
     "outputSchema": {
       "additionalProperties": true,
       "title": "finish_toolDictOutput",
@@ -187,13 +267,13 @@
     }
   },
   {
+    "name": "get_instructions",
     "description": "Return the todo-db autonomous-agent workflow protocol as Markdown. Portable fallback for the todo://instructions resource and the todo/workflow prompt.",
     "inputSchema": {
       "properties": {},
       "title": "get_instructionsArguments",
       "type": "object"
     },
-    "name": "get_instructions",
     "outputSchema": {
       "properties": {
         "result": {
@@ -209,6 +289,7 @@
     }
   },
   {
+    "name": "lint",
     "description": "Planning-quality check, read-only.",
     "inputSchema": {
       "properties": {
@@ -223,7 +304,6 @@
       "title": "lint_toolArguments",
       "type": "object"
     },
-    "name": "lint",
     "outputSchema": {
       "additionalProperties": true,
       "title": "lint_toolDictOutput",
@@ -231,14 +311,10 @@
     }
   },
   {
+    "name": "list_items",
     "description": "List items with optional filters. Supports fields projection and limit with paging fallback.",
     "inputSchema": {
       "properties": {
-        "cursor": {
-          "default": 0,
-          "title": "Cursor",
-          "type": "integer"
-        },
         "fields": {
           "anyOf": [
             {
@@ -265,12 +341,16 @@
           ],
           "default": null,
           "title": "Limit"
+        },
+        "cursor": {
+          "default": 0,
+          "title": "Cursor",
+          "type": "integer"
         }
       },
       "title": "list_items_toolArguments",
       "type": "object"
     },
-    "name": "list_items",
     "outputSchema": {
       "additionalProperties": true,
       "title": "list_items_toolDictOutput",
@@ -278,13 +358,13 @@
     }
   },
   {
+    "name": "next",
     "description": "Inspect the ready queue or your existing claim. Returns claim-or-ready plus next_action.",
     "inputSchema": {
       "properties": {},
       "title": "next_toolArguments",
       "type": "object"
     },
-    "name": "next",
     "outputSchema": {
       "additionalProperties": true,
       "title": "next_toolDictOutput",
@@ -292,23 +372,24 @@
     }
   },
   {
+    "name": "progress",
     "description": "Mark a work unit done with evidence; this refreshes the lease.",
     "inputSchema": {
       "properties": {
-        "claim_token": {
-          "title": "Claim Token",
-          "type": "string"
-        },
-        "evidence": {
-          "title": "Evidence",
-          "type": "string"
-        },
         "id": {
           "title": "Id",
           "type": "string"
         },
         "wid": {
           "title": "Wid",
+          "type": "string"
+        },
+        "evidence": {
+          "title": "Evidence",
+          "type": "string"
+        },
+        "claim_token": {
+          "title": "Claim Token",
           "type": "string"
         }
       },
@@ -321,7 +402,6 @@
       "title": "progress_toolArguments",
       "type": "object"
     },
-    "name": "progress",
     "outputSchema": {
       "additionalProperties": true,
       "title": "progress_toolDictOutput",
@@ -329,14 +409,32 @@
     }
   },
   {
+    "name": "promote_deferral",
+    "description": "Promote a deferral to an item.",
+    "inputSchema": {
+      "properties": {
+        "deferral_id": {
+          "title": "Deferral Id",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "deferral_id"
+      ],
+      "title": "promote_deferral_toolArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "promote_deferral_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "name": "ready",
     "description": "List ready items (no unmet dependencies, not blocked). Supports fields and limit.",
     "inputSchema": {
       "properties": {
-        "cursor": {
-          "default": 0,
-          "title": "Cursor",
-          "type": "integer"
-        },
         "fields": {
           "anyOf": [
             {
@@ -363,12 +461,16 @@
           ],
           "default": null,
           "title": "Limit"
+        },
+        "cursor": {
+          "default": 0,
+          "title": "Cursor",
+          "type": "integer"
         }
       },
       "title": "ready_toolArguments",
       "type": "object"
     },
-    "name": "ready",
     "outputSchema": {
       "additionalProperties": true,
       "title": "ready_toolDictOutput",
@@ -376,15 +478,16 @@
     }
   },
   {
+    "name": "release",
     "description": "Hand the claim back without finishing.",
     "inputSchema": {
       "properties": {
-        "claim_token": {
-          "title": "Claim Token",
-          "type": "string"
-        },
         "id": {
           "title": "Id",
+          "type": "string"
+        },
+        "claim_token": {
+          "title": "Claim Token",
           "type": "string"
         }
       },
@@ -395,7 +498,6 @@
       "title": "release_toolArguments",
       "type": "object"
     },
-    "name": "release",
     "outputSchema": {
       "additionalProperties": true,
       "title": "release_toolDictOutput",
@@ -403,9 +505,14 @@
     }
   },
   {
+    "name": "show_item",
     "description": "Show one item. Supports fields projection.",
     "inputSchema": {
       "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
         "fields": {
           "anyOf": [
             {
@@ -420,10 +527,6 @@
           ],
           "default": null,
           "title": "Fields"
-        },
-        "id": {
-          "title": "Id",
-          "type": "string"
         }
       },
       "required": [
@@ -432,7 +535,6 @@
       "title": "show_item_toolArguments",
       "type": "object"
     },
-    "name": "show_item",
     "outputSchema": {
       "additionalProperties": true,
       "title": "show_item_toolDictOutput",
@@ -440,6 +542,7 @@
     }
   },
   {
+    "name": "start_unit",
     "description": "No-shell state change \u2014 marks a unit in progress.",
     "inputSchema": {
       "properties": {
@@ -459,7 +562,6 @@
       "title": "start_unit_toolArguments",
       "type": "object"
     },
-    "name": "start_unit",
     "outputSchema": {
       "additionalProperties": true,
       "title": "start_unit_toolDictOutput",
@@ -467,13 +569,13 @@
     }
   },
   {
+    "name": "stats",
     "description": "Tracker stats. Returns a coded error when project identity is unresolved for the drafts-dir path.",
     "inputSchema": {
       "properties": {},
       "title": "stats_toolArguments",
       "type": "object"
     },
-    "name": "stats",
     "outputSchema": {
       "additionalProperties": true,
       "title": "stats_toolDictOutput",
@@ -481,6 +583,7 @@
     }
   },
   {
+    "name": "take",
     "description": "Atomically claim a ready item or re-adopt your active claim. Pass the server's session id internally so a restart auto-adopts.",
     "inputSchema": {
       "properties": {
@@ -500,7 +603,6 @@
       "title": "take_toolArguments",
       "type": "object"
     },
-    "name": "take",
     "outputSchema": {
       "additionalProperties": true,
       "title": "take_toolDictOutput",
@@ -508,6 +610,7 @@
     }
   },
   {
+    "name": "verify_list",
     "description": "List stored verifications, never run them.",
     "inputSchema": {
       "properties": {
@@ -522,7 +625,6 @@
       "title": "verify_list_toolArguments",
       "type": "object"
     },
-    "name": "verify_list",
     "outputSchema": {
       "additionalProperties": true,
       "title": "verify_list_toolDictOutput",

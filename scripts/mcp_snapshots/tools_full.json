@@ -397,6 +397,20 @@
     }
   },
   {
+    "name": "doctor",
+    "description": "Read-only tracker preflight check (database, schema, identity).",
+    "inputSchema": {
+      "properties": {},
+      "title": "doctor_toolArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "doctor_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
     "name": "drop",
     "description": "Drop an item.",
     "inputSchema": {

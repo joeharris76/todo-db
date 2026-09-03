@@ -335,3 +335,35 @@ def register_query_tools(
                     return err(getattr(exc, "code", None) or "E_ERROR", str(exc))
 
         return await run_in_worker(_work)
+
+    @server.tool(name="doctor", description="Read-only tracker preflight check (database, schema, identity).")
+    async def doctor_tool(ctx: Context = None) -> dict[str, Any]:  # type: ignore[assignment]
+        principal = _principal(holder, ctx)
+        if not principal:
+            return err(E_NO_PRINCIPAL, "principal not yet resolved; call get_instructions first", kind="error")
+
+        def _work():
+            tgt = _target()
+            with database_for_tool(tgt, "doctor", allow_hosted=allow_hosted) as db:
+                try:
+                    tables = {row[0] for row in db.connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+                    version = 0
+                    if "schema_migrations" in tables:
+                        row = db.connection.execute("SELECT max(version) FROM schema_migrations").fetchone()
+                        version = int(row[0] or 0) if row and row[0] is not None else 0
+                    identity = tgt.identity
+                    return ok({
+                        "status": "ok",
+                        "database": tgt.db_target,
+                        "is_hosted": tgt.is_hosted,
+                        "schema_version": version,
+                        "project_id": identity.project_id if identity else None,
+                        "repository": identity.repository if identity else None,
+                        "source": tgt.source,
+                        "repo_root": str(tgt.repo_root),
+                    })
+                except TodoDBError as exc:
+                    return err(getattr(exc, "code", None) or "E_ERROR", str(exc))
+
+        return await run_in_worker(_work)
+
