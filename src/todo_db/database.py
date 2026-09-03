@@ -248,7 +248,21 @@ def _split_statements(sql: str) -> list[str]:
     index, length = 0, len(sql)
     while index < length:
         char = sql[index]
-        if char in ("'", '"', "`"):
+        if char == "[":
+            # SQLite bracket-quoted identifier: `CREATE TABLE [my; table]` must not split on the `;` inside.
+            end = sql.find("]", index + 1)
+            if end == -1:
+                buffer.append(sql[index:])
+                break
+            while end + 1 < length and sql[end + 1] == "]":
+                nxt = sql.find("]", end + 2)
+                if nxt == -1:
+                    end = length - 1
+                    break
+                end = nxt
+            buffer.append(sql[index : end + 1])
+            index = end + 1
+        elif char in ("'", '"', "`"):
             end = index + 1
             while end < length:
                 if sql[end] == char and not (end + 1 < length and sql[end + 1] == char):
@@ -298,7 +312,7 @@ class TodoDatabase:
         self._project_identity: ProjectIdentity | None = None
 
     @classmethod
-    def open(cls, config: DatabaseConfig) -> "TodoDatabase":
+    def open(cls, config: DatabaseConfig, *, migrate: bool = True) -> "TodoDatabase":
         connection = connect(config)
         database = cls(connection, config)
         try:
@@ -306,7 +320,11 @@ class TodoDatabase:
                 database._check_schema()
                 database._check_identity()
             else:
-                database._migrate()
+                if migrate:
+                    database._migrate()
+                else:
+                    database._check_schema()
+                    database._check_identity()
                 database._bind_identity()
                 database._upgrade_audit_history()
                 database._ensure_audit_head()

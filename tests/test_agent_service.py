@@ -381,7 +381,13 @@ def test_structural_finish_gate_releases_claim_with_remediation(tmp_path: Path) 
         context = workflow.take("item-structural")
         token = context["claim_token"]
         workflow.progress("item-structural", "w0", "done", claim_token=token)
-        with pytest.raises(TodoError, match="claim released; run `todo lint item-structural`"):
+        with pytest.raises(TodoError, match=r"claim retained; run `lint\(id='item-structural'\)`"):
+            workflow.finish("item-structural", claim_token=token, model_assert=True)
+        # Lint gate retains the claim (ADR 0006 G7).
+        assert tracker.get_item("item-structural")["claimed_by"] == "agent-tester"
+        # Structural blockers still release immediately (even with lint present, structural dominates).
+        tracker.block("item-structural", "human decision needed")
+        with pytest.raises(TodoError, match=r"claim released; run `lint\(id='item-structural'\); then unblock\(id='item-structural'\)`"):
             workflow.finish("item-structural", claim_token=token, model_assert=True)
         assert tracker.get_item("item-structural")["claimed_by"] is None
     finally:
@@ -408,7 +414,85 @@ def test_context_pagination_and_blocked_remediation(tmp_path: Path) -> None:
         assert second["preserves"] == ["two"]
         assert second["completeness"]["preserves"]["complete"] is True
         assert first["blocked_reason"] == "human decision needed"
-        assert first["next_action"]["command"] == "todo unblock item-pages"
+        assert first["next_action"]["tool"] == "unblock"
+    finally:
+        db.close()
+
+
+def test_verify_run_attests_without_completing(tmp_path: Path) -> None:
+    db, tracker, workflow = _setup_db(tmp_path)
+    try:
+        tracker.create_item(
+            item_id="item-vr",
+            title="Verify-run item",
+            worktree="todo-db",
+            priority="high",
+            description="Attest-only human verification run",
+            work=[{"id": "w0", "summary": "Step 0"}],
+            scope={"only_modify": ["src/**"]},
+            verifications=[{"description": "smoke", "command": "true", "expected": ""}],
+        )
+        token = workflow.take("item-vr")["claim_token"]
+        workflow.progress("item-vr", "w0", "done step 0", claim_token=token)
+
+        result = workflow.verify_run("item-vr", claim_token=token)
+        assert result["status"] == "attested"
+        assert [row["seq"] for row in result["verifications"]] == [1]
+        # verify-run does NOT complete the item -- finish stays the closer.
+        assert tracker.get_item("item-vr")["state"] == "active"
+
+        # The attestation it recorded satisfies the model-assert finish gate.
+        fin = workflow.finish("item-vr", claim_token=token, model_assert=True)
+        assert fin["status"] == "completed"
+
+        # A non-holder cannot verify-run.
+        other = AgentWorkflow(TodoTracker(db, actor="intruder"), repo_root=tmp_path)
+        with pytest.raises(TodoError, match="not claimed by actor"):
+            other.verify_run("item-vr", claim_token=token)
+    finally:
+        db.close()
+
+
+def test_verify_run_rejects_a_failing_ladder(tmp_path: Path) -> None:
+    db, tracker, workflow = _setup_db(tmp_path)
+    try:
+        tracker.create_item(
+            item_id="item-vr-fail",
+            title="Verify-run failing item",
+            worktree="todo-db",
+            priority="high",
+            description="Failing verification ladder",
+            verifications=[{"description": "boom", "command": "false", "expected": ""}],
+        )
+        token = workflow.take("item-vr-fail")["claim_token"]
+        with pytest.raises(TodoError, match="verification seq 1 failed"):
+            workflow.verify_run("item-vr-fail", claim_token=token)
+    finally:
+        db.close()
+
+
+def test_rebaseline_requires_clean_worktree_and_records_baseline(tmp_path: Path) -> None:
+    db, tracker, workflow = _setup_db(tmp_path)
+    try:
+        tracker.create_item(
+            item_id="item-rb",
+            title="Rebaseline item",
+            worktree="todo-db",
+            priority="medium",
+            description="Exercise the audited rebaseline verb",
+        )
+        token = workflow.take("item-rb")["claim_token"]
+
+        (tmp_path / "dirty.txt").write_text("uncommitted", encoding="utf-8")
+        with pytest.raises(TodoError, match="clean worktree"):
+            workflow.rebaseline("item-rb", "confirm head", token)
+        (tmp_path / "dirty.txt").unlink()
+
+        head = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=tmp_path, capture_output=True, text=True, check=True
+        ).stdout.strip()
+        workflow.rebaseline("item-rb", "confirm clean head", token)
+        assert tracker.get_item("item-rb")["git_baseline"] == head
     finally:
         db.close()
 

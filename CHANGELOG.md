@@ -4,7 +4,35 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.6.0] - 2026-09-02
+
+### Removed
+
+- **BREAKING — `agent` CLI, Pi adapter, and wrapper removed.** The `agent` CLI subcommand group (`todo agent …`, `todo agent instructions`), the Pi adapter package (`@todo-db/pi-adapter` / `integrations/pi/`), and the `_project/scripts/todo` wrapper script (`DEFAULT_WRAPPER_RELATIVE`, `refresh-wrapper`, `init-project --wrapper`, `TODO_DB_PI_PRINCIPAL`, and wrapper key handling) are removed. MCP `todo-db-mcp` (`todo-db[mcp]`) is the sole agent interface (ADR 0006, `docs/design/mcp-interface-migration.md`).
+- **BREAKING — Per-verb planning and mutation CLI surface removed.** The subcommands `create`, `update`, `list`, `show`, `ready`, `stats`, `deps`, `start`, `done`, `defer`, `promote`, `dismiss`, `block`, `unblock`, `release`, `claim`, `check-scope`, `verify`, and `lint`, as well as the `finding` CLI subcommands except `sync` (`create`, `list`, `show`, `candidates`, `dismiss`, `triage`, `link`, `promote`), are removed. Planning and workflow coordination move exclusively to the MCP server.
+
+### Added
+
+- **Minimal floor CLI.** A minimal `todo-db` CLI remains for bootstrap, CI, audit/export, `finding sync`, and human verification/rebaseline: `init`, `init-project`, `migrate`, `doctor`, `audit verify`, `export`, `restore`, `restore-legacy`, `import-yaml`, `finding sync`, `config`, `sweep-stale`, `complete`, `verify-run` (attest-only human verification ladder execution with `--claim-token` and `--actor`), and `rebaseline` (audited baseline update with `--claim-token` and `--actor`).
+
+### Changed
+
+- **`next_action` drops `command`.** `next_action` objects returned by `AgentWorkflow` and MCP tools drop the legacy `command` string property and are strictly machine-readable (`tool` + `arguments`).
+- **Release gate 2.** Rewritten in `docs/operations/release-gates.md` against surviving floor verbs (`todo-db audit verify`, `todo-db export`, `todo-db doctor`).
+
+## [0.5.0] - 2026-09-02 (same-day, never tagged; superseded by 0.6.0 below)
+
+### Added
+
+- **MCP server (experimental, `todo-db[mcp]`).** The Model Context Protocol server `todo-db-mcp` is now the sole agent interface (ADR 0006, `docs/design/mcp-interface-migration.md`). It is a thin transport over `AgentWorkflow` with a connection-per-call, capability-scoped credential model (amends ADR 0005 G1), all DB and git work on one dedicated worker thread, and a mandatory explicit actor (`--actor` / `TODO_DB_ACTOR` / `mcp:<clientInfo.name>:<user>@<host>`; never `default_actor()`). Six hot-path tools plus read-only queries are always loaded; `--profile full` adds planning, findings, and admin. `next_action` is now machine-readable (`tool` + `arguments`, dual-emitted with `command` for 0.5.0). `E_SCHEMA`, `E_IDENTITY`, `E_AUDIT`, `E_OUTPUT_TRUNCATED`, `E_HOSTED` join the error taxonomy; `E_NOTHING_READY` is now wired on empty take. `finish` retains the claim on `E_LINT_GATE` (ADR 0006 G7, fixes ADR 0003 §2.5 vs code). `todo://instructions` resource, `get_instructions` tool, and `todo/workflow` prompt replace `todo agent instructions`. Per-client registration in `docs/operations/mcp-clients.md` (Claude Code, Codex, Cursor, Windsurf, Zed, Continue, Pi; `muse`/`grok` unverified — 0.6.0 gate). Tool schemas frozen in `scripts/mcp_snapshots/tools.json` (19 agent) and `tools_full.json` (37 full); subprocess stdio smoke test and stdout-purity assertion added.
+
+### Deprecated
+
+- The `agent` CLI (`todo agent …`, `todo agent instructions`, `AGENT_*`), the Pi adapter (`integrations/pi/`, `@todo-db/pi-adapter`), and `_project/scripts/todo` are deprecated and will be removed in **0.6.0**. The `agent` CLI and Pi adapter still work in 0.5.0. Migrate to `todo-db-mcp` or the minimal floor CLI (`init`/`migrate`/`doctor`/`audit`/`export`/`finding sync`/`verify-run`/`rebaseline`). The wrapper key in `.todo-db/config.json` is now ignored.
+
+### Changed
+
+- `pyproject.toml` `mcp` optional dependency pinned to `mcp>=1.10.0,<2` (SDK 1.29.1, Python floor `>=3.10` unchanged; no `requires-python` or CI matrix move).
 
 ## [0.4.3] - 2026-08-19
 

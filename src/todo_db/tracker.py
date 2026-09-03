@@ -14,6 +14,7 @@ import re
 import secrets
 import shlex
 import socket
+import sqlite3
 import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath, PureWindowsPath
@@ -478,24 +479,27 @@ class TodoTracker:
             raise TodoError(f"invalid state {state!r}")
         work_list = [dict(unit) for unit in work]
         dep_list = [str(dep) for dep in deps]
-        self.connection.execute(
-            "INSERT INTO items (id, title, worktree, priority, state, blocked_reason, category, description, approach, "
-            "created_at, completed_at, completed_pr) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                item_id,
-                title,
-                worktree,
-                priority,
-                state,
-                blocked_reason,
-                category,
-                description,
-                approach,
-                created_at or utc_now(),
-                completed_at,
-                completed_pr,
-            ),
-        )
+        try:
+            self.connection.execute(
+                "INSERT INTO items (id, title, worktree, priority, state, blocked_reason, category, description, approach, "
+                "created_at, completed_at, completed_pr) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    item_id,
+                    title,
+                    worktree,
+                    priority,
+                    state,
+                    blocked_reason,
+                    category,
+                    description,
+                    approach,
+                    created_at or utc_now(),
+                    completed_at,
+                    completed_pr,
+                ),
+            )
+        except sqlite3.IntegrityError as exc:
+            raise TodoError(f"cannot create item {item_id!r}: {exc}") from exc
         seen_wids: set[str] = set()
         for unit in work_list:
             wid = str(unit.get("id") or unit.get("wid") or "")
@@ -1633,8 +1637,8 @@ class TodoTracker:
                     ):
                         raise TodoError(
                             f"cannot complete {item_id!r}: verification seq={row['seq']} is not attested "
-                            "to the current workspace; run `todo agent finish "
-                            f"{item_id} --run-verifications` after reviewing the commands",
+                            f"to the current workspace; run `todo-db verify-run {item_id} --claim-token <token> --actor <principal>` "
+                            "after reviewing the commands",
                             code=E_VERIFY_GATE,
                         )
             elif model_assert:
@@ -1648,7 +1652,7 @@ class TodoTracker:
                     if result != "pass":
                         raise TodoError(
                             f"cannot complete {item_id!r}: verification seq={seq} failed; "
-                            f"inspect it with `todo-db verify {item_id}`",
+                            f"inspect it with `verify_list(id='{item_id}')` (or `todo-db audit verify {item_id}`)",
                             code=E_VERIFY_GATE,
                         )
         elif not verification_definition:
@@ -1929,7 +1933,7 @@ class TodoTracker:
                 "refusing to execute a stored verification command from a hosted database: "
                 "commands in a shared database are written by other actors, so running them "
                 "locally is a lateral code-execution channel across the trust boundary. "
-                f"Inspect the command first (`todo-db verify {item_id}`), then set "
+                f"Inspect the command first with `verify_list(id='{item_id}')` (or `todo-db audit verify {item_id}`), then set "
                 "TODO_DB_ALLOW_HOSTED_VERIFY_RUN=1 to run it deliberately."
             )
         row = self.connection.execute(

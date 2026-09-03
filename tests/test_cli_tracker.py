@@ -1,9 +1,53 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
+
+from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase, TodoTracker
+
+
+def _seed_item(
+    db_path: Path,
+    project_id: str,
+    *,
+    item_id: str,
+    actor: str = "seed",
+    verify: list[dict[str, str]] | None = None,
+    claim_actor: str | None = None,
+    finish_units: bool = False,
+) -> None:
+    """Seed an item (and optionally claim / finish its work) via the tracker API.
+
+    The lifecycle-mutation CLI verbs were removed in 0.6.0 (MCP is the agent
+    surface); the floor CLI keeps only ``complete`` / ``export`` / ``audit`` etc.
+    """
+
+    config = DatabaseConfig(
+        path=db_path,
+        identity=ProjectIdentity(project_id=project_id, repository="todo-db"),
+    )
+    database = TodoDatabase.open(config)
+    try:
+        tracker = TodoTracker(database, actor=actor)
+        tracker.create_item(
+            item_id=item_id,
+            title=f"Item {item_id}",
+            worktree="todo-db",
+            priority="high",
+            description="A seeded item for an end-to-end floor-CLI test.",
+            work=[{"id": "w0", "summary": "Run the test", "needs": []}],
+            verifications=verify or [],
+        )
+        if claim_actor is not None:
+            holder = TodoTracker(database, actor=claim_actor)
+            holder.claim(item_id)
+            if finish_units:
+                holder.done_unit(item_id, "w0", "seeded evidence")
+    finally:
+        database.close()
 
 
 def test_cli_complete_help_exposes_verification_override(capsys) -> None:
@@ -17,39 +61,21 @@ def test_cli_complete_help_exposes_verification_override(capsys) -> None:
     assert "--override-verification REASON" in help_text
 
 
-def test_cli_create_lifecycle_and_export(tmp_path: Path, capsys) -> None:
+def test_cli_complete_and_export_close_the_floor_lifecycle(tmp_path: Path, capsys) -> None:
     from todo_db.cli import main
 
     db_path = tmp_path / "standalone.sqlite"
-    common = ["--db", str(db_path), "--project-id", "cli-test", "--repository", "todo-db"]
+    common = ["--db", str(db_path), "--project-id", "cli-test", "--repository", "todo-db", "--actor", "cli-actor"]
     assert main([*common, "init"]) == 0
     capsys.readouterr()
-    assert (
-        main(
-            [
-                *common,
-                "create",
-                "cli-item",
-                "--title",
-                "CLI item",
-                "--worktree",
-                "todo-db",
-                "--priority",
-                "high",
-                "--description",
-                "A CLI-created item for an end-to-end test.",
-                "--work",
-                "w0:Run the test",
-                "--verify",
-                "smoke::printf PASS::PASS",
-                "--only-modify",
-                "src/**",
-            ]
-        )
-        == 0
+    _seed_item(
+        db_path,
+        "cli-test",
+        item_id="cli-item",
+        verify=[{"description": "smoke", "command": "printf PASS", "expected": "PASS"}],
+        claim_actor="cli-actor",
+        finish_units=True,
     )
-    assert main([*common, "claim", "cli-item"]) == 0
-    assert main([*common, "done", "cli-item", "w0", "--evidence", "CLI test evidence"]) == 0
     assert main([*common, "complete", "cli-item"]) == 0
     export_path = tmp_path / "export.json"
     assert main([*common, "export", "--output", str(export_path)]) == 0
@@ -73,28 +99,14 @@ def test_cli_complete_requires_passing_verification_or_audited_override(tmp_path
     ]
     assert main([*common, "init"]) == 0
     capsys.readouterr()
-    assert (
-        main(
-            [
-                *common,
-                "create",
-                "failing-item",
-                "--title",
-                "Failing completion item",
-                "--worktree",
-                "todo-db",
-                "--priority",
-                "high",
-                "--description",
-                "The CLI completion gate runs this failing verification.",
-                "--verify",
-                "vacuous selector::exit 5",
-            ]
-        )
-        == 0
+    _seed_item(
+        db_path,
+        "cli-complete-test",
+        item_id="failing-item",
+        verify=[{"description": "vacuous selector", "command": "exit 5"}],
+        claim_actor="cli-actor",
+        finish_units=True,
     )
-    capsys.readouterr()
-    assert main([*common, "claim", "failing-item"]) == 0
     capsys.readouterr()
     assert main([*common, "complete", "failing-item"]) == 2
     assert "verification seq=1 failed" in capsys.readouterr().err
@@ -111,48 +123,6 @@ def test_cli_complete_requires_passing_verification_or_audited_override(tmp_path
     ][-1]
     assert completion["actor"] == "cli-actor"
     assert completion["detail"]["verification_override"]["reason"] == reason
-
-
-def test_cli_release_is_holder_only_via_cli(tmp_path: Path, capsys) -> None:
-    """CLI regression: non-holder release exits 2 per cli.py:1273 TodoError mapping."""
-
-    from todo_db.cli import main
-
-    db_path = tmp_path / "standalone.sqlite"
-    base = ["--db", str(db_path), "--project-id", "cli-test", "--repository", "todo-db"]
-    assert main([*base, "--actor", "alice", "init"]) == 0
-    capsys.readouterr()
-    assert (
-        main(
-            [
-                *base,
-                "--actor",
-                "alice",
-                "create",
-                "lease-item",
-                "--title",
-                "Lease item",
-                "--worktree",
-                "todo-db",
-                "--priority",
-                "medium",
-                "--description",
-                "Item used to verify holder-only release via CLI.",
-            ]
-        )
-        == 0
-    )
-    capsys.readouterr()
-    assert main([*base, "--actor", "alice", "claim", "lease-item"]) == 0
-    capsys.readouterr()
-    # Bob's release must map TodoError -> exit 2
-    assert main([*base, "--actor", "bob", "release", "lease-item"]) == 2
-    assert "only the holder can release" in capsys.readouterr().err
-    # Holder can release (exit 0)
-    assert main([*base, "--actor", "alice", "release", "lease-item"]) == 0
-    capsys.readouterr()
-    # Unclaimed is no-op (exit 0)
-    assert main([*base, "--actor", "bob", "release", "lease-item"]) == 0
 
 
 def test_cli_yaml_import_requires_explicit_source_and_preserves_items(tmp_path: Path, capsys) -> None:
@@ -175,145 +145,109 @@ def test_cli_yaml_import_requires_explicit_source_and_preserves_items(tmp_path: 
     common = ["--db", str(db_path), "--project-id", "yaml-test", "--repository", "todo-db"]
     assert main([*common, "import-yaml", "--todo-dir", str(todo_dir)]) == 0
     assert "yaml-item" in capsys.readouterr().out
-    assert main([*common, "show", "yaml-item", "--json"]) == 0
-    assert '"id": "yaml-item"' in capsys.readouterr().out
-
-
-def test_cli_fields_limit_and_max_bytes_compact_contracts(tmp_path: Path, capsys) -> None:
-    from todo_db.cli import main
-
-    db_path = tmp_path / "compact.sqlite"
-    common = ["--db", str(db_path), "--project-id", "compact-test", "--repository", "todo-db"]
-    assert main([*common, "init"]) == 0
-
-    for i in range(5):
-        assert (
-            main(
-                [
-                    *common,
-                    "create",
-                    f"item-{i:02d}",
-                    "--title",
-                    f"Item {i}",
-                    "--worktree",
-                    "todo-db",
-                    "--priority",
-                    "high",
-                    "--description",
-                    f"Description {i}",
-                ]
-            )
-            == 0
-        )
-    capsys.readouterr()
-
-    # Test --limit
-    assert main([*common, "--limit", "2", "list"]) == 0
-    out = capsys.readouterr().out.strip().splitlines()
-    assert len(out) == 2
-
-    # Test --fields on list
-    assert main([*common, "--fields", "id,priority", "list"]) == 0
-    out = capsys.readouterr().out.strip().splitlines()
-    assert out[0] == "item-00 high"
-
-    # Test --fields on show --json
-    assert main([*common, "--fields", "id,title", "show", "item-00", "--json"]) == 0
-    item_json = json.loads(capsys.readouterr().out)
-    assert set(item_json.keys()) == {"id", "title"}
-
-    # Test --max-bytes truncation
-    assert main([*common, "--max-bytes", "30", "list"]) == 0
-    out = capsys.readouterr().out
-    assert len(out.encode("utf-8")) <= 30
-    assert "... [truncated" in out
-
-
-def test_cli_verification_output_is_bounded(tmp_path: Path, capsys) -> None:
-    from todo_db.cli import main
-
-    db_path = tmp_path / "verify_bounded.sqlite"
-    common = ["--db", str(db_path), "--project-id", "verify-test", "--repository", "todo-db"]
-    assert main([*common, "init"]) == 0
-
-    assert (
-        main(
-            [
-                *common,
-                "create",
-                "large-verify",
-                "--title",
-                "Large verify output",
-                "--worktree",
-                "todo-db",
-                "--priority",
-                "high",
-                "--description",
-                "Produces >4KB output",
-                "--verify",
-                "loud::python3 -c \"print('A' * 6000)\"",
-            ]
-        )
-        == 0
+    config = DatabaseConfig(
+        path=db_path,
+        identity=ProjectIdentity(project_id="yaml-test", repository="todo-db"),
     )
-    capsys.readouterr()
+    database = TodoDatabase.open(config)
+    try:
+        assert TodoTracker(database, actor="check").get_item("yaml-item")["id"] == "yaml-item"
+    finally:
+        database.close()
 
-    assert main([*common, "verify", "large-verify", "--run", "1"]) == 0
-    out = capsys.readouterr().out
-    assert "seq 1: pass" in out
-    assert "... [truncated:" in out
+
+def _git_repo(tmp_path: Path) -> Path:
+    subprocess.run(["git", "init", "--quiet"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True)
+    (tmp_path / ".gitignore").write_text(".todo-db/\n*.sqlite*\n", encoding="utf-8")
+    subprocess.run(["git", "add", ".gitignore"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-m", "init", "--quiet"], cwd=tmp_path, check=True)
+    return tmp_path
 
 
-def test_cli_compact_contracts_edge_cases(tmp_path: Path, capsys) -> None:
+def test_cli_verify_run_previews_runs_and_attests_without_completing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
     from todo_db.cli import main
 
-    db_path = tmp_path / "compact_edge.sqlite"
-    common = ["--db", str(db_path), "--project-id", "compact-edge", "--repository", "todo-db"]
+    _git_repo(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".todo-db").mkdir()
+    db_path = tmp_path / ".todo-db" / "standalone.sqlite"
+    common = ["--db", str(db_path), "--project-id", "vr-cli", "--repository", "todo-db", "--actor", "srv-principal"]
     assert main([*common, "init"]) == 0
-    assert (
-        main(
-            [
-                *common,
-                "create",
-                "item-01",
-                "--title",
-                "Test Item",
-                "--worktree",
-                "todo-db",
-                "--priority",
-                "high",
-                "--description",
-                "A full description",
-            ]
-        )
-        == 0
-    )
     capsys.readouterr()
 
-    # 1. Invalid field rejected
-    assert main([*common, "list", "--fields", "nope"]) == 2
-    err = capsys.readouterr().err
-    assert "unknown field(s): nope" in err
+    config = DatabaseConfig(path=db_path, identity=ProjectIdentity(project_id="vr-cli", repository="todo-db"))
+    database = TodoDatabase.open(config)
+    try:
+        TodoTracker(database, actor="seed").create_item(
+            item_id="vr-item",
+            title="Verify-run CLI item",
+            worktree="todo-db",
+            priority="high",
+            description="A floor verify-run smoke item.",
+            verifications=[{"description": "smoke", "command": "true"}],
+        )
+        TodoTracker(database, actor="srv-principal").claim("vr-item")
+        token = TodoTracker(database, actor="srv-principal").get_item("vr-item")["claim_token"]
+    finally:
+        database.close()
 
-    # 2. Limit 0 returns empty
-    assert main([*common, "list", "--limit", "0"]) == 0
-    out = capsys.readouterr().out.strip()
-    assert out == ""
+    # --actor is required and must name the claim holder.
+    assert main(["--db", str(db_path), "verify-run", "vr-item"]) == 2
+    assert "requires --actor" in capsys.readouterr().err
 
-    # 3. Negative limit rejected
-    assert main([*common, "list", "--limit", "-1"]) == 2
-    err = capsys.readouterr().err
-    assert "--limit must be non-negative" in err
+    assert main([*common, "verify-run", "vr-item", "--claim-token", token]) == 0
+    out, err = capsys.readouterr()
+    assert "[1] true" in err  # every stored command is previewed
+    assert json.loads(out)["status"] == "attested"
 
-    # 4. Too small max-bytes rejected
-    assert main([*common, "list", "--max-bytes", "10"]) == 2
-    err = capsys.readouterr().err
-    assert "--max-bytes must be at least 20" in err
+    database = TodoDatabase.open(config)
+    try:
+        assert TodoTracker(database, actor="check").get_item("vr-item")["state"] == "active"
+    finally:
+        database.close()
 
-    # 5. Non-JSON show with --fields
-    assert main([*common, "show", "item-01", "--fields", "id,description"]) == 0
-    out = capsys.readouterr().out.strip()
-    assert out == "item-01 A full description"
+
+def test_cli_rebaseline_records_an_audited_baseline(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys) -> None:
+    from todo_db.cli import main
+
+    _git_repo(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".todo-db").mkdir()
+    db_path = tmp_path / ".todo-db" / "standalone.sqlite"
+    common = ["--db", str(db_path), "--project-id", "rb-cli", "--repository", "todo-db", "--actor", "srv-principal"]
+    assert main([*common, "init"]) == 0
+    capsys.readouterr()
+
+    config = DatabaseConfig(path=db_path, identity=ProjectIdentity(project_id="rb-cli", repository="todo-db"))
+    database = TodoDatabase.open(config)
+    try:
+        TodoTracker(database, actor="seed").create_item(
+            item_id="rb-item",
+            title="Rebaseline CLI item",
+            worktree="todo-db",
+            priority="medium",
+            description="A floor rebaseline smoke item.",
+        )
+        TodoTracker(database, actor="srv-principal").claim("rb-item")
+        token = TodoTracker(database, actor="srv-principal").get_item("rb-item")["claim_token"]
+    finally:
+        database.close()
+
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=tmp_path, capture_output=True, text=True, check=True
+    ).stdout.strip()
+    assert main([*common, "rebaseline", "rb-item", "--reason", "confirm clean head", "--claim-token", token]) == 0
+    capsys.readouterr()
+
+    database = TodoDatabase.open(config)
+    try:
+        assert TodoTracker(database, actor="check").get_item("rb-item")["git_baseline"] == head
+    finally:
+        database.close()
 
 
 def test_lease_timestamp_format_compatibility(tmp_path: Path) -> None:

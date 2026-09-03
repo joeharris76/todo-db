@@ -1,0 +1,653 @@
+{
+  "commands": {
+    "audit": {
+      "args": [
+        {
+          "choices": [
+            "verify"
+          ],
+          "dest": "audit_command",
+          "help": "",
+          "option_strings": [],
+          "required": true
+        }
+      ],
+      "help": "",
+      "subcommands": {
+        "verify": {
+          "args": [
+            {
+              "choices": null,
+              "dest": "project_id",
+              "option_strings": [
+                "--project-id"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "repository",
+              "option_strings": [
+                "--repository"
+              ],
+              "required": false
+            }
+          ],
+          "help": ""
+        }
+      },
+      "usage": "usage: todo-db audit [-h] {verify} ..."
+    },
+    "complete": {
+      "args": [
+        {
+          "choices": null,
+          "dest": "id",
+          "help": "",
+          "option_strings": [],
+          "required": true
+        },
+        {
+          "choices": null,
+          "dest": "pr",
+          "help": "",
+          "option_strings": [
+            "--pr"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "override_verification",
+          "help": "skip the verification ladder and record this override reason in the completion audit event",
+          "option_strings": [
+            "--override-verification"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "project_id",
+          "help": "",
+          "option_strings": [
+            "--project-id"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "repository",
+          "help": "",
+          "option_strings": [
+            "--repository"
+          ],
+          "required": false
+        }
+      ],
+      "help": "",
+      "subcommands": {},
+      "usage": "usage: todo-db complete [-h] [--pr PR] [--override-verification REASON]\n                        [--project-id PROJECT_ID] [--repository REPOSITORY]\n                        id"
+    },
+    "config": {
+      "args": [
+        {
+          "choices": null,
+          "dest": "key",
+          "help": "",
+          "option_strings": [],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "value",
+          "help": "",
+          "option_strings": [],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "project_id",
+          "help": "",
+          "option_strings": [
+            "--project-id"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "repository",
+          "help": "",
+          "option_strings": [
+            "--repository"
+          ],
+          "required": false
+        }
+      ],
+      "help": "",
+      "subcommands": {},
+      "usage": "usage: todo-db config [-h] [--project-id PROJECT_ID] [--repository REPOSITORY]\n                      [key] [value]"
+    },
+    "doctor": {
+      "args": [
+        {
+          "choices": null,
+          "dest": "json",
+          "help": "",
+          "option_strings": [
+            "--json"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "rw",
+          "help": "also probe the hosted read-write connection",
+          "option_strings": [
+            "--rw"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "project_id",
+          "help": "",
+          "option_strings": [
+            "--project-id"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "repository",
+          "help": "",
+          "option_strings": [
+            "--repository"
+          ],
+          "required": false
+        }
+      ],
+      "help": "",
+      "subcommands": {},
+      "usage": "usage: todo-db doctor [-h] [--json] [--rw] [--project-id PROJECT_ID]\n                      [--repository REPOSITORY]"
+    },
+    "export": {
+      "args": [
+        {
+          "choices": null,
+          "dest": "project_id",
+          "help": "",
+          "option_strings": [
+            "--project-id"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "repository",
+          "help": "",
+          "option_strings": [
+            "--repository"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "output",
+          "help": "",
+          "option_strings": [
+            "--output",
+            "--out"
+          ],
+          "required": true
+        }
+      ],
+      "help": "",
+      "subcommands": {},
+      "usage": "usage: todo-db export [-h] [--project-id PROJECT_ID] [--repository REPOSITORY]\n                      --output OUTPUT"
+    },
+    "finding": {
+      "args": [
+        {
+          "choices": [
+            "sync"
+          ],
+          "dest": "finding_command",
+          "help": "",
+          "option_strings": [],
+          "required": true
+        }
+      ],
+      "help": "",
+      "subcommands": {
+        "sync": {
+          "args": [
+            {
+              "choices": null,
+              "dest": "drafts_dir",
+              "option_strings": [
+                "--drafts-dir"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "project_id",
+              "option_strings": [
+                "--project-id"
+              ],
+              "required": false
+            },
+            {
+              "choices": null,
+              "dest": "repository",
+              "option_strings": [
+                "--repository"
+              ],
+              "required": false
+            }
+          ],
+          "help": ""
+        }
+      },
+      "usage": "usage: todo-db finding [-h] {sync} ..."
+    },
+    "import-yaml": {
+      "args": [
+        {
+          "choices": null,
+          "dest": "todo_dir",
+          "help": "",
+          "option_strings": [
+            "--todo-dir"
+          ],
+          "required": true
+        },
+        {
+          "choices": null,
+          "dest": "done_dir",
+          "help": "",
+          "option_strings": [
+            "--done-dir"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "skip_done",
+          "help": "",
+          "option_strings": [
+            "--skip-done"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "dry_run",
+          "help": "",
+          "option_strings": [
+            "--dry-run"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "verbose",
+          "help": "",
+          "option_strings": [
+            "--verbose"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "replace",
+          "help": "",
+          "option_strings": [
+            "--replace"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "project_id",
+          "help": "",
+          "option_strings": [
+            "--project-id"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "repository",
+          "help": "",
+          "option_strings": [
+            "--repository"
+          ],
+          "required": false
+        }
+      ],
+      "help": "",
+      "subcommands": {},
+      "usage": "usage: todo-db import-yaml [-h] --todo-dir TODO_DIR [--done-dir DONE_DIR]\n                           [--skip-done] [--dry-run] [--verbose] [--replace]\n                           [--project-id PROJECT_ID] [--repository REPOSITORY]"
+    },
+    "init": {
+      "args": [
+        {
+          "choices": null,
+          "dest": "project_id",
+          "help": "",
+          "option_strings": [
+            "--project-id"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "repository",
+          "help": "",
+          "option_strings": [
+            "--repository"
+          ],
+          "required": false
+        }
+      ],
+      "help": "",
+      "subcommands": {},
+      "usage": "usage: todo-db init [-h] [--project-id PROJECT_ID] [--repository REPOSITORY]"
+    },
+    "init-project": {
+      "args": [
+        {
+          "choices": null,
+          "dest": "project_id",
+          "help": "",
+          "option_strings": [
+            "--project-id"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "repository",
+          "help": "",
+          "option_strings": [
+            "--repository"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "db",
+          "help": "local path (default .todo-db/standalone.sqlite) or libsql:// URL, recorded in the config file",
+          "option_strings": [
+            "--db"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "force",
+          "help": "overwrite an existing config",
+          "option_strings": [
+            "--force"
+          ],
+          "required": false
+        }
+      ],
+      "help": "",
+      "subcommands": {},
+      "usage": "usage: todo-db init-project [-h] [--project-id PROJECT_ID]\n                            [--repository REPOSITORY] [--db DB] [--force]"
+    },
+    "migrate": {
+      "args": [
+        {
+          "choices": null,
+          "dest": "project_id",
+          "help": "",
+          "option_strings": [
+            "--project-id"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "repository",
+          "help": "",
+          "option_strings": [
+            "--repository"
+          ],
+          "required": false
+        }
+      ],
+      "help": "",
+      "subcommands": {},
+      "usage": "usage: todo-db migrate [-h] [--project-id PROJECT_ID]\n                       [--repository REPOSITORY]"
+    },
+    "rebaseline": {
+      "args": [
+        {
+          "choices": null,
+          "dest": "id",
+          "help": "",
+          "option_strings": [],
+          "required": true
+        },
+        {
+          "choices": null,
+          "dest": "reason",
+          "help": "audited reason for changing the baseline",
+          "option_strings": [
+            "--reason"
+          ],
+          "required": true
+        },
+        {
+          "choices": null,
+          "dest": "claim_token",
+          "help": "current claim generation token",
+          "option_strings": [
+            "--claim-token"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "new_baseline",
+          "help": "commit to use (default: current HEAD)",
+          "option_strings": [
+            "--new-baseline"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "project_id",
+          "help": "",
+          "option_strings": [
+            "--project-id"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "repository",
+          "help": "",
+          "option_strings": [
+            "--repository"
+          ],
+          "required": false
+        }
+      ],
+      "help": "",
+      "subcommands": {},
+      "usage": "usage: todo-db rebaseline [-h] --reason REASON [--claim-token CLAIM_TOKEN]\n                          [--new-baseline NEW_BASELINE]\n                          [--project-id PROJECT_ID] [--repository REPOSITORY]\n                          id"
+    },
+    "restore": {
+      "args": [
+        {
+          "choices": null,
+          "dest": "project_id",
+          "help": "",
+          "option_strings": [
+            "--project-id"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "repository",
+          "help": "",
+          "option_strings": [
+            "--repository"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "input",
+          "help": "",
+          "option_strings": [
+            "--input"
+          ],
+          "required": true
+        },
+        {
+          "choices": null,
+          "dest": "replace",
+          "help": "confirm replacement of current tracker state",
+          "option_strings": [
+            "--replace"
+          ],
+          "required": false
+        }
+      ],
+      "help": "",
+      "subcommands": {},
+      "usage": "usage: todo-db restore [-h] [--project-id PROJECT_ID]\n                       [--repository REPOSITORY] --input INPUT [--replace]"
+    },
+    "restore-legacy": {
+      "args": [
+        {
+          "choices": null,
+          "dest": "project_id",
+          "help": "",
+          "option_strings": [
+            "--project-id"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "repository",
+          "help": "",
+          "option_strings": [
+            "--repository"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "input",
+          "help": "",
+          "option_strings": [
+            "--input"
+          ],
+          "required": true
+        },
+        {
+          "choices": null,
+          "dest": "replace",
+          "help": "confirm replacement of current tracker state",
+          "option_strings": [
+            "--replace"
+          ],
+          "required": false
+        }
+      ],
+      "help": "",
+      "subcommands": {},
+      "usage": "usage: todo-db restore-legacy [-h] [--project-id PROJECT_ID]\n                              [--repository REPOSITORY] --input INPUT\n                              [--replace]"
+    },
+    "sweep-stale": {
+      "args": [
+        {
+          "choices": null,
+          "dest": "ttl_hours",
+          "help": "",
+          "option_strings": [
+            "--ttl-hours"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "project_id",
+          "help": "",
+          "option_strings": [
+            "--project-id"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "repository",
+          "help": "",
+          "option_strings": [
+            "--repository"
+          ],
+          "required": false
+        }
+      ],
+      "help": "",
+      "subcommands": {},
+      "usage": "usage: todo-db sweep-stale [-h] [--ttl-hours TTL_HOURS]\n                           [--project-id PROJECT_ID] [--repository REPOSITORY]"
+    },
+    "verify-run": {
+      "args": [
+        {
+          "choices": null,
+          "dest": "id",
+          "help": "",
+          "option_strings": [],
+          "required": true
+        },
+        {
+          "choices": null,
+          "dest": "claim_token",
+          "help": "current claim generation token",
+          "option_strings": [
+            "--claim-token"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "project_id",
+          "help": "",
+          "option_strings": [
+            "--project-id"
+          ],
+          "required": false
+        },
+        {
+          "choices": null,
+          "dest": "repository",
+          "help": "",
+          "option_strings": [
+            "--repository"
+          ],
+          "required": false
+        }
+      ],
+      "help": "",
+      "subcommands": {},
+      "usage": "usage: todo-db verify-run [-h] [--claim-token CLAIM_TOKEN]\n                          [--project-id PROJECT_ID] [--repository REPOSITORY]\n                          id"
+    }
+  },
+  "exit_codes": {
+    "0": "success (doctor: every check passed; warnings allowed)",
+    "1": "findings reported (check-scope violations, lint findings, verify --run failures)",
+    "2": "generic error, or legacy-safe auth failure before the v2 contract is negotiated",
+    "4": "hosted authentication failure under TODO_DB_AUTH_CONTRACT=v2: set a valid bounded"
+  }
+}

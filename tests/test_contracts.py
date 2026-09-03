@@ -25,7 +25,7 @@ def test_project_metadata_and_console_contract() -> None:
     assert project["requires-python"] == ">=3.10"
     assert project["scripts"] == {
         "todo-db": "todo_db.cli:main",
-        "todo": "todo_db.cli:main",
+        "todo-db-mcp": "todo_db.mcp.server:main",
     }
     assert manifest["tool"]["hatch"]["build"]["targets"]["wheel"]["packages"] == ["src/todo_db"]
 

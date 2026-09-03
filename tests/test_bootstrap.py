@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -70,25 +69,10 @@ def test_discovered_config_supplies_identity_and_db_from_a_subdirectory(
     assert db_path.exists(), "db must resolve against the config root, not the nested cwd"
     assert _bound_identity(db_path) == ("disc-test", "https://example.test/disc")
 
-    assert (
-        main(
-            [
-                "create",
-                "disc-item",
-                "--title",
-                "Discovered item",
-                "--worktree",
-                "local",
-                "--priority",
-                "medium",
-                "--description",
-                "Created with identity and db discovered from config.",
-            ]
-        )
-        == 0
-    )
-    assert main(["show", "disc-item", "--json"]) == 0
-    assert json.loads(capsys.readouterr().out.split("created disc-item\n")[-1])["id"] == "disc-item"
+    # A write verb (floor: sweep-stale) resolves identity and db from the discovered config.
+    assert main(["sweep-stale"]) == 0
+    # A read verb (floor: audit verify) resolves the same discovered boundary.
+    assert main(["audit", "verify"]) == 0
 
 
 def test_config_db_entry_resolves_relative_to_the_config_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -173,65 +157,29 @@ def test_bound_database_serves_callers_that_supply_no_identity(
     assert main(["--db", str(db_path), "init", "--project-id", "bound-test", "--repository", "todo-db"]) == 0
     capsys.readouterr()
 
-    assert (
-        main(
-            [
-                "--db",
-                str(db_path),
-                "create",
-                "bound-item",
-                "--title",
-                "Bound item",
-                "--worktree",
-                "local",
-                "--priority",
-                "medium",
-                "--description",
-                "Written without any caller-supplied identity.",
-            ]
-        )
-        == 0
-    )
-    assert main(["--db", str(db_path), "list"]) == 0
-    assert "bound-item" in capsys.readouterr().out
+    # A write verb against the bound database needs no caller-supplied identity.
+    assert main(["--db", str(db_path), "sweep-stale"]) == 0
+    assert main(["--db", str(db_path), "audit", "verify"]) == 0
 
     # The mismatch guard still enforces when the caller asserts an identity.
-    assert main(["--db", str(db_path), "list", "--project-id", "other", "--repository", "todo-db"]) == 2
+    assert main(["--db", str(db_path), "audit", "verify", "--project-id", "other", "--repository", "todo-db"]) == 2
     assert "project identity mismatch" in capsys.readouterr().err
 
 
 def test_unbound_database_refuses_identityless_writes(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     from todo_db.cli import main
 
-    assert (
-        main(
-            [
-                "--db",
-                str(tmp_path / "fresh.sqlite"),
-                "create",
-                "orphan-item",
-                "--title",
-                "Orphan",
-                "--worktree",
-                "local",
-                "--priority",
-                "medium",
-                "--description",
-                "Must not bind an identity implicitly.",
-            ]
-        )
-        == 2
-    )
+    assert main(["--db", str(tmp_path / "fresh.sqlite"), "sweep-stale"]) == 2
     assert "no bound project identity" in capsys.readouterr().err
 
 
-def test_init_project_scaffolds_config_gitignore_and_wrapper(
+def test_init_project_scaffolds_config_and_gitignore(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     from todo_db.cli import main
 
     identity = ["--project-id", "scaffold-test", "--repository", "https://example.test/scaffold"]
-    assert main(["init-project", *identity, "--wrapper"]) == 0
+    assert main(["init-project", *identity]) == 0
     out = capsys.readouterr().out
     assert "schema v" in out and "wrote" in out
 
@@ -240,38 +188,32 @@ def test_init_project_scaffolds_config_gitignore_and_wrapper(
         "project_id": "scaffold-test",
         "repository": "https://example.test/scaffold",
         "db": ".todo-db/standalone.sqlite",
-        "wrapper": "_project/scripts/todo",
     }
     assert (tmp_path / ".todo-db" / "standalone.sqlite").exists()
 
     gitignore = (tmp_path / ".todo-db" / ".gitignore").read_text(encoding="utf-8")
     assert gitignore == "*.sqlite*\nreplica.db*\n*.lock\n!config.json\n"
 
-    wrapper = tmp_path / "_project" / "scripts" / "todo"
-    content = wrapper.read_text(encoding="utf-8")
-    assert os.access(wrapper, os.X_OK)
-    assert 'TODO_DB_CONFIG="${TODO_DB_CONFIG:-$REPO_ROOT/.todo-db/config.json}"' in content
-    assert "command -v todo-db" in content
-    assert 'TODO_DB_TOOL="$REPO_ROOT/../todo-db"' in content
-    assert "--project-id" not in content, "identity comes from the config file, not hardcoded flags"
+    # No wrapper script is scaffolded: MCP is the agent surface and the floor
+    # CLI is invoked as `todo-db` directly (ADR 0006 G1/G2).
+    assert not (tmp_path / "_project").exists()
 
     # The scaffolded repo now serves identityless calls via discovery.
-    assert main(["stats"]) == 0
-    assert json.loads(capsys.readouterr().out)["items_by_state"] == {}
+    assert main(["audit", "verify"]) == 0
 
 
 def test_init_project_is_idempotent_only_with_force(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     from todo_db.cli import main
 
     identity = ["--project-id", "force-test", "--repository", "todo-db"]
-    assert main(["init-project", *identity, "--wrapper", "bin/todo"]) == 0
+    assert main(["init-project", *identity]) == 0
     capsys.readouterr()
 
-    assert main(["init-project", *identity, "--wrapper", "bin/todo"]) == 2
+    assert main(["init-project", *identity]) == 2
     err = capsys.readouterr().err
     assert "refusing to overwrite" in err and "--force" in err
 
-    assert main(["init-project", *identity, "--wrapper", "bin/todo", "--force"]) == 0
+    assert main(["init-project", *identity, "--force"]) == 0
     assert "wrote" in capsys.readouterr().out
 
 
@@ -301,122 +243,25 @@ def test_init_project_records_a_custom_db_target_in_the_config(tmp_path: Path) -
     assert (tmp_path / "state" / "tracker.sqlite").exists()
 
     # Discovery resolves the recorded relative path against the config root.
-    assert main(["list"]) == 0
+    assert main(["audit", "verify"]) == 0
 
 
-WRAPPER_URL = "libsql://wrapper-test.aws-us-east-1.turso.io"
-
-FAKE_TURSO_MUST_NOT_RUN = """#!/usr/bin/env bash
-touch "$TURSO_CALLED"
-exit 99
-"""
-
-FAKE_TODO_DB_AUTH_FAILS = """#!/usr/bin/env bash
-echo call >> "$STATE_FILE"
-if [ "${TODO_DB_AUTH_CONTRACT:-}" != "v2" ]; then
-  echo "missing v2 auth contract" >&2
-  exit 88
-fi
-echo "error: hosted backend connection failed: [REDACTED] 401" >&2
-exit 4
-"""
-
-FAKE_TODO_DB_EXITS_17 = """#!/usr/bin/env bash
-echo call >> "$STATE_FILE"
-exit 17
-"""
-
-
-def _scaffold_wrapper_repo(tmp_path: Path, fake_todo_db: str) -> tuple[Path, dict[str, str]]:
+def test_doctor_ignores_a_legacy_wrapper_config_key(tmp_path: Path, capsys) -> None:
+    """A legacy ``"wrapper"`` key left in config.json is an unknown key doctor
+    must ignore, not fail on (ADR 0006 G2 / migration note)."""
     from todo_db.cli import main
 
-    subprocess.run(["git", "init", "--quiet"], cwd=tmp_path, check=True)
-    assert main(["init-project", "--project-id", "wrapper-test", "--repository", "todo-db", "--wrapper"]) == 0
+    assert main(["init-project", "--project-id", "legacy-key-test", "--repository", "todo-db"]) == 0
     config_path = tmp_path / ".todo-db" / "config.json"
     payload = json.loads(config_path.read_text(encoding="utf-8"))
-    payload["db"] = WRAPPER_URL
+    payload["wrapper"] = "_project/scripts/todo"
     config_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-
-    fakebin = tmp_path / "fakebin"
-    fakebin.mkdir()
-    for name, content in (("turso", FAKE_TURSO_MUST_NOT_RUN), ("todo-db", fake_todo_db)):
-        script = fakebin / name
-        script.write_text(content, encoding="utf-8")
-        script.chmod(0o755)
-    env = {key: value for key, value in os.environ.items() if not key.startswith("TODO_DB_")}
-    env["PATH"] = f"{fakebin}:{env['PATH']}"
-    env["STATE_FILE"] = str(tmp_path / "todo-db-call-state")
-    env["TURSO_CALLED"] = str(tmp_path / "turso-called")
-    return tmp_path / "_project" / "scripts" / "todo", env
-
-
-@pytest.mark.skipif(shutil.which("git") is None, reason="the wrapper scaffold test uses a git repo")
-def test_wrapper_exports_v2_contract_runs_once_and_never_calls_turso(tmp_path: Path) -> None:
-    wrapper, env = _scaffold_wrapper_repo(tmp_path, FAKE_TODO_DB_AUTH_FAILS)
-    result = subprocess.run([str(wrapper), "list"], cwd=tmp_path, env=env, capture_output=True, text=True, check=False)
-    assert result.returncode == 4
-    assert (tmp_path / "todo-db-call-state").read_text(encoding="utf-8").splitlines() == ["call"]
-    assert not (tmp_path / "turso-called").exists()
-    assert "automatic token minting is disabled" in result.stderr
-    assert "tokens create" not in result.stdout + result.stderr
-
-
-@pytest.mark.skipif(shutil.which("git") is None, reason="the wrapper scaffold test uses a git repo")
-def test_wrapper_preserves_non_auth_exit_code_without_retry(tmp_path: Path) -> None:
-    wrapper, env = _scaffold_wrapper_repo(tmp_path, FAKE_TODO_DB_EXITS_17)
-    result = subprocess.run([str(wrapper), "list"], cwd=tmp_path, env=env, capture_output=True, text=True, check=False)
-    assert result.returncode == 17
-    assert (tmp_path / "todo-db-call-state").read_text(encoding="utf-8").splitlines() == ["call"]
-    assert not (tmp_path / "turso-called").exists()
-
-
-def test_refresh_wrapper_replaces_only_a_recognized_legacy_wrapper(tmp_path: Path) -> None:
-    from todo_db.cli import WRAPPER_VERSION_MARKER, main
-
-    assert main(["init-project", "--project-id", "refresh-test", "--repository", "todo-db", "--wrapper"]) == 0
-    config_path = tmp_path / ".todo-db" / "config.json"
-    gitignore_path = tmp_path / ".todo-db" / ".gitignore"
-    wrapper = tmp_path / "_project" / "scripts" / "todo"
-    payload = json.loads(config_path.read_text(encoding="utf-8"))
-    payload["wrapper"] = "scratch/../_project//scripts/todo"
-    config_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    config_before = config_path.read_bytes()
-    gitignore_before = gitignore_path.read_bytes()
-    wrapper.write_text(wrapper.read_text(encoding="utf-8").replace(f"{WRAPPER_VERSION_MARKER}\n", ""), encoding="utf-8")
-
-    assert main(["refresh-wrapper"]) == 0
-    refreshed = wrapper.read_text(encoding="utf-8")
-    assert WRAPPER_VERSION_MARKER in refreshed
-    assert 'REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"' in refreshed
-    assert config_path.read_bytes() == config_before
-    assert gitignore_path.read_bytes() == gitignore_before
-
-
-def test_refresh_wrapper_refuses_an_unrecognized_file(tmp_path: Path, capsys) -> None:
-    from todo_db.cli import main
-
-    assert main(["init-project", "--project-id", "refresh-test", "--repository", "todo-db", "--wrapper"]) == 0
-    wrapper = tmp_path / "_project" / "scripts" / "todo"
-    wrapper.write_text("#!/bin/sh\necho custom\n", encoding="utf-8")
-
-    assert main(["refresh-wrapper"]) == 2
-    assert "refusing to replace unrecognized wrapper" in capsys.readouterr().err
-    assert wrapper.read_text(encoding="utf-8") == "#!/bin/sh\necho custom\n"
-
-
-def test_doctor_fails_with_targeted_remediation_for_a_legacy_wrapper(tmp_path: Path, capsys) -> None:
-    from todo_db.cli import WRAPPER_VERSION_MARKER, main
-
-    assert main(["init-project", "--project-id", "refresh-test", "--repository", "todo-db", "--wrapper"]) == 0
     capsys.readouterr()
-    wrapper = tmp_path / "_project" / "scripts" / "todo"
-    wrapper.write_text(wrapper.read_text(encoding="utf-8").replace(f"{WRAPPER_VERSION_MARKER}\n", ""), encoding="utf-8")
 
-    assert main(["doctor"]) == 2
+    assert main(["doctor"]) == 0
     output = capsys.readouterr().out
-    assert "FAIL wrapper: legacy generated wrapper" in output
-    assert "todo-db refresh-wrapper" in output
-
+    assert "FAIL" not in output
+    assert "wrapper:" not in output  # no wrapper check line is emitted at all
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="git is required to verify ignore semantics")
 def test_scaffolded_gitignore_ignores_databases_but_keeps_config_tracked(tmp_path: Path) -> None:
@@ -466,126 +311,6 @@ def test_discovery_ceiling_stops_at_git_root_and_does_not_hijack_subproject(
     assert _discover_repo_config() is None
 
 
-def test_custom_wrapper_depth_derives_correct_repo_root(tmp_path: Path) -> None:
-    from todo_db.cli import main
-
-    assert (
-        main(
-            [
-                "init-project",
-                "--project-id",
-                "custom-wrapper",
-                "--repository",
-                "todo-db",
-                "--wrapper",
-                "scripts/nested/deep/todo",
-            ]
-        )
-        == 0
-    )
-    wrapper = tmp_path / "scripts" / "nested" / "deep" / "todo"
-    content = wrapper.read_text(encoding="utf-8")
-    assert 'REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)"' in content
-
-
-def test_wrapper_path_is_normalized_before_recording_and_depth_calculation(tmp_path: Path) -> None:
-    from todo_db.cli import main
-
-    supplied = "scratch/../scripts//nested/todo"
-    assert (
-        main(
-            [
-                "init-project",
-                "--project-id",
-                "normalized-wrapper",
-                "--repository",
-                "todo-db",
-                "--wrapper",
-                supplied,
-            ]
-        )
-        == 0
-    )
-    config = json.loads((tmp_path / ".todo-db" / "config.json").read_text(encoding="utf-8"))
-    assert config["wrapper"] == "scripts/nested/todo"
-    content = (tmp_path / "scripts" / "nested" / "todo").read_text(encoding="utf-8")
-    assert 'REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"' in content
-
-
-@pytest.mark.parametrize("wrapper", ["../outside/todo", "../../outside/todo"])
-def test_init_project_rejects_wrapper_paths_outside_project(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], wrapper: str
-) -> None:
-    from todo_db.cli import main
-
-    assert (
-        main(
-            [
-                "init-project",
-                "--project-id",
-                "unsafe-wrapper",
-                "--repository",
-                "todo-db",
-                "--wrapper",
-                wrapper,
-            ]
-        )
-        == 2
-    )
-    assert "wrapper path must name a file inside the project root" in capsys.readouterr().err
-    assert not (tmp_path / ".todo-db").exists()
-    assert not (tmp_path.parent / "outside" / "todo").exists()
-
-
-def test_init_project_rejects_wrapper_parent_symlink(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    from todo_db.cli import main
-
-    outside = tmp_path.parent / f"{tmp_path.name}-outside"
-    outside.mkdir()
-    (tmp_path / "linked").symlink_to(outside, target_is_directory=True)
-    assert (
-        main(
-            [
-                "init-project",
-                "--project-id",
-                "unsafe-wrapper",
-                "--repository",
-                "todo-db",
-                "--wrapper",
-                "linked/todo",
-            ]
-        )
-        == 2
-    )
-    assert "wrapper path traverses a symlink" in capsys.readouterr().err
-    assert not (outside / "todo").exists()
-    assert not (tmp_path / ".todo-db").exists()
-
-
-def test_init_project_rejects_absolute_wrapper_path(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    from todo_db.cli import main
-
-    assert (
-        main(
-            [
-                "init-project",
-                "--project-id",
-                "unsafe-wrapper",
-                "--repository",
-                "todo-db",
-                "--wrapper",
-                str(tmp_path / "absolute-todo"),
-            ]
-        )
-        == 2
-    )
-    assert "wrapper path must be relative to the project root" in capsys.readouterr().err
-    assert not (tmp_path / ".todo-db").exists()
-    assert not (tmp_path / "absolute-todo").exists()
-
-
 def test_e_no_project_pre_open_guard(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     from todo_db.cli import main
 
@@ -597,6 +322,83 @@ def test_e_no_project_pre_open_guard(tmp_path: Path, monkeypatch: pytest.MonkeyP
     monkeypatch.delenv("TODO_DB_PROJECT_ID", raising=False)
     monkeypatch.delenv("TODO_DB_REPOSITORY", raising=False)
 
-    assert main(["ready"]) == 2
+    assert main(["audit", "verify"]) == 2
     err = capsys.readouterr().err
     assert "E_NO_PROJECT" in err
+
+def test_env_db_without_identity_refuses_writes_but_allows_reads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Stale TODO_DB_PATH/TODO_DB_URL without discovered config must not contaminate another tracker.
+
+    Pre-0.2.0 defaults accidentally provided this guard via E_NO_PROJECT; this
+    restores it deliberately: env-sourced DB + identity-from-nowhere => refuse
+    writes with an actionable error while reads still succeed.
+    """
+
+    from todo_db.cli import main
+
+    from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase, TodoTracker
+
+    other_db = tmp_path / "other.sqlite"
+    assert main(["--db", str(other_db), "init", "--project-id", "other-proj", "--repository", "https://example.test/other"]) == 0
+    capsys.readouterr()
+    _other_config = DatabaseConfig(
+        path=other_db,
+        identity=ProjectIdentity(project_id="other-proj", repository="https://example.test/other"),
+    )
+    _other = TodoDatabase.open(_other_config)
+    TodoTracker(_other, actor="seed").create_item(
+        item_id="other-item",
+        title="Other item title",
+        worktree="todo-db",
+        priority="medium",
+        description="Other item description long enough.",
+    )
+    _other.close()
+
+    clean_dir = tmp_path / "clean"
+    clean_dir.mkdir()
+    monkeypatch.chdir(clean_dir)
+    monkeypatch.delenv("TODO_DB_CONFIG", raising=False)
+    monkeypatch.delenv("TODO_DB_PROJECT_ID", raising=False)
+    monkeypatch.delenv("TODO_DB_REPOSITORY", raising=False)
+    monkeypatch.setenv("TODO_DB_PATH", str(other_db))
+    monkeypatch.delenv("TODO_DB_URL", raising=False)
+
+    # A write verb (sweep-stale) is refused: env-sourced DB with identity from nowhere.
+    assert main(["sweep-stale"]) == 2
+    err = capsys.readouterr().err
+    assert "refusing to write" in err
+    assert "TODO_DB_PATH/TODO_DB_URL" in err
+    assert "--db" in err
+
+    # A read verb still succeeds against the env-sourced DB.
+    assert main(["audit", "verify"]) == 0
+
+    import sqlite3
+
+    assert [row[0] for row in sqlite3.connect(other_db).execute("SELECT id FROM items ORDER BY id")] == ["other-item"]
+
+    # An explicit identity assertion unblocks the write.
+    assert (
+        main(
+            [
+                "sweep-stale",
+                "--project-id",
+                "other-proj",
+                "--repository",
+                "https://example.test/other",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+    assert main(["--db", str(other_db), "sweep-stale"]) == 0
+    capsys.readouterr()
+
+    monkeypatch.delenv("TODO_DB_PATH", raising=False)
+    monkeypatch.setenv("TODO_DB_URL", str(other_db))
+    assert main(["sweep-stale"]) == 2
+    assert "TODO_DB_PATH/TODO_DB_URL" in capsys.readouterr().err
+    assert main(["audit", "verify"]) == 0

@@ -1,64 +1,61 @@
-"""Real multi-process tracker contention tests."""
+"""Real multi-process tracker contention tests.
+
+The lifecycle-mutation CLI verbs (`create`, `claim`, `show`, ...) were removed in
+0.6.0 when MCP became the sole agent interface. The cross-process claim
+contention invariant (`BEGIN IMMEDIATE` + `PRAGMA busy_timeout`) is unchanged and
+still load-bearing, so it is exercised here directly against `TodoTracker` -- the
+same class both the floor CLI and the MCP server call.
+"""
 
 from __future__ import annotations
 
-import json
 import subprocess
+import sys
 from pathlib import Path
+
+from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase, TodoTracker
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
+IDENTITY = ProjectIdentity(project_id="concurrency-test", repository="todo-db")
 
-def _command(database: Path, actor: str, *args: str) -> list[str]:
-    return [
-        "uv",
-        "run",
-        "todo-db",
-        "--db",
-        str(database),
-        "--project-id",
-        "concurrency-test",
-        "--repository",
-        "todo-db",
-        "--actor",
-        actor,
-        *args,
-    ]
+_CLAIM_SCRIPT = """
+import sys
+from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase, TodoTracker
+from todo_db.errors import TodoError
 
-
-def _run(database: Path, actor: str, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        _command(database, actor, *args),
-        cwd=PROJECT_ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+config = DatabaseConfig(
+    path=sys.argv[1],
+    identity=ProjectIdentity(project_id="concurrency-test", repository="todo-db"),
+)
+db = TodoDatabase.open(config)
+try:
+    TodoTracker(db, actor=sys.argv[2]).claim("contested-item")
+except TodoError as exc:
+    print(exc, file=sys.stderr)
+    sys.exit(2)
+finally:
+    db.close()
+sys.exit(0)
+"""
 
 
 def test_two_processes_contending_for_one_claim_have_one_winner(tmp_path: Path) -> None:
     database = tmp_path / "tracker.sqlite"
-    assert _run(database, "setup", "init").returncode == 0
-    created = _run(
-        database,
-        "setup",
-        "create",
-        "contested-item",
-        "--title",
-        "Contested item",
-        "--worktree",
-        "local",
-        "--priority",
-        "medium",
-        "--description",
-        "An item claimed concurrently by separate processes.",
+    db = TodoDatabase.open(DatabaseConfig(path=database, identity=IDENTITY))
+    TodoTracker(db, actor="setup").create_item(
+        item_id="contested-item",
+        title="Contested item",
+        worktree="local",
+        priority="medium",
+        description="An item claimed concurrently by separate processes.",
     )
-    assert created.returncode == 0, created.stderr
+    db.close()
 
     processes = {
         actor: subprocess.Popen(
-            _command(database, actor, "claim", "contested-item"),
+            [sys.executable, "-c", _CLAIM_SCRIPT, str(database), actor],
             cwd=PROJECT_ROOT,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -73,6 +70,7 @@ def test_two_processes_contending_for_one_claim_have_one_winner(tmp_path: Path) 
     assert len(losers) == 1, results
     assert "claimed" in results[losers[0]][1]
 
-    shown = _run(database, "observer", "show", "contested-item", "--json")
-    assert shown.returncode == 0, shown.stderr
-    assert json.loads(shown.stdout)["claimed_by"] == winners[0]
+    db = TodoDatabase.open(DatabaseConfig(path=database, identity=IDENTITY))
+    claimed_by = TodoTracker(db, actor="observer").get_item("contested-item")["claimed_by"]
+    db.close()
+    assert claimed_by == winners[0]

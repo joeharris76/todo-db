@@ -14,6 +14,7 @@ from .errors import (
     E_CLAIM_STALE,
     E_LINT_GATE,
     E_MULTIPLE_CLAIMS,
+    E_NOTHING_READY,
     E_SCOPE_GATE,
     E_VERIFY_GATE,
     TodoError,
@@ -199,10 +200,20 @@ class GitScopeEngine:
 class AgentWorkflow:
     """Streamlined, claim-coordinated workflow service for autonomous agents."""
 
-    def __init__(self, tracker: TodoTracker, repo_root: Path | None = None):
+    def __init__(
+        self,
+        tracker: TodoTracker,
+        repo_root: Path | None = None,
+        git_engine: GitScopeEngine | None = None,
+    ):
         self.tracker = tracker
         self.database = tracker.database
-        self.git_engine = GitScopeEngine(repo_root)
+        if git_engine is not None and repo_root is not None:
+            raise TodoError("pass at most one of repo_root and git_engine", code=E_SCOPE_GATE)
+        if git_engine is not None:
+            self.git_engine = git_engine
+        else:
+            self.git_engine = GitScopeEngine(repo_root)
 
     def current_claim(self, principal: str | None = None) -> dict[str, Any] | None:
         p = principal or self.tracker.actor
@@ -224,7 +235,7 @@ class AgentWorkflow:
         ).fetchall()
         if len(rows) > 1:
             raise TodoError(
-                f"principal {p!r} holds multiple active claims; release all but one with `todo agent release <id> --claim-token <token>`",
+                f"principal {p!r} holds multiple active claims; release all but one with `release(id='<id>', claim_token='<token>')`",
                 code=E_MULTIPLE_CLAIMS,
             )
         return dict(rows[0]) if rows else None
@@ -262,7 +273,8 @@ class AgentWorkflow:
                 "next_action": {
                     "action": "take",
                     "item_id": top["id"],
-                    "command": f"todo agent take {top['id']}",
+                    "tool": "take",
+                    "arguments": {"id": top["id"]},
                 },
             }
 
@@ -280,7 +292,7 @@ class AgentWorkflow:
         if item["state"] != "active" or item.get("claimed_by") != self.tracker.actor:
             raise TodoError(
                 f"cannot adopt {item_id!r}: not an active claim held by actor {self.tracker.actor!r}; "
-                f"use `todo agent take {item_id}` instead"
+                f"use `take(id='{item_id}')` instead"
             )
         new_token = uuid4().hex
         now = utc_now()
@@ -323,7 +335,7 @@ class AgentWorkflow:
                 if item_id is not None and existing["id"] != item_id:
                     raise TodoError(
                         f"actor {self.tracker.actor!r} already holds active claim on {existing['id']!r}; "
-                        f"release it first with `todo agent release {existing['id']}` before taking {item_id!r}"
+                        f"release it first with `release(id='{existing['id']}')` before taking {item_id!r}"
                     )
                 if session and existing.get("claimed_session") != session:
                     self._adopt_internal(existing["id"], session)
@@ -333,7 +345,7 @@ class AgentWorkflow:
                 if not target_id:
                     ready = self.tracker.ready_items()
                     if not ready:
-                        raise TodoError("cannot take item: no ready items in queue")
+                        raise TodoError("cannot take item: no ready items in queue", code=E_NOTHING_READY)
                     target_id = ready[0]["id"]
 
                 self.tracker._claim_internal(
@@ -487,24 +499,32 @@ class AgentWorkflow:
             next_action = {
                 "action": "human_action_required",
                 "details": item["blocked_reason"],
-                "command": f"todo unblock {item_id}",
+                "tool": "unblock",
+                "arguments": {"id": item_id},
             }
         elif sections["open_deferrals"]:
             next_action = {
                 "action": "human_action_required",
                 "details": "resolve every open deferral",
-                "commands": [f"todo dismiss {entry['id']} --reason '<reason>'" for entry in sections["open_deferrals"]],
+                "tool": "dismiss_deferral",
+                "arguments": {"id": sections["open_deferrals"][0]["id"], "reason": "<reason>"},
             }
         elif unmet_items:
             next_action = {"action": "wait", "details": f"unmet item dependencies: {', '.join(unmet_items)}"}
         elif item.get("claimed_by") is None:
-            next_action = {"action": "take", "item_id": item_id, "command": f"todo agent take {item_id}"}
+            next_action = {
+                "action": "take",
+                "item_id": item_id,
+                "tool": "take",
+                "arguments": {"id": item_id},
+            }
         elif not item.get("claim_token"):
             next_action = {
                 "action": "take",
                 "item_id": item_id,
                 "details": "adopt this legacy claim to create a generation token before mutation",
-                "command": f"todo agent take {item_id} --session <session-id>",
+                "tool": "take",
+                "arguments": {"id": item_id, "session": "<session-id>"},
             }
         elif ready_units:
             unit = ready_units[0]
@@ -513,19 +533,27 @@ class AgentWorkflow:
                 "item_id": item_id,
                 "wid": unit["id"],
                 "summary": unit["summary"],
-                "command": f"todo agent progress {item_id} {unit['id']} --evidence '<evidence>'",
+                "tool": "progress",
+                "arguments": {
+                    "id": item_id,
+                    "wid": unit["id"],
+                    "evidence": "<evidence>",
+                    "claim_token": item.get("claim_token") or "<claim-token>",
+                },
             }
         elif unfinished:
             next_action = {
                 "action": "human_action_required",
                 "details": "unfinished work units have no executable dependency order; repair the plan",
-                "command": f"todo show {item_id} --json",
+                "tool": "show_item",
+                "arguments": {"id": item_id},
             }
         else:
             next_action = {
                 "action": "finish",
                 "item_id": item_id,
-                "command": f"todo agent finish {item_id} --claim-token <claim-token>",
+                "tool": "finish",
+                "arguments": {"id": item_id, "claim_token": item.get("claim_token") or "<claim-token>"},
             }
 
         git_state = self.git_engine.capture_state()
@@ -623,15 +651,23 @@ class AgentWorkflow:
 
         structural_commands: list[str] = []
         if item.get("blocked_reason"):
-            structural_commands.append(f"todo unblock {item_id}")
+            structural_commands.append(f"unblock(id='{item_id}')")
         structural_commands.extend(
-            f"todo dismiss {entry['id']} --reason '<reason>'"
+            f"dismiss_deferral(id='{entry['id']}', reason='<reason>')"
             for entry in item.get("deferrals", [])
             if entry.get("resolution") == "open"
         )
         lint_issues = self.tracker.lint(item_id)
         if lint_issues:
-            structural_commands.insert(0, f"todo lint {item_id}")
+            structural_commands.insert(0, f"lint(id='{item_id}')")
+        if lint_issues and not structural_commands[1:]:
+            # Lint-only failure retains the claim so the agent can repair and retry (ADR 0006 G7).
+            details = "; ".join(lint_issues)
+            commands = "; then ".join(structural_commands)
+            raise TodoError(
+                f"cannot finish {item_id!r}: {details}; claim retained; run `{commands}`",
+                code=E_LINT_GATE,
+            )
         if lint_issues or structural_commands:
             self.release(item_id, claim_token)
             details = "; ".join(lint_issues) if lint_issues else "structural blockers remain"
@@ -703,6 +739,74 @@ class AgentWorkflow:
             enforce_claim_generation=True,
         )
         return {"id": item_id, "state": "done", "status": "completed"}
+
+    def verify_run(
+        self,
+        item_id: str,
+        *,
+        claim_token: str | None = None,
+    ) -> dict[str, Any]:
+        """Attest-only human verification run (ADR 0006 G6).
+
+        Previews every stored verification command, runs the ladder once,
+        re-checks scope before and after, and records the fingerprint
+        attestation. It does **not** complete the item -- the ``finish`` tool
+        remains the closer. The caller's ``--actor`` must be the claim holder.
+        """
+        item = self.tracker.get_item(item_id)
+        if item.get("claimed_by") != self.tracker.actor:
+            raise TodoError(f"{item_id!r} is not claimed by actor {self.tracker.actor!r}")
+
+        tok = item.get("claim_token")
+        if tok:
+            if not claim_token:
+                raise TodoError(f"claim token required on {item_id!r}: E_CLAIM_STALE", code=E_CLAIM_STALE)
+            if tok != claim_token:
+                raise TodoError(f"claim token mismatch on {item_id!r}: E_CLAIM_STALE", code=E_CLAIM_STALE)
+
+        base = item.get("git_baseline")
+        pre_scope = self.tracker.check_scope(item_id, self.git_engine.changed_files(base=base))
+        if pre_scope:
+            raise TodoError(
+                f"cannot verify-run {item_id!r}: scope violations detected: {'; '.join(pre_scope)}",
+                code=E_SCOPE_GATE,
+            )
+
+        verifs = self.database.connection.execute(
+            "SELECT seq, command FROM verifications WHERE item_id = ? ORDER BY seq", (item_id,)
+        ).fetchall()
+        preview = [{"seq": row["seq"], "command": row["command"]} for row in verifs]
+
+        stable_fingerprint = self.git_engine.workspace_fingerprint()
+        for row in verifs:
+            result, output = self.tracker.run_verification(item_id, row["seq"], cwd=self.git_engine.repo_root)
+            if result != "pass":
+                raise TodoError(
+                    f"cannot verify-run {item_id!r}: verification seq {row['seq']} failed: {output.strip()[:200]}",
+                    code=E_VERIFY_GATE,
+                )
+            if self.git_engine.workspace_fingerprint() != stable_fingerprint:
+                raise TodoError(
+                    f"cannot verify-run {item_id!r}: verification seq {row['seq']} modified the Git workspace; "
+                    "review the change and rerun the full ladder",
+                    code=E_VERIFY_GATE,
+                )
+
+        post_scope = self.tracker.check_scope(item_id, self.git_engine.changed_files(base=base))
+        if post_scope:
+            raise TodoError(
+                f"cannot verify-run {item_id!r}: post-verification scope violations: {'; '.join(post_scope)}",
+                code=E_SCOPE_GATE,
+            )
+
+        fingerprint = self.git_engine.workspace_fingerprint()
+        self.tracker.attest_verifications(item_id, fingerprint)
+        return {
+            "id": item_id,
+            "status": "attested",
+            "verifications": preview,
+            "workspace_fingerprint": fingerprint,
+        }
 
     def release(self, item_id: str, claim_token: str | None) -> dict[str, Any]:
         self.tracker.release(item_id, claim_token=claim_token, require_claim_token=True)

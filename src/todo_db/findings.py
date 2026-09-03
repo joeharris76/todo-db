@@ -686,14 +686,17 @@ class FindingsTracker:
             if finding["disposition"] in TERMINAL_DISPOSITIONS:
                 raise TodoError(f"finding {finding_id!r} is {finding['disposition']} (terminal); cannot promote")
             item_title = title or f"Promoted finding {finding_id}"[:200]
-            tracker._insert_item(
-                item_id=new_item_id,
-                title=item_title,
-                worktree=worktree or "main",
-                priority=priority,
-                description=description
-                or f"Promoted from finding {finding_id}. Run `todo-db finding show {finding_id}` for the review prose.",
-            )
+            try:
+                tracker._insert_item(
+                    item_id=new_item_id,
+                    title=item_title,
+                    worktree=worktree or "main",
+                    priority=priority,
+                    description=description
+                    or f"Promoted from finding {finding_id}. Run `finding_show(id='{finding_id}')` for the review prose.",
+                )
+            except sqlite3.IntegrityError as exc:
+                raise TodoError(f"cannot promote {finding_id!r} to {new_item_id!r}: {exc}") from exc
             tracker._event(
                 "create", new_item_id, {"title": item_title, "state": "planning", "promoted_from_finding": finding_id}
             )

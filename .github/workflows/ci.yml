@@ -29,6 +29,10 @@ jobs:
         run: |
           bash -n scripts/turso_acceptance.sh
           bash -n scripts/hosted_auth_acceptance.sh
+          python -m py_compile scripts/parity_conformance.py
+
+      - name: Parity conformance (CLI help, exit codes, tracker+findings DDL)
+        run: uv run python scripts/parity_conformance.py --check
 
       # The hosted run stays out of CI on purpose: CI injects credentials into
       # the environment, which is the condition that hid the v0.4.2 failure.
@@ -45,23 +49,3 @@ jobs:
           set -e
           test "$status" -eq 77
 
-  pi-adapter:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: integrations/pi
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: integrations/pi/package-lock.json
-      - name: Install exact dependencies
-        run: npm ci
-      - name: Tests
-        run: npm test
-      - name: Typecheck against Pi SDK
-        run: npm run typecheck
-      - name: Inspect package contents
-        run: npm pack --dry-run

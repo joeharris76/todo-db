@@ -1,0 +1,532 @@
+[
+  {
+    "description": "Inspect changed files vs scope \u2014 read-only. Provide a list of files to check.",
+    "inputSchema": {
+      "properties": {
+        "files": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Files"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "check_scope_toolArguments",
+      "type": "object"
+    },
+    "name": "check_scope",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "check_scope_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "List your active claims (for E_MULTIPLE_CLAIMS recovery).",
+    "inputSchema": {
+      "properties": {},
+      "title": "claims_toolArguments",
+      "type": "object"
+    },
+    "name": "claims",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "claims_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Fetch bounded, guardrailed context for the claimed item; also how you re-read claim_token and next_action after a restart. Supports section/cursor/limit and fields projection.",
+    "inputSchema": {
+      "properties": {
+        "cursor": {
+          "default": 0,
+          "title": "Cursor",
+          "type": "integer"
+        },
+        "fields": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fields"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "limit": {
+          "default": 20,
+          "title": "Limit",
+          "type": "integer"
+        },
+        "section": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Section"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "context_toolArguments",
+      "type": "object"
+    },
+    "name": "context",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "context_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "List open deferrals.",
+    "inputSchema": {
+      "properties": {},
+      "title": "deferrals_toolArguments",
+      "type": "object"
+    },
+    "name": "deferrals",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "deferrals_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Show item dependencies.",
+    "inputSchema": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "deps_toolArguments",
+      "type": "object"
+    },
+    "name": "deps",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "deps_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Export all items and verifications for backup/audit.",
+    "inputSchema": {
+      "properties": {},
+      "title": "export_toolArguments",
+      "type": "object"
+    },
+    "name": "export",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "export_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "The no-shell close gate. Model-assert only: requires a current workspace-fingerprint attestation and rejects a stale pass.",
+    "inputSchema": {
+      "properties": {
+        "claim_token": {
+          "title": "Claim Token",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "claim_token"
+      ],
+      "title": "finish_toolArguments",
+      "type": "object"
+    },
+    "name": "finish",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "finish_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Return the todo-db autonomous-agent workflow protocol as Markdown. Portable fallback for the todo://instructions resource and the todo/workflow prompt.",
+    "inputSchema": {
+      "properties": {},
+      "title": "get_instructionsArguments",
+      "type": "object"
+    },
+    "name": "get_instructions",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "get_instructionsOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Planning-quality check, read-only.",
+    "inputSchema": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "lint_toolArguments",
+      "type": "object"
+    },
+    "name": "lint",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "lint_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "List items with optional filters. Supports fields projection and limit with paging fallback.",
+    "inputSchema": {
+      "properties": {
+        "cursor": {
+          "default": 0,
+          "title": "Cursor",
+          "type": "integer"
+        },
+        "fields": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fields"
+        },
+        "limit": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Limit"
+        }
+      },
+      "title": "list_items_toolArguments",
+      "type": "object"
+    },
+    "name": "list_items",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "list_items_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Inspect the ready queue or your existing claim. Returns claim-or-ready plus next_action.",
+    "inputSchema": {
+      "properties": {},
+      "title": "next_toolArguments",
+      "type": "object"
+    },
+    "name": "next",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "next_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Mark a work unit done with evidence; this refreshes the lease.",
+    "inputSchema": {
+      "properties": {
+        "claim_token": {
+          "title": "Claim Token",
+          "type": "string"
+        },
+        "evidence": {
+          "title": "Evidence",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "wid": {
+          "title": "Wid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "wid",
+        "evidence",
+        "claim_token"
+      ],
+      "title": "progress_toolArguments",
+      "type": "object"
+    },
+    "name": "progress",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "progress_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "List ready items (no unmet dependencies, not blocked). Supports fields and limit.",
+    "inputSchema": {
+      "properties": {
+        "cursor": {
+          "default": 0,
+          "title": "Cursor",
+          "type": "integer"
+        },
+        "fields": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fields"
+        },
+        "limit": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Limit"
+        }
+      },
+      "title": "ready_toolArguments",
+      "type": "object"
+    },
+    "name": "ready",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "ready_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Hand the claim back without finishing.",
+    "inputSchema": {
+      "properties": {
+        "claim_token": {
+          "title": "Claim Token",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "claim_token"
+      ],
+      "title": "release_toolArguments",
+      "type": "object"
+    },
+    "name": "release",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "release_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Show one item. Supports fields projection.",
+    "inputSchema": {
+      "properties": {
+        "fields": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fields"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "show_item_toolArguments",
+      "type": "object"
+    },
+    "name": "show_item",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "show_item_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "No-shell state change \u2014 marks a unit in progress.",
+    "inputSchema": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "wid": {
+          "title": "Wid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "wid"
+      ],
+      "title": "start_unit_toolArguments",
+      "type": "object"
+    },
+    "name": "start_unit",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "start_unit_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Tracker stats. Returns a coded error when project identity is unresolved for the drafts-dir path.",
+    "inputSchema": {
+      "properties": {},
+      "title": "stats_toolArguments",
+      "type": "object"
+    },
+    "name": "stats",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "stats_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Atomically claim a ready item or re-adopt your active claim. Pass the server's session id internally so a restart auto-adopts.",
+    "inputSchema": {
+      "properties": {
+        "id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Id"
+        }
+      },
+      "title": "take_toolArguments",
+      "type": "object"
+    },
+    "name": "take",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "take_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "List stored verifications, never run them.",
+    "inputSchema": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "verify_list_toolArguments",
+      "type": "object"
+    },
+    "name": "verify_list",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "verify_list_toolDictOutput",
+      "type": "object"
+    }
+  }
+]

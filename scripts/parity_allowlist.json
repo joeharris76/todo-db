@@ -1,0 +1,11 @@
+{
+  "help": [
+    "standalone command 'init-project'",
+    "standalone command 'verify-run'",
+    "standalone command 'rebaseline'",
+    "help: BenchBox command '(agent|create|update|list|show|ready|stats|deps|start|done|defer|promote|dismiss|block|unblock|release|claim|check-scope|verify|lint|drop)' not in standalone"
+  ],
+  "exit_codes": [],
+  "ddl": [],
+  "freeze": []
+}

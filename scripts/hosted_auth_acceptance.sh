@@ -84,13 +84,13 @@ print(f"   source={source} capability={database.get('capability')}")
 PY
 
 echo "== ordinary read with no injected credential"
-"${TODO_DB_TOOL_CMD[@]}" --db "$TARGET" stats >"$WORK/stats.txt" 2>"$WORK/stats.err" \
-  || { sed -e 's/[A-Za-z0-9_-]\{40,\}/[REDACTED]/g' "$WORK/stats.err" >&2; fail "an ordinary read failed"; }
+"${TODO_DB_TOOL_CMD[@]}" --db "$TARGET" audit verify >"$WORK/audit.txt" 2>"$WORK/audit.err" \
+  || { sed -e 's/[A-Za-z0-9_-]\{40,\}/[REDACTED]/g' "$WORK/audit.err" >&2; fail "an ordinary read failed"; }
 
 # No output we produced may contain anything token-shaped. The harness never
 # retrieves the credential itself, so there is nothing here to leak either.
 if grep -qE '[A-Za-z0-9_-]{40,}\.[A-Za-z0-9_-]{10,}|eyJ[A-Za-z0-9_-]{20,}' \
-     "$WORK/doctor.json" "$WORK/doctor.err" "$WORK/stats.txt" "$WORK/stats.err"; then
+     "$WORK/doctor.json" "$WORK/doctor.err" "$WORK/audit.txt" "$WORK/audit.err"; then
   fail "output contained a token-shaped string"
 fi
 

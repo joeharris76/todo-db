@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import sqlite3
 from importlib import resources
 from pathlib import Path
@@ -72,77 +71,6 @@ def test_default_drafts_dir_is_project_scoped_and_env_overridable(monkeypatch: p
     assert default_drafts_dir("proj-a") == Path("/tmp/custom-drafts")
 
 
-def test_cli_finding_create_is_credential_free(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    from todo_db.cli import main
-    from todo_db.findings import validate_draft
-
-    monkeypatch.delenv("TODO_DB_AUTH_TOKEN", raising=False)
-    drafts = tmp_path / "drafts"
-    assert (
-        main(
-            [
-                "--db",
-                "libsql://unreachable.example",
-                "finding",
-                "create",
-                "--title",
-                "Reviews skip generated files",
-                "--finding-kind",
-                "framework-gap",
-                "--review-context",
-                "unit test",
-                "--gate",
-                "class-not-instance",
-                "--drafts-dir",
-                str(drafts),
-            ]
-        )
-        == 0
-    )
-    output = capsys.readouterr()
-    assert "Recorded: " in output.out
-    assert "defect gate" in output.err
-    written = list(drafts.glob("*.md"))
-    assert len(written) == 1
-    assert validate_draft(written[0]) == []
-
-
-def test_cli_finding_create_enforces_gate_and_bug_class_fix(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    from todo_db.cli import main
-
-    base = [
-        "--db",
-        "libsql://unreachable.example",
-        "finding",
-        "create",
-        "--review-context",
-        "unit test",
-        "--drafts-dir",
-        str(tmp_path / "drafts"),
-    ]
-    assert main([*base, "--title", "Gateless capture", "--finding-kind", "other"]) == 2
-    assert "requires --gate" in capsys.readouterr().err
-    assert (
-        main([*base, "--title", "Bug class capture", "--finding-kind", "bug-class", "--gate", "class-not-instance"])
-        == 2
-    )
-    assert "--fixed-by" in capsys.readouterr().err
-    assert not (tmp_path / "drafts").exists()
-
-
-def test_cli_finding_candidates_lists_unsynced_drafts(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    from todo_db.cli import main
-
-    drafts = tmp_path / "drafts"
-    write_draft(drafts)
-    assert main(["--db", "libsql://unreachable.example", "finding", "candidates", "--drafts-dir", str(drafts)]) == 0
-    out = capsys.readouterr().out
-    assert f"{DRAFT_STEM}.md" in out
-    assert "1 unsynced draft(s)" in out
-
-
 def test_cli_finding_sync_lands_drafts_and_is_idempotent(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     from todo_db.cli import main
 
@@ -162,10 +90,11 @@ def test_cli_finding_sync_lands_drafts_and_is_idempotent(tmp_path: Path, capsys:
     assert main([*common(db_path), "finding", "sync", "--drafts-dir", str(drafts)]) == 2
     assert "sync conflict" in capsys.readouterr().err
 
-    assert main([*common(db_path), "finding", "list"]) == 0
-    out = capsys.readouterr().out
-    assert DRAFT_STEM in out
-    assert "open" in out
+    database = open_db(tmp_path)
+    landed = FindingsTracker(database, actor="test").list_findings()
+    database.close()
+    assert [row["id"] for row in landed] == [DRAFT_STEM]
+    assert landed[0]["disposition"] == "open"
 
 
 def test_cli_finding_sync_rejects_invalid_drafts(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -190,32 +119,9 @@ def test_cli_finding_sync_rejects_invalid_drafts(tmp_path: Path, capsys: pytest.
     assert main([*common(db_path), "finding", "sync", "--drafts-dir", str(drafts)]) == 2
     assert "failed validation" in capsys.readouterr().err
     capsys.readouterr()
-    assert main([*common(db_path), "finding", "list"]) == 0
-    assert capsys.readouterr().out.strip() == ""
-
-
-def test_cli_finding_show_prints_text_and_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    from todo_db.cli import main
-
-    drafts = tmp_path / "drafts"
-    write_draft(drafts)
-    db_path = tmp_path / "todo.sqlite"
-    assert main([*common(db_path), "init"]) == 0
-    assert main([*common(db_path), "finding", "sync", "--drafts-dir", str(drafts)]) == 0
-    capsys.readouterr()
-
-    assert main([*common(db_path), "finding", "show", DRAFT_STEM]) == 0
-    out = capsys.readouterr().out
-    assert "Example finding" in out
-    assert "evidence: src/todo_db/findings.py sync_drafts" in out
-
-    assert main([*common(db_path), "finding", "show", DRAFT_STEM, "--json"]) == 0
-    payload = json.loads(capsys.readouterr().out)
-    assert payload["finding_kind"] == "framework-gap"
-    assert payload["evidence"][0]["path"] == "src/todo_db/findings.py"
-    assert payload["events"][0]["action"] == "sync"
-
-    assert main([*common(db_path), "finding", "show", "2026-01-01-000000-missing"]) == 2
+    database = open_db(tmp_path)
+    assert FindingsTracker(database, actor="test").list_findings() == []
+    database.close()
 
 
 def test_disposition_machine_requires_reasons_and_blocks_terminal_moves(tmp_path: Path) -> None:
@@ -293,7 +199,7 @@ def test_promote_is_atomic_and_terminal(tmp_path: Path) -> None:
             description="Occupies the id a failed promote targets.",
         )
 
-        with pytest.raises(sqlite3.IntegrityError):
+        with pytest.raises(TodoError, match="cannot (promote|create item)"):
             service.promote(DRAFT_STEM, "existing-item")
         finding = service.get_finding(DRAFT_STEM)
         assert finding["disposition"] == "open"
@@ -428,7 +334,7 @@ def test_migration_runner_applies_triggers_and_quoted_semicolons(
     database.close()
 
 
-def test_ready_and_stats_surface_findings(
+def test_finding_sync_via_env_drafts_dir_lands_findings(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     from todo_db.cli import main
@@ -442,13 +348,7 @@ def test_ready_and_stats_surface_findings(
     write_draft(drafts, stem=SECOND_STEM)
     capsys.readouterr()
 
-    assert main([*common(db_path), "ready"]) == 0
-    assert "1 open finding(s), 1 unsynced draft(s) -- todo-db finding candidates" in capsys.readouterr().out
-
-    assert main([*common(db_path), "stats"]) == 0
-    stats = json.loads(capsys.readouterr().out)
-    assert stats["findings_by_disposition"] == {"open": 1}
-    assert stats["unsynced_drafts"] == 1
-
-    assert main([*common(db_path), "ready", "--json"]) == 0
-    assert json.loads(capsys.readouterr().out) == []
+    database = open_db(tmp_path)
+    tracker = FindingsTracker(database, actor="test")
+    assert tracker.stats()["findings_by_disposition"] == {"open": 1}
+    database.close()

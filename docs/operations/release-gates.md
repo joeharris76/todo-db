@@ -16,12 +16,18 @@ Both gates below are mandatory for a release whose diff touches any of:
 
 - credential resolution in `src/todo_db/backends.py`, including
   `resolve_credential`, the provider, and `auth_remediation`;
-- the generated wrapper template or the `TODO_DB_AUTH_CONTRACT` handshake in
+- the `TODO_DB_AUTH_CONTRACT` handshake or the credential/connection path in
   `src/todo_db/cli.py`;
+- the per-tool credential scoping or connection-per-call path in
+  `src/todo_db/mcp/` — specifically `server.py` (database_config +
+  HostedAuthError), `identity.py` (clientInfo + TODO_DB_ACTOR), `target.py`
+  (TODO_DB_PATH/URL/CONFIG), `dbpool.py` (CredentialMode + E_AUTH_REJECTED
+  retry);
 - `docs/adr/0004-hosted-credential-lifecycle.md`,
-  `docs/adr/0005-hosted-credential-provider.md`, or
+  `docs/adr/0005-hosted-credential-provider.md`,
+  `docs/adr/0006-mcp-sole-agent-interface.md`, or
   `docs/operations/hosted-credentials.md`;
-- the environment allowlist any adapter passes to `todo-db`.
+- the environment allowlist the MCP server passes to the tracker.
 
 Releases that touch none of these are not subject to the downstream consumer
 gate. When in doubt, run both; they cost minutes.
@@ -41,11 +47,21 @@ page is about.
 ## Gate 2: real downstream consumer
 
 Upgrade one real downstream consumer to the release candidate and run one real
-tracker command against its hosted database, in a session that was not specially
+floor-CLI command against its database, in a session that was not specially
 prepared for the test.
 
-"One real command" means a command someone would actually run — `todo list`,
-`todo ready`, `todo show <id>` — not `--help` and not `--version`.
+"One real command" means a surviving `todo-db` floor verb that opens the
+database and does real work — `todo-db audit verify`, `todo-db export --output
+<path>`, or `todo-db doctor` — not `--help` and not `--version`. The `agent`
+CLI group and the per-verb planning commands (`todo list` / `ready` / `show`,
+etc.) were removed in 0.6.0; those consumers now drive the tracker through the
+MCP server (`todo-db-mcp`), which is not a release gate — the gate exercises the
+floor CLI a bootstrap or CI step actually runs.
+
+Run the gate against a **local-SQLite** consumer. It must not depend on the
+hosted (Turso/libSQL) path, which stays experimental and uncertified
+(ADR 0006 Consequences; ADR 0003 §2.9). A hosted run may be recorded as
+additional evidence but never as the only evidence.
 
 ## Ordering
 
@@ -62,7 +78,8 @@ the release.
 Record in the release PR body:
 
 - the command line used for gate 1 and its final line;
-- the consumer, the command run for gate 2, and whether it succeeded;
+- the consumer, the floor-CLI command run for gate 2, whether the consumer's
+  database was local SQLite, and whether it succeeded;
 - the date and the operator.
 
 Record no credential value, no hosted URL, and no consumer secret.
