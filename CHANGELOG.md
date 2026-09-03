@@ -4,6 +4,26 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.6.1] - 2026-09-03
+
+### Added
+
+- **`doctor` MCP tool.** A read-only tracker preflight check (database target,
+  schema version, and resolved identity) is now registered in every MCP profile,
+  including the default agent profile. It mirrors the `todo-db doctor` floor CLI
+  for agents that only have the MCP surface.
+
+### Changed
+
+- **Deferral tools promoted to the agent profile.** `defer`, `promote_deferral`,
+  and `dismiss_deferral` moved from `--profile full` to the default agent
+  profile, so agents can manage deferrals without the full profile. The
+  agent-profile tool count rises from 19 to 23 and the full-profile count from
+  37 to 38 (`scripts/mcp_snapshots/tools.json`, `tools_full.json`).
+- **`E_VERIFY_GATE` recovery is actionable.** When `finish` hits the verify
+  gate, the error now returns the exact `todo-db --actor <principal> verify-run
+  <item> --claim-token <token>` invocation in its `recovery` list.
+
 ## [0.6.0] - 2026-09-02
 
 ### Removed
