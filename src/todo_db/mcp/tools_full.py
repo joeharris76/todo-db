@@ -179,57 +179,6 @@ def register_full_tools(
 
         return await run_in_worker(_work)
 
-    @server.tool(name="defer", description="Defer an item.")
-    async def defer_tool(id: str, summary: str, reason: str | None = None, ctx: Context = None) -> dict[str, Any]:  # type: ignore[assignment]
-        principal = _principal(holder, ctx)
-        if not principal:
-            return err(E_NO_PRINCIPAL, "principal not yet resolved; call get_instructions first", kind="error")
-
-        def _work():
-            with database_for_tool(_target(), "defer", allow_hosted=allow_hosted) as db:
-                tracker = TodoTracker(db, actor=principal)
-                try:
-                    deferral_id = tracker.defer(id, summary=summary, reason=reason or "deferred via MCP")
-                    return ok({"id": id, "deferral_id": deferral_id})
-                except TodoDBError as exc:
-                    return err(getattr(exc, "code", None) or "E_ERROR", str(exc))
-
-        return await run_in_worker(_work)
-
-    @server.tool(name="promote_deferral", description="Promote a deferral to an item.")
-    async def promote_deferral_tool(deferral_id: int, ctx: Context = None) -> dict[str, Any]:  # type: ignore[assignment]
-        principal = _principal(holder, ctx)
-        if not principal:
-            return err(E_NO_PRINCIPAL, "principal not yet resolved; call get_instructions first", kind="error")
-
-        def _work():
-            with database_for_tool(_target(), "promote_deferral", allow_hosted=allow_hosted) as db:
-                tracker = TodoTracker(db, actor=principal)
-                try:
-                    new_id = tracker.promote_deferral(deferral_id)
-                    return ok({"deferral_id": deferral_id, "new_item": new_id})
-                except TodoDBError as exc:
-                    return err(getattr(exc, "code", None) or "E_ERROR", str(exc))
-
-        return await run_in_worker(_work)
-
-    @server.tool(name="dismiss_deferral", description="Dismiss a deferral.")
-    async def dismiss_deferral_tool(deferral_id: int, reason: str, ctx: Context = None) -> dict[str, Any]:  # type: ignore[assignment]
-        principal = _principal(holder, ctx)
-        if not principal:
-            return err(E_NO_PRINCIPAL, "principal not yet resolved; call get_instructions first", kind="error")
-
-        def _work():
-            with database_for_tool(_target(), "dismiss_deferral", allow_hosted=allow_hosted) as db:
-                tracker = TodoTracker(db, actor=principal)
-                try:
-                    tracker.dismiss_deferral(deferral_id, reason=reason)
-                    return ok({"deferral_id": deferral_id, "status": "dismissed"})
-                except TodoDBError as exc:
-                    return err(getattr(exc, "code", None) or "E_ERROR", str(exc))
-
-        return await run_in_worker(_work)
-
     @server.tool(name="block", description="Block an item.")
     async def block_tool(id: str, reason: str, ctx: Context = None) -> dict[str, Any]:  # type: ignore[assignment]
         principal = _principal(holder, ctx)

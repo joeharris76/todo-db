@@ -456,6 +456,7 @@ def test_work_tools_next_take_progress_context_finish_flow(tmp_path):
             assert fin_data["ok"] is False
             assert fin_data["code"] == "E_VERIFY_GATE"
             assert fin_data["kind"] == "gate"
+            assert fin_data["recovery"] == [f"todo-db --actor tester verify-run item-flow --claim-token {token}"]
 
             # release
             rel = await session.call_tool("release", {"id": "item-flow", "claim_token": token})
@@ -860,3 +861,45 @@ def test_finding_promote_duplicate_item_returns_coded_error(tmp_path):
             assert "taken-id" in data["error"]
 
     anyio.run(go)
+
+
+def test_agent_profile_doctor_and_deferral_tools(tmp_path):
+    import json as _json
+    import subprocess
+
+    db_path = _make_project(tmp_path)
+    subprocess.run(["git", "init", "--quiet"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True)
+    _make_item(db_path, IDENT, item_id="item-defer", title="Item for deferral test")
+
+    server = build_server(resolve_launch_config(_args("--repo-root", str(tmp_path), "--actor", "tester")))
+
+    import mcp.types as types
+    from mcp.shared.memory import create_connected_server_and_client_session as connect
+
+    async def go():
+        async with connect(server, client_info=types.Implementation(name="test-defer", version="0")) as session:
+            # 1. doctor tool is in agent profile
+            doc_res = await session.call_tool("doctor", {})
+            doc_data = _json.loads(doc_res.content[0].text)
+            assert doc_data["ok"] is True
+            assert doc_data["data"]["status"] == "ok"
+            assert doc_data["data"]["schema_version"] > 0
+            assert doc_data["data"]["project_id"] == IDENT.project_id
+
+            # 2. defer tool in agent profile
+            defer_res = await session.call_tool("defer", {"id": "item-defer", "summary": "defer this test item"})
+            defer_data = _json.loads(defer_res.content[0].text)
+            assert defer_data["ok"] is True
+            deferral_id = defer_data["data"]["deferral_id"]
+            assert deferral_id
+
+            # 3. dismiss_deferral in agent profile
+            dismiss_res = await session.call_tool("dismiss_deferral", {"deferral_id": deferral_id, "reason": "not needed"})
+            dismiss_data = _json.loads(dismiss_res.content[0].text)
+            assert dismiss_data["ok"] is True
+            assert dismiss_data["data"]["status"] == "dismissed"
+
+    anyio.run(go)
+

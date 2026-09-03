@@ -44,6 +44,7 @@ _TOOL_MODES: dict[str, CredentialMode] = {
     "check_scope": CredentialMode.READ_ONLY,
     "verify_list": CredentialMode.READ_ONLY,
     "lint": CredentialMode.READ_ONLY,
+    "doctor": CredentialMode.READ_ONLY,
     "start_unit": CredentialMode.READ_WRITE,
     # plan (full profile)
     "create_item": CredentialMode.READ_WRITE,
