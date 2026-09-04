@@ -1,56 +1,52 @@
-# `todo_db.mcp` — MCP stdio server (sole agent interface, ADR 0006)
+# `todo_db.mcp` — the MCP stdio server
 
-This package builds the server and the lifecycle tools. The six hot-path
-tools (`next`, `take`, `context`, `progress`, `finish`, `release` plus
-`claims`), read-only queries, and `--profile full` planning/findings/admin
-tools are implemented here (`tools_work.py`, `tools_query.py`,
-`tools_full.py`) over `AgentWorkflow` with connection-per-call credentials
+This package is the agent interface for the tracker (ADR 0006). It builds the
+server, resolves the project and database target, pins the audit principal, and
+registers the tools over `AgentWorkflow` with connection-per-call credentials
 and one dedicated worker thread.
 
-## What is here
+## Layout
 
 | File | Purpose |
 | --- | --- |
-| `__init__.py` | Package doc + `main` shim. |
+| `__init__.py` | Package doc and a `main` shim. |
 | `__main__.py` | `python -m todo_db.mcp` → `server.main()`. |
-| `server.py` | Launch-arg parsing, stderr logging, `LaunchConfig`, `build_server`, lifespan, `startup_check`, `main`. |
-| `target.py` | Project/DB target resolution (flag > env > upward discovery), pinned for process life. |
-| `identity.py` | Principal (`--actor` → `TODO_DB_ACTOR` → `mcp:<clientInfo.name>:<user>@<host>`; never `default_actor()`) + per-process session id. |
-| `worker.py` | The single dedicated worker thread; `run_in_worker` / `run_in_worker_sync`. All DB and git work must go through it (ADR 0006 G4). |
-| `resources.py` | `todo://instructions` resource, `get_instructions` tool, `todo/workflow` prompt — all return the same text. |
-| `instructions.py` | The workflow text, copied verbatim from `cli.py` `_agent_instructions` (do not import from `cli.py`). |
+| `server.py` | Launch args, stderr logging, `LaunchConfig`, `build_server`, lifespan, `startup_check`, `main`. |
+| `target.py` | Project/database target resolution (flag > env > upward discovery), pinned for the process lifetime. |
+| `identity.py` | Principal (`--actor` → `TODO_DB_ACTOR` → `mcp:<clientInfo.name>:<user>@<host>`; never `default_actor()`) and the per-process session id. |
+| `worker.py` | The single dedicated worker thread. All database and git work goes through it (ADR 0006 G4). |
+| `dbpool.py` | Per-tool credential capability and connection lifecycle. |
+| `envelope.py` | The `{ok, data}` / `{ok, code, error, recovery, kind}` response envelope and the 16 KiB cap. |
+| `resources.py` | `todo://instructions` resource, `get_instructions` tool, and `todo/workflow` prompt — all the same text. |
+| `instructions.py` | The workflow protocol text. |
+| `tools_work.py` | Hot-path lifecycle tools: `next`, `take`, `context`, `progress`, `finish`, `release`, `claims`. |
+| `tools_query.py` | Read-only queries, loaded in every profile. |
+| `tools_full.py` | `register_planning_tools` (every profile) plus findings and admin (`--profile full`). |
 
-## Launch args
+## Profiles
 
-`--config`, `--db`, `--repo-root`, `--actor`, `--session`,
-`--profile {agent,full}` (default `agent`), `--log-level {debug,info,warning,error}`
-(default `info`), `--allow-hosted`.
+`--profile agent` (default) registers the work tools, the query tools, and the
+planning tools. `--profile full` adds findings, `block`/`unblock`/`drop`,
+`init_project`, and `config_get`.
 
-`--log-level` logs to **stderr only** — stdout is JSON-RPC framing.
+Verification execution and `rebaseline` have **no tool at any profile**. A
+human runs them from the floor CLI (ADR 0006 G6).
 
-## SDK notes
+## SDK pin
 
-- **Package / version pin.** `mcp` (the official Model Context Protocol Python
-  SDK). Latest on PyPI at implementation time is **2.1.1**; `uv.lock` resolves
-  this repo to **1.29.1**.
-- **Pin chosen: `mcp>=1.9.0,<2`.** `mcp` 2.x is a hard breaking rename —
-  `mcp.server.fastmcp.FastMCP` → `mcp.server.mcpserver.MCPServer`, and
-  `mcp.shared.memory` changed — while ADR 0006 / the migration plan are written
-  entirely against the FastMCP API. The **wire protocol is unchanged** across
-  the SDK major, so client interop (Claude Code, Codex, …) is unaffected by
-  staying on 1.x. **Escalation for the controller:** decide whether a follow-up
-  item ports this package to the `mcp` 2.x `MCPServer` API before `0.6.0`, or
-  whether `<2` is the long-term pin.
-- **Python floor: not an issue.** Both `mcp` 1.29.1 and 2.1.1 declare
-  `requires-python >=3.10`, matching this repo's `requires-python = ">=3.10"`.
-  No `requires-python` change and no CI-matrix move is needed. (Plan §S8 / risk
-  #13 asked this be confirmed — it is confirmed clear.)
+`mcp>=1.10.0,<2`. The 2.x major is a breaking rename
+(`mcp.server.fastmcp.FastMCP` → `mcp.server.mcpserver.MCPServer`, and
+`mcp.shared.memory` changed) while this package is written against the FastMCP
+API. The wire protocol is unchanged across that major, so client interop is
+unaffected by staying on 1.x.
 
-## Deferred to other items
+`FastMCP` does not forward a version to the lowlevel server, so `server.py`
+sets `_mcp_server.version` directly; otherwise `serverInfo` reports the SDK's
+version to every client instead of the tracker's.
 
-- **`todo-db mcp` CLI alias.** A `mcp` subcommand on `todo-db` (for
-  discoverability, per plan §9) is **deferred to the `mcp-cli-floor-and-gates`
-  item**. `cli.py` is out of scope for `mcp-server-foundation` and edits to it
-  fail the item. Use the `todo-db-mcp` entry point or `python -m todo_db.mcp`.
-- Lifecycle tools, the response envelope + error taxonomy, `dbpool` /
-  connection-per-call, `next_action` dual-emit — all later items.
+## Snapshots
+
+`scripts/mcp_snapshots/tools.json` and `tools_full.json` freeze the registered
+tool names, descriptions, and input schemas. `tests/test_mcp_stdio.py`
+compares the live server against them, so any tool change must land with a
+regenerated snapshot.

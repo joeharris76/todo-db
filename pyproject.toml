@@ -61,6 +61,7 @@ packages = ["src/todo_db"]
 include = [
     "/src",
     "/tests",
+    "/docs",
     "/README.md",
     "/CHANGELOG.md",
     "/LICENSE",

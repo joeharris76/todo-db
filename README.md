@@ -1,386 +1,245 @@
 # todo-db
 
-Project-isolated, database-backed TODO tracking for local SQLite first and
-optional Turso/libSQL hosted backends.
+Project-isolated, database-backed TODO tracking for coding agents.
 
-`todo-db` is the canonical command. `todo` remains a compatibility alias for
-existing consumers and is not the generic project TODO router.
+`todo-db` keeps a project's work items in a SQLite database (or a hosted
+Turso/libSQL one) behind a hash-chained audit trail, and exposes them to coding
+agents through an MCP server. Claims are coordinated, so several agents can
+work the same tracker without racing. The database is bound to one project
+identity and refuses to open under another.
 
-From **0.6.0**, agent planning and workflow go through the MCP server
-(`todo-db-mcp`). The `todo-db` CLI is a minimal floor for bootstrap, CI,
-audit/export, and human recovery. See
-[ADR 0006](docs/adr/0006-mcp-sole-agent-interface.md) and the
-[MCP migration design](docs/design/mcp-interface-migration.md).
+- **Agents** drive the tracker through the MCP server, `todo-db-mcp`.
+- **People and CI** use the `todo-db` CLI for bootstrap, audit, export, and
+  recovery. It deliberately has no planning verbs (see
+  [ADR 0006](docs/adr/0006-mcp-sole-agent-interface.md)).
 
-## Install and upgrade
+## Requirements
 
-Release artifacts are available from GitHub with published SHA-256 checksums:
+- Python 3.10 or newer.
+- [uv](https://docs.astral.sh/uv/) (or `pipx`/`pip`) to install.
+- **git** — the scope and verification gates fingerprint the working tree, so
+  the tracked project must be a git repository.
 
-```sh
-gh release download v0.6.1 --repo joeharris76/todo-db \
-  --pattern 'todo_db-0.6.1-py3-none-any.whl'
-uv tool install './todo_db-0.6.1-py3-none-any.whl[mcp]'
-# pipx accepts the same downloaded wheel; add the mcp extra the same way.
-```
+## Install
 
-Registry publication uses the same versioned artifacts when PyPI credentials
-are configured; the GitHub release remains the canonical fallback.
-
-For local development:
+Every release ships a wheel on
+[GitHub Releases](https://github.com/joeharris76/todo-db/releases) with SHA-256
+checksums:
 
 ```sh
-uv sync --extra mcp
+VERSION=0.6.1
+gh release download "v$VERSION" --repo joeharris76/todo-db \
+  --pattern "todo_db-$VERSION-py3-none-any.whl"
+uv tool install "./todo_db-$VERSION-py3-none-any.whl[mcp]"
+# pipx accepts the same wheel, with the same extra.
 ```
 
-Before upgrading an existing writable tracker, take the normal database/export
-backup. Opening it with a current `todo-db` applies checksum-verified schema
-migrations through 007 (verification workspace attestations). The migrations
-are additive; older binaries must not write a database after it has been
-upgraded.
-
-## Agent interface (MCP)
-
-Install the optional MCP extra and run the stdio server (`todo-db-mcp`). One
-server instance equals one project / worktree:
+From source:
 
 ```sh
-uv tool install 'todo-db[mcp]'
-# or: uv sync --extra mcp
-todo-db-mcp --actor "<principal>" [--repo-root <path>] [--profile agent|full]
+git clone https://github.com/joeharris76/todo-db.git
+cd todo-db && uv sync --extra mcp
 ```
 
-- `--actor` sets the audit principal. If omitted, the server derives
-  `mcp:<clientInfo.name>:<user>@<host>` from the MCP `initialize` handshake.
-- `--profile agent` (default) exposes the hot-path workflow tools plus
-  read-only queries; `full` adds planning, findings, and admin tools.
-- Verification execution and scope rebaseline are **not** MCP tools. A human
-  runs them on the floor CLI (`verify-run`, `rebaseline`) with `--actor`
-  naming the claim holder.
+Optional extras, all independent:
 
-Client registration snippets (Claude Code, Codex, Cursor, and others) live in
+| Extra | Adds | Needed for |
+| --- | --- | --- |
+| `mcp` | `mcp` SDK | the agent interface (`todo-db-mcp`) |
+| `hosted` | `libsql` | Turso/libSQL backends |
+| `audit` | `cryptography` | signed export manifests |
+| `findings` | `pyyaml` | `finding sync` |
+| `legacy` | `pyyaml` | `import-yaml` |
+
+## Quickstart
+
+Adopt the tracker in a project. `init-project` creates the database and writes
+the committed scaffold in one step:
+
+```sh
+cd your-project
+todo-db init-project \
+  --project-id your-project \
+  --repository https://github.com/you/your-project
+todo-db doctor
+```
+
+That writes two files:
+
+- `.todo-db/config.json` — the project identity, and optionally the database
+  target. **Commit this**; it is the point of the scaffold.
+- `.todo-db/.gitignore` — ignores the local database while keeping
+  `config.json` tracked.
+
+Then register the MCP server with your agent. For Claude Code, `.mcp.json` at
+the project root:
+
+```json
+{
+  "mcpServers": {
+    "todo-db": { "command": "todo-db-mcp", "args": [] }
+  }
+}
+```
+
+Snippets for Codex, Cursor, Windsurf, Zed, and Continue are in
 [`docs/operations/mcp-clients.md`](docs/operations/mcp-clients.md).
+
+Your agent now has the tracker. It creates work with `create_item`, then runs
+the loop below. This repository also ships a `todo-db` skill (mirrored into
+`.claude/`, `.codex/`, and `.gemini/`) that teaches the workflow.
+
+## Concepts
+
+| Term | Meaning |
+| --- | --- |
+| **Item** | One unit of tracked work, with an id, scope, and lifecycle. |
+| **Work unit** | A step inside an item. `progress` closes one at a time with evidence. |
+| **Scope rules** | The paths an item is allowed to touch. Checked on `progress` and `finish`. |
+| **Claim** | An exclusive, leased hold on an item. One active claim per principal. |
+| **Claim token** | The secret proving you hold the claim; required by `progress` and `finish`. |
+| **Verification ladder** | Commands stored with an item. A **human** runs them via `verify-run`; agents never execute them. |
+| **Attestation** | A git workspace fingerprint bound by `verify-run`. `finish` rejects a stale one. |
+| **Finding** | An observation captured during work, triaged separately and optionally promoted to an item. |
+
+## The agent loop
+
+```
+next  ──▶  take  ──▶  context  ──▶  progress ×N  ──▶  finish
+                                        │
+                                        └──▶  release   (hand the claim back)
+```
+
+Every response carries a machine-readable `next_action` naming the next tool
+and its arguments. Tools return one of:
+
+```json
+{"ok": true,  "data": {...}}
+{"ok": false, "code": "E_...", "error": "...", "recovery": [...], "kind": "gate|error"}
+```
+
+`kind: "gate"` is an expected result to act on (a scope violation, a stale
+claim, nothing ready). `kind: "error"` is an environment or protocol failure.
+Responses are capped at 16 KiB; list tools page rather than truncate silently.
+
+**Profiles.** `--profile agent` (the default) exposes the workflow tools, the
+read-only queries, and planning (`create_item`, `update_item`,
+`add_dependency`). `--profile full` adds findings, `block`/`unblock`/`drop`,
+`init_project`, and `config_get`.
+
+**Not tools, by design.** Verification execution (`verify-run`) and scope
+rebaseline (`rebaseline`) have no MCP tool at any profile. A human runs them
+from the CLI. `verify-run` executes commands stored in the database; on a
+shared hosted tracker those commands are written by other actors, so running
+one is a code-execution channel across a trust boundary.
 
 ## Floor CLI
 
-The remaining `todo-db` verbs are:
-
 | Area | Commands |
-| ---- | -------- |
+| --- | --- |
 | Bootstrap | `init`, `init-project`, `migrate`, `doctor` |
 | CI / release | `audit verify`, `export`, `restore`, `restore-legacy`, `import-yaml` |
-| Recovery / human | `complete`, `verify-run`, `rebaseline`, `sweep-stale`, `config`, `finding sync` |
+| Human recovery | `complete`, `verify-run`, `rebaseline`, `sweep-stale`, `config`, `finding sync` |
 
-Planning and lifecycle mutation (`create`, `claim`, `done`, `update`, `list`,
-`ready`, `show`, `stats`, `start`, `release`, `check-scope`, `verify`, `lint`,
-and the finding verbs other than `sync`) are MCP tools, not CLI commands.
+Planning and lifecycle mutation are MCP tools, not CLI commands.
 
-### Local bootstrap
+Exit codes are a contract, also printed by `todo-db --help`:
 
-```sh
-uv sync
-uv run todo-db --db .todo-db/standalone.sqlite init \
-  --project-id example-project \
-  --repository https://example.test/example-project
-uv run todo-db --db .todo-db/standalone.sqlite migrate
-uv run todo-db --db .todo-db/standalone.sqlite doctor
-uv run todo-db --db .todo-db/standalone.sqlite audit verify \
-  --project-id example-project \
-  --repository https://example.test/example-project
-uv run todo-db --db .todo-db/standalone.sqlite export \
-  --project-id example-project \
-  --repository https://example.test/example-project \
-  --output export.json
-```
+| Code | Meaning |
+| --- | --- |
+| 0 | success (`doctor`: every check passed; warnings allowed) |
+| 1 | findings reported (for example a failing `verify-run` ladder) |
+| 2 | generic error, or a hosted auth failure before the v2 contract is negotiated |
+| 4 | hosted authentication failure under `TODO_DB_AUTH_CONTRACT=v2` |
 
-Create and claim work through the MCP server after bootstrap. When a human
-must run stored verification commands (attest-only; does not complete the
-item):
+`todo-db doctor` is a read-only preflight; run it before batch work. `--rw`
+adds a hosted read-write probe, and `--json` emits structured checks.
 
-```sh
-uv run todo-db --db .todo-db/standalone.sqlite \
-  --actor "<claim-holder-principal>" \
-  verify-run example-item --claim-token "<token>"
-uv run todo-db --db .todo-db/standalone.sqlite complete example-item
-```
+## Configuration
 
-The database binds to the supplied project identity. Reusing a database for a
-different project is rejected before access. Migration SQL is packaged and
-checksum-verified. The audit chain uses SHA-256 (`sha256-chain-v2`); on open,
-it performs an $O(1)$ audit-head consistency check by default (with full $O(N)$
-chain verification during `complete`, `export`, or when `TODO_DB_AUDIT_OPEN_POLICY=full`
-is configured). Every lifecycle mutation and its audit event commit atomically.
-
-The default standalone path is `.todo-db/standalone.sqlite`. This is
-deliberate: an existing `.todo-db/todo.sqlite` from another tracker schema is
-detected and rejected rather than silently combined with this database.
-
-`todo` is a compatibility alias for `todo-db`.
-
-## Adopting todo-db in a new project
-
-`init-project` initializes the database and scaffolds the repo in one step:
-
-```sh
-uv run todo-db init-project \
-  --project-id example-project \
-  --repository https://example.test/example-project
-```
-
-It writes two things into the adopting repository:
-
-- `.todo-db/config.json` — the committed source of the project identity (and
-  optionally the database target as a repo-relative path or `libsql://` URL).
-  Commit this file; it is the whole point of the scaffold.
-- `.todo-db/.gitignore` — ignores local database and legacy replica artifacts
-  (`*.sqlite*`, `replica.db*`, `*.lock`) while keeping `config.json` tracked. Do not add a bare
-  `.todo-db/` rule to the repository root `.gitignore`; that would hide the
-  config file (init-project warns when git ignores it).
-
-If an older config still has a `wrapper` key, delete it; current releases
-ignore unknown keys rather than failing.
-
-Every `todo-db` invocation discovers `.todo-db/config.json` by walking up
-from the current directory (like git discovery; `TODO_DB_CONFIG` overrides
-the search). Resolution precedence, per field:
+Every invocation discovers `.todo-db/config.json` by walking up from the
+working directory, like git. Per field, the first source that resolves wins:
 
 1. explicit flags (`--db`, `--project-id`, `--repository`)
-2. environment (`TODO_DB_PATH`/`TODO_DB_URL`, `TODO_DB_PROJECT_ID`/`TODO_DB_REPOSITORY`)
+2. environment variables
 3. the discovered `.todo-db/config.json`
-4. for the database, `./.todo-db/standalone.sqlite`; for identity, nothing
+4. for the database only, `./.todo-db/standalone.sqlite`
 
-There is no default identity. `init` (and `init-project`) without an
-identity from one of those sources is a hard error, so a database can never
-silently bind to a placeholder project. Commands other than `init` may run
-without supplying any identity: they proceed under the identity already
-bound in the database, and the mismatch guard enforces only when the caller
-asserts one. `init-project` refuses to overwrite an existing config unless
-`--force` is passed.
+There is no default identity: `init` without one from some source is a hard
+error, so a database can never silently bind to a placeholder project.
 
-For a hosted project, provision first, then point `init-project` at the URL
-(the CLI never provisions; a first-use connection to a missing database
-fails):
+| Variable | Purpose |
+| --- | --- |
+| `TODO_DB_PATH` / `TODO_DB_URL` | Database target (local path / hosted URL). |
+| `TODO_DB_CONFIG` | Path to a config file; overrides discovery. |
+| `TODO_DB_PROJECT_ID` / `TODO_DB_REPOSITORY` | Project identity. |
+| `TODO_DB_ACTOR` | Audit principal. |
+| `TODO_DB_AUTH_TOKEN` | Hosted read-write credential. |
+| `TODO_DB_RO_AUTH_TOKEN` | Hosted read-only credential, preferred for reads. |
+| `TODO_DB_CREDENTIAL_COMMAND` | Command that supplies a credential on demand. |
+| `TODO_DB_AUTH_CONTRACT` | Set to `v2` to opt into exit 4 on hosted auth failure. |
+| `TODO_DB_AUDIT_OPEN_POLICY` | `full` forces O(N) chain verification on open. |
+| `TODO_DB_ALLOW_HOSTED_VERIFY_RUN` | Set to `1` to permit `verify-run` against a hosted tracker. |
+| `TODO_DB_VERIFY_ENV_PASSTHROUGH` | Extra variable names to pass to verification subprocesses. |
+| `TODO_DB_FINDING_DRAFTS_DIR` | Override the finding-drafts directory. |
 
-```sh
-turso db create example-project
-turso db tokens create example-project --expiration 90d   # export as TODO_DB_AUTH_TOKEN
-TODO_DB_AUTH_TOKEN=... uv run todo-db \
-  init-project --db libsql://example-project.aws-us-east-1.turso.io \
-  --project-id example-project \
-  --repository https://example.test/example-project
-```
+## Hosted backends
 
-`scripts/turso_acceptance.sh` runs an opt-in, real-primary, two-connection
-one-winner claim race against a throwaway Turso database and destroys it
-afterwards. Exit 77 means the test did not run and is not certification.
-The local fault harness exercises reconciliation after a post-commit transport
-failure, but real hosted commit-outcome fault behavior remains unmeasured, so
-agent mutations on hosted Turso are experimental rather than certified.
-
-## Findings
-
-Finding capture and triage are MCP tools (`--profile full`). Drafts are
-credential-free Markdown under
-`~/.todo-db/finding-drafts/<project-id>/` (override with
-`TODO_DB_FINDING_DRAFTS_DIR` or `--drafts-dir`). The floor CLI keeps only the
-credentialed landing step:
-
-```sh
-uv sync --extra findings
-uv run todo-db --db .todo-db/standalone.sqlite finding sync
-```
-
-`finding sync` validates each draft, inserts-if-absent by filename-stem id,
-and fails loudly on a same-id/different-content conflict instead of merging.
-Landed findings and their mutations commit atomically with a hash-chained
-audit event plus an append-only `finding_events` provenance row, and the
-findings tables are included in the lossless export/restore envelope.
-
-## Legacy YAML bridge
-
-YAML import is explicit so a standalone project cannot accidentally traverse a
-sibling repository's tracker tree:
-
-```sh
-uv sync --extra legacy
-uv run todo-db --db .todo-db/standalone.sqlite import-yaml \
-  --todo-dir /path/to/project/_project/TODO \
-  --done-dir /path/to/project/_project/DONE
-```
-
-Use `--dry-run` to inspect the import report first. `--replace` is refused for
-local databases and dry runs; it exists only for an explicitly selected live
-hosted import after an export and restore plan has been approved.
-
-Legacy event rows are not copied byte-for-byte during YAML import because the
-standalone schema requires a hash-chained event envelope. The versioned mapping
-is: each imported item emits a standalone `create` event with `item_id` in the
-canonical detail object; each imported deferral emits `defer`; each accepted
-dependency emits `dependency`. Original item timestamps and lifecycle fields
-remain row data, while new event timestamps record the import operation. Shadow
-comparison normalizes this documented action/item/detail mapping and must not
-discard actor or action provenance to manufacture parity.
-
-Restore is equally explicit and verifies the project identity, schema version,
-and audit chain before replacing state:
-
-```sh
-uv run todo-db --db .todo-db/standalone.sqlite restore \
-  --input export.json --replace \
-  --project-id example-project \
-  --repository https://example.test/example-project
-```
-
-## Hosted use
-
-The initial hosted target is Turso Cloud with one physical database per
-project. Provision databases and scoped credentials outside this runtime
-package; the CLI never creates a database from a first-use connection.
-
-Install the optional adapters and provide credentials through the environment:
+The hosted target is Turso Cloud, one database per project. Provision the
+database and its credentials outside `todo-db`; the CLI never creates a
+database from a first-use connection.
 
 ```sh
 uv sync --extra hosted --extra audit
-TODO_DB_AUTH_TOKEN=... uv run todo-db \
-  --db libsql://project.aws-us-east-1.turso.io \
-  init --project-id example-project \
+turso db create example-project
+export TODO_DB_AUTH_TOKEN="$(turso db tokens create example-project --expiration 90d)"
+todo-db --db libsql://example-project.aws-us-east-1.turso.io \
+  init-project --project-id example-project \
   --repository https://example.test/example-project
-
-TODO_DB_RO_AUTH_TOKEN=... uv run todo-db \
-  --db libsql://project.aws-us-east-1.turso.io \
-  export --project-id example-project \
-  --repository https://example.test/example-project \
-  --output export.json
 ```
 
-Hosted read-write connections require `TODO_DB_AUTH_TOKEN`. Read-only commands
-prefer `TODO_DB_RO_AUTH_TOKEN` and fall back to `TODO_DB_AUTH_TOKEN` only when
-the RO variable is absent or empty; rejection of a present RO credential never
-triggers an RW retry. Plaintext `http://` URLs are refused. Provision bounded
-database-scoped credentials outside todo-db:
+Only encrypted transports are accepted (`https://`, `libsql://`, `wss://`);
+cleartext `http://` and `ws://` are refused. Read-only commands prefer
+`TODO_DB_RO_AUTH_TOKEN` and fall back to `TODO_DB_AUTH_TOKEN` only when the
+read-only variable is absent — so least privilege requires actually minting a
+token with `--read-only`. `CredentialMode.READ_ONLY` selects a credential; it
+does not constrain one.
 
-```sh
-export TODO_DB_AUTH_TOKEN="$(turso db tokens create <db> --expiration 90d)"
-export TODO_DB_RO_AUTH_TOKEN="$(turso db tokens create <db> --read-only --expiration 180d)"
-```
-
-When neither an explicit token nor a `TODO_DB_*` variable is present, todo-db
-asks the command in `TODO_DB_CREDENTIAL_COMMAND` for the capability it needs, so
-a credential provisioned once is reused by every later shell and MCP session
-without an interactive step:
+Rather than exporting a token per shell, point `TODO_DB_CREDENTIAL_COMMAND` at
+your secret store:
 
 ```sh
 export TODO_DB_CREDENTIAL_COMMAND="security find-generic-password -w -s todo-db-rw"
 ```
 
-The command is split with `shlex` and executed directly; it never runs through a
-shell, and your arguments are passed through exactly as written. The requested
-capability (`read-only` or `read-write`) reaches the command only as
-`TODO_DB_CREDENTIAL_CAPABILITY` in its environment, so a plain retrieval command
-needs no special handling and a script that wants to branch can read it. A
-provider-resolved credential is reported as `requested:read-only` or
-`requested:read-write`, because the provider may ignore the request and serve
-both from one entry; the label records the request, never a proven property.
-Exit 0 with
-output supplies the token; exit 0 with no output means the credential is absent,
-which is the only condition that lets read-only fall back to read-write. Any
-non-zero exit, timeout, unparsable command, missing executable, or oversized
-output is `E_AUTH_MISSING` and stops resolution, so a broken read-only provider
-can never escalate to a read-write credential. Failures report the provider's
-program name and exit status only: provider stdout is the token and provider
-stderr routinely echoes it, so neither ever reaches an error, log, or doctor
-field. The provider is consulted at most once per capability per process, never
-for a local database, and never when a credential was supplied explicitly. With
-the variable unset, behaviour is exactly what it was before it existed. A caller
-that filters the environment it passes to todo-db must forward the variable.
+Provisioning, rotation, the provider contract, and compromise response are in
+[`docs/operations/hosted-credentials.md`](docs/operations/hosted-credentials.md).
+Agent mutations against hosted Turso remain **experimental**: real
+commit-outcome fault behaviour is unmeasured (ADR 0003 §2.9).
 
-`scripts/hosted_auth_acceptance.sh` proves the whole path end to end: it removes
-any inherited `TODO_DB_AUTH_TOKEN` and `TODO_DB_RO_AUTH_TOKEN`, then asserts
-that `doctor` resolves the credential from the provider and that an ordinary
-read succeeds. Unconfigured it exits 77; `--require` makes an unconfigured run a
-failure. Releases that touch credential resolution must pass it and a real
-downstream consumer check before tagging; see
-[`docs/operations/release-gates.md`](docs/operations/release-gates.md).
+## Data safety
 
-`CredentialMode.READ_ONLY` chooses a credential but does not make an RW token
-read-only. Server-side least privilege requires a token created with
-`--read-only`. ADR 0004 records the lifecycle decision and ADR 0005 records the
-credential-provider contract that removes per-session token export
-([all decision records](docs/adr/README.md)); see
-[`docs/operations/hosted-credentials.md`](docs/operations/hosted-credentials.md)
-for provisioning, routine replacement, and compromise response. ADR 0006 amends
-the scoping unit for the MCP server: capability-scoped credentials are resolved
-per tool call, not held as one standing read-write connection.
+- Every lifecycle mutation and its audit event commit atomically.
+- The audit chain is SHA-256 (`sha256-chain-v2`). Open performs an O(1)
+  head check; `complete` and `export` verify the full chain.
+- Migrations are packaged and checksum-verified. They are additive, but an
+  older binary must not write to a database a newer one has upgraded — take a
+  backup before upgrading a writable tracker.
+- `export` writes a lossless JSON envelope; `restore` verifies identity, schema
+  version, and audit chain before replacing state.
+- Signed manifests are available via `todo_db.sign_export()` and
+  `todo_db.verify_signed_export()`. Keep the signing key outside the database.
 
-`verify-run` executes commands stored in the database. On a shared hosted
-database those commands are written by other actors, so running one locally
-is a lateral code-execution channel across the trust boundary between
-writers. Against a hosted backend `verify-run` therefore refuses (exit 2)
-unless `TODO_DB_ALLOW_HOSTED_VERIFY_RUN=1` is set; inspect the stored commands
-first, then opt in per invocation. MCP tools never execute stored commands.
-`verify-run` previews and runs each rung exactly once, re-checks scope, and
-binds a deterministic Git workspace fingerprint attestation — it does not
-complete the item. `--actor` must name the claim holder (typically the MCP
-server principal). Verification subprocesses receive a small environment
-allowlist; extra names require explicit `TODO_DB_VERIFY_ENV_PASSTHROUGH`.
-Tracker data-plane credentials (`TODO_DB_AUTH_TOKEN`, `TODO_DB_RO_AUTH_TOKEN`)
-and Turso control-plane credentials (`TURSO_AUTH_TOKEN`, `TURSO_API_TOKEN`) are
-always rejected from passthrough, with variable names—but never values—
-reported. `TODO_DB_CREDENTIAL_COMMAND` is rejected on the same terms: it holds
-no secret itself, but a verification command that inherited it could run the
-provider and print the token, so the protection covers anything that yields a
-credential on demand, not only variables that contain one. Unrelated explicitly
-named credentials remain supported. This reduces ambient-secret exposure but is
-not a sandbox: an approved command still has the caller's filesystem access.
+## Documentation
 
-`rebaseline` is likewise a human floor verb: it requires `--actor`, a claim
-token, an audited `--reason`, and a clean worktree.
+- [Decision records](docs/adr/README.md) — why the system is shaped this way.
+- [MCP client registration](docs/operations/mcp-clients.md)
+- [Hosted credentials](docs/operations/hosted-credentials.md)
+- [Release gates](docs/operations/release-gates.md)
+- [Skill deployment](docs/operations/skill-deployment.md)
+- [Contributing](CONTRIBUTING.md) · [Security policy](SECURITY.md) ·
+  [Changelog](CHANGELOG.md)
 
-Signed export manifests are available through `todo_db.sign_export()` and
-`todo_db.verify_signed_export()`. Keep the signing key outside the database;
-the signed manifest contains the public key and export digest, while
-verification can be pinned to an independently trusted public key.
+## License
 
-## Failure detection and remediation
-
-Exit codes are a contract (also printed in `todo-db --help`):
-
-| Code | Meaning |
-| ---- | ------- |
-| 0    | success (`doctor`: every check passed; warnings allowed) |
-| 1    | findings reported (for example verification failures from `verify-run`) |
-| 2    | generic error, or legacy-safe authentication failure before v2 negotiation |
-| 4    | hosted authentication failure under `TODO_DB_AUTH_CONTRACT=v2` |
-
-Missing credentials raise `HostedAuthError` with `E_AUTH_MISSING`; confidently
-classified server rejection uses `E_AUTH_REJECTED`. HTTP 401 and explicit
-`unauthorized`, `forbidden`, invalid-token, or expired/invalid JWT evidence are
-auth-shaped. Bare 403, quota/suspension, network, TLS authority, protocol, and
-other ambiguous failures stay generic exit 2. Messages and tracebacks redact
-the URL and selected token.
-
-The MCP server sets `TODO_DB_AUTH_CONTRACT=v2` in its own environment. Floor
-CLI automation that needs exit 4 on hosted auth failure must set
-`TODO_DB_AUTH_CONTRACT=v2` explicitly. Without that handshake, auth failures
-return exit 2 so callers that have not opted into the v2 contract cannot
-mistake an auth failure for a generic error and auto-mint credentials. Library
-callers always receive the coded `HostedAuthError`, independent of CLI exit
-negotiation.
-
-`todo-db doctor` is a read-only preflight intended before batch work. Passing
-`--rw` adds a hosted read-write connection probe. It checks config discovery,
-identity resolution (with its source tier; failing only when no source
-resolves and the database is unbound), the database target (local: file or
-creatable parent plus schema version, warning `behind -- run init to
-migrate`; hosted: URL scheme and a read-only `SELECT` probe against the
-primary using `TODO_DB_RO_AUTH_TOKEN`, else `TODO_DB_AUTH_TOKEN`), and
-finding-drafts dir writability. It never invokes the Turso CLI. Hosted
-database checks include non-secret `source`, `capability`, and auth `code`
-fields in JSON; text output names the same provenance but never the token
-value. Exit 4 requires both an auth failure and the v2 contract; callers
-without the contract receive exit 2. `--json` emits
-`{"checks": [{name, status, detail, remediation?, source?, capability?,
-code?}], "exit": N}`.
-
-Provision a credential once and point `TODO_DB_CREDENTIAL_COMMAND` at it, or
-inject `TODO_DB_AUTH_TOKEN` / `TODO_DB_RO_AUTH_TOKEN` before invoking the floor
-CLI or MCP server; an authentication failure is a hard stop for batch work.
+MIT. See [LICENSE](LICENSE).
