@@ -1,0 +1,53 @@
+name: Bug report
+description: Report a reproducible defect in todo-db or todo-db-mcp
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened, and what did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction Steps
+      description: Minimal reproduction steps or command sequence.
+      placeholder: |
+        1. Run `todo-db init --project-id test --repository ...`
+        2. Execute ...
+        3. Observe error ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Command Output or Sanitized Logs
+      description: Paste relevant command output or traceback (ensure tokens and credentials are removed).
+      render: shell
+  - type: input
+    id: version
+    attributes:
+      label: todo-db version
+      placeholder: 0.6.1
+    validations:
+      required: true
+  - type: dropdown
+    id: backend
+    attributes:
+      label: Database Backend
+      options:
+        - Local SQLite (.todo-db/standalone.sqlite)
+        - Hosted Turso / libSQL
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment (Python version, OS)
+      placeholder: Python 3.12 / macOS 15 / Ubuntu 24.04
+    validations:
+      required: true

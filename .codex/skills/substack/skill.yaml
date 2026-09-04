@@ -1,9 +1,0 @@
-depends:
-  - shared-change-framework
-tags:
-  - publishing
-  - substack
-category: content
-targets:
-  claude: true
-  codex: true

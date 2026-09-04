@@ -60,7 +60,7 @@ never trails a local experiment.
 
 ### BenchBox fork note
 
-BenchBox (`~/Developer/BenchBox`) is a sibling consumer with its own
+BenchBox (`https://github.com/joeharris76/BenchBox`) is a sibling consumer with its own
 `skill-sync.yaml` / lock. It maintains its own pin separately (currently at a
 derived catalog ref). Updating todo-db pins does not automatically advance the
 BenchBox fork; coordinate explicitly and keep shared skills (those without a
