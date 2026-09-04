@@ -1,6 +1,6 @@
 ---
 name: todo-db
-description: Use when working in a project tracked by todo-db - "what should I work on", "what's ready", "claim a TODO", "start work on an item", "record progress", "finish an item", "create a TODO", "add a work item", "check scope", "release my claim", "why did finish fail", "tracker stats", "capture a finding". Drives the tracker through the todo-db MCP server.
+description: Use when working in a project tracked by todo-db — "what should I work on", "what's ready", "claim a TODO", "start work on an item", "record progress", "finish an item", "create a TODO", "add a work item", "check scope", "release my claim", "why did finish fail", "tracker stats", "prioritize TODOs", "batch implementation", "batch handoff", "closeout", "write a spec", "ideate", "review TODO", "capture a finding". Drives the tracker through the todo-db MCP server.
 ---
 
 # todo-db
@@ -19,8 +19,8 @@ available, the MCP server is not registered — see
   `next_action`: `{"tool": ..., "arguments": {...}}`. Follow it rather than
   guessing. Query and planning tools return their result alone. An idle `next`
   returns `{"action": "wait", ...}` with no tool to call.
-- One active claim per principal. `take` a second item and you get
-  `E_MULTIPLE_CLAIMS`; use `claims` to see what you hold.
+- One active claim per principal. Taking a second item without releasing or
+  finishing is refused; call `claims` to see what you hold.
 - Only the claim holder may `progress`, `finish`, or `release` an item. Keep
   the `claim_token` from `take`; re-read it with `context` after a restart.
 - Never hand-edit tracker state, and never create tracker files. The database
@@ -45,6 +45,9 @@ available, the MCP server is not registered — see
 {"ok": true,  "data": {...}}
 {"ok": false, "code": "E_...", "error": "...", "recovery": [...], "kind": "gate|error"}
 ```
+
+`get_instructions` returns markdown text directly; all other query, work, and
+planning tools return the `{ok, ...}` JSON envelope.
 
 `kind: "gate"` is an expected result you should act on. `kind: "error"` is an
 environment or protocol failure — stop and report it. The `recovery` list names
@@ -80,17 +83,19 @@ verification is a human step.
 ## Planning
 
 `create_item` takes the work breakdown, scope rules, preserves, and
-verifications together. An item created without scope rules or verifications
-will fail `lint` and then `finish`, so supply them up front:
+verifications together. Titles must be non-empty and descriptions must be at
+least 10 characters. An item created without scope rules or verifications will
+fail `lint` and then `finish`, so supply them up front:
 
 - **work** — the ordered work units, each independently evidenced.
-- **scope** — the paths the item may touch. Keep it tight; a wide scope defeats
-  the gate.
-- **verifications** — the commands that prove the work, for a human to run.
+- **scope** — the paths the item may touch (`only_modify` and optional
+  `do_not_modify`). Keep it tight; a wide scope defeats the gate.
+- **verifications** — the commands with `description` and `command` that prove
+  the work, for a human to run.
 
 Use `update_item` to amend an item without touching its lifecycle, and
-`add_dependency` to record that one item needs another. `ready` only returns
-items whose dependencies are met and that are not blocked.
+`add_dependency(id=..., needs=...)` to record that one item needs another.
+`ready` only returns items whose dependencies are met and that are not blocked.
 
 ## Finding the right tool
 
@@ -98,7 +103,7 @@ items whose dependencies are met and that are not blocked.
 |---|---|
 | See what is ready | `ready`, `next` |
 | Inspect one item | `show_item`, `context` |
-| Search or filter | `list_items`, `deps` |
+| List items | `list_items`, `deps` |
 | Create or amend work | `create_item`, `update_item`, `add_dependency` |
 | Record or close work | `start_unit`, `progress`, `finish`, `release` |
 | Check before committing | `check_scope`, `lint`, `verify_list` |
@@ -110,6 +115,24 @@ items whose dependencies are met and that are not blocked.
 
 `verify_list` shows the stored verification commands; it never runs them.
 
+## Process guides
+
+For multi-step workflows, follow the dedicated reference guide:
+
+| Workflow (guide, not a tool) | When to use it | Guide |
+|---|---|---|
+| prioritize | Rank open items by topic, severity, readiness, and unlock value | `references/prioritize.md` |
+| batch | Implement a set of items in dependency order across bounded contexts | `references/batch.md` |
+| closeout | Remediate reviewed findings and close batch items | `references/closeout.md` |
+| handoff | Create a self-contained handoff prompt for another agent session | `references/handoff.md` |
+| ideate | Refine a rough idea into an actionable problem statement | `references/ideate.md` |
+| spec | Structure a specification for ingestion by `create_item` | `references/spec.md` |
+| implement | Drive a claimed item through the working loop | `references/implement.md` |
+| review | Audit planning quality, scope precision, and verification commands | `references/review.md` |
+| queries | Search, filter, and manage items without direct SQL | `references/queries.md` |
+| bootstrap | Initialize project config and verify hosted database health | `references/bootstrap.md` |
+| recovery | Resolve gate codes, claim conflicts, and environment errors | `references/recovery.md` |
+
 ## Human-only floor verbs
 
 These are not tools. When you hit a gate that needs one, stop and tell the
@@ -118,9 +141,11 @@ human the exact command:
 - `todo-db verify-run <id> --claim-token <token> --actor <principal>` — runs the
   verification ladder once and binds a workspace attestation. It attests; it
   does not complete the item. Your `finish` call remains the closer.
-- `todo-db rebaseline` — audited, clean-worktree update of an item's scope
-  baseline.
+- `todo-db --actor <principal> rebaseline <id> --reason "<why>"` — audited update
+  of an item's scope baseline.
 - `todo-db complete <id>` — human completion path.
 - `todo-db finding sync` — lands finding drafts into the tracker.
 
-Details: `references/recovery.md`.
+Details: `references/recovery.md` and `references/implement.md`.
+
+

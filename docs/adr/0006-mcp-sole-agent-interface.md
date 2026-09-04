@@ -264,3 +264,13 @@ the response envelope, and gate recovery, and it names `verify-run` and
 `rebaseline` as human-only floor verbs.
 
 The rejection above still stands for anything that adds a mutation surface.
+
+## Amendment: planning tools load in every profile
+
+G8 and G9 originally assigned planning tools (`create_item`, `update_item`,
+`add_dependency`) to `--profile full`. With the per-verb CLI removed in 0.6.0,
+an agent on the default profile had no sanctioned path to create work.
+
+These three planning tools are promoted to load in every profile. Findings,
+admin, `block`, `unblock`, and `drop` remain behind `--profile full`.
+
