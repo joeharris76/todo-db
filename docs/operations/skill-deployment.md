@@ -56,6 +56,11 @@ CI enforces this with `skill-sync verify`, which needs no source access: it
 proves the committed mirrors match the lock. `skill-sync sync --dry-run` is the
 separate freshness check and does need source access.
 
+The workflow clones `joeharris76/skill-sync` at a pinned commit, builds it, and
+runs that binary. `npx github:…#<sha>` is not used: on the GitHub-hosted Ubuntu
+npm it fails with `GitFetcher requires an Arborist constructor to pack a
+tarball` (npm/cli#6723).
+
 ## Advancing a git-sourced skill
 
 Prefer advancing `skill-sync.yaml` refs to a merged, published revision on the
