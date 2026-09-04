@@ -18,14 +18,20 @@ adheres to [Semantic Versioning](https://semver.org/).
   recognised only `libsql`, `https`, and `http`, so a `ws://` or `wss://` URL
   never reached the hosted backend and was opened as a local filename instead.
   Hosted routing now covers every network scheme libsql accepts, and the
-  transport check accepts only `https://`, `libsql://`, and `wss://`.
-- **A hosted backend that cannot enforce foreign keys fails loudly.** The
-  `PRAGMA foreign_keys = ON` failure was swallowed on the hosted path only.
-  The schema relies on `ON DELETE CASCADE`, so a silent downgrade orphaned rows.
-- **Auth classification covers unambiguous prose.** "authentication failed" and
-  "credential expired" are now auth-shaped. Quota, suspension, network, and TLS
-  failures stay generic, so a caller still cannot mistake ambiguity for an auth
-  failure.
+  transport check accepts only `https://`, `libsql://`, and `wss://`. Both
+  lists live on `DatabaseConfig`, with a test pinning the secure set as a
+  strict subset so they cannot drift apart.
+- **A hosted backend that cannot enforce foreign keys says so.** The
+  `PRAGMA foreign_keys = ON` failure was swallowed on the hosted path only, and
+  the schema relies on `ON DELETE CASCADE`, so a silent downgrade orphaned rows.
+  The pragma is now read back to confirm it took effect, and a connection that
+  cannot enforce it logs a warning naming the consequence. It warns rather than
+  refusing to connect, because not every hosted endpoint honours a session
+  pragma and a hard failure would take working deployments offline.
+- **Auth classification covers common phrasings.** "invalid credentials",
+  "token expired", "authentication error", and their variants are now
+  auth-shaped. Quota, suspension, network, TLS, and timeout failures stay
+  generic, so a caller still cannot mistake ambiguity for an auth failure.
 - **`serverInfo` reports the tracker's version**, not the MCP SDK's.
 - **Client registration snippets no longer pass `${HOSTNAME}`.** It is a shell
   variable rather than an exported one, so it expanded to empty and wrote a
