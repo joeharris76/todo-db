@@ -1,0 +1,80 @@
+name: Audit Chain Operational Monitor
+
+# Operational audit monitor. Run on demand or configure schedule in private ops runner.
+on:
+  workflow_dispatch:
+    inputs:
+      database_target:
+        description: "Database URL or path to verify"
+        required: false
+        default: ""
+
+jobs:
+  verify-audit:
+    name: Full Audit Verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+          enable-cache: true
+
+      - name: Set up Python 3.12
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Run Full Audit Chain Verification
+        env:
+          TODO_DB_URL: ${{ secrets.TODO_DB_PROD_URL }}
+          TODO_DB_RO_AUTH_TOKEN: ${{ secrets.TODO_DB_PROD_RO_TOKEN }}
+          TODO_DB_AUTH_CONTRACT: v2
+          TODO_DB_AUDIT_OPEN_POLICY: full
+          TARGET_INPUT: ${{ github.event.inputs.database_target }}
+        run: |
+          TARGET="${TARGET_INPUT:-${TODO_DB_URL}}"
+          if [ -z "$TARGET" ]; then
+            if [ -f ".todo-db/standalone.sqlite" ]; then
+              TARGET=".todo-db/standalone.sqlite"
+            else
+              echo "::warning::No target specified and TODO_DB_PROD_URL secret is not configured; skipping audit monitor."
+              exit 0
+            fi
+          fi
+          echo "Verifying audit chain for target: $TARGET"
+          case "$TARGET" in
+            libsql://*|https://*)
+              uv run todo-db --db "$TARGET" doctor --json > /tmp/todo-db-doctor.json
+              uv run python - <<'PY'
+          import json
+
+          with open("/tmp/todo-db-doctor.json", encoding="utf-8") as handle:
+              report = json.load(handle)
+          database = next(check for check in report["checks"] if check["name"] == "database")
+          if database.get("source") != "TODO_DB_RO_AUTH_TOKEN" or database.get("capability") != "read-only":
+              raise SystemExit("hosted audit requires TODO_DB_RO_AUTH_TOKEN with read-only provenance")
+          PY
+              ;;
+          esac
+          uv run todo-db --db "$TARGET" audit verify > /tmp/audit-integrity.txt
+          cat /tmp/audit-integrity.txt
+
+      - name: Upload Audit Verification Summary
+        if: success() && hashFiles('/tmp/audit-integrity.txt') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-integrity-summary
+          path: /tmp/audit-integrity.txt
+          retention-days: 14
+
+      - name: Notify on Failure
+        if: failure()
+        run: |
+          echo "::error::Audit chain verification failed! Check target configuration or inspect database for potential tampering."

@@ -1,0 +1,24 @@
+# databases stay local; .todo-db/config.json and .todo-db/.gitignore are tracked
+.todo-db/*.sqlite*
+.todo-db/*replica.db*
+.todo-db/*.lock
+.todo-db/archive/
+.todo-db/export/
+.todo-batch/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# >>> skill-sync managed (do not edit) >>>
+/.claude/skills/.system/
+/.codex/skills/.system/
+/.gemini/skills/.system/
+# <<< skill-sync managed <<<

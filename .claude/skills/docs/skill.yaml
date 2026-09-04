@@ -1,0 +1,10 @@
+depends:
+  - shared-change-framework
+  - shared-investigation-framework
+  - shared-review-protocol
+tags:
+  - documentation
+category: content
+targets:
+  claude: true
+  codex: true

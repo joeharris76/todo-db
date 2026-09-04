@@ -1,0 +1,1141 @@
+[
+  {
+    "name": "add_dependency",
+    "description": "Add an item dependency (needs).",
+    "inputSchema": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "needs": {
+          "title": "Needs",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "needs"
+      ],
+      "title": "add_dependency_toolArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "add_dependency_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "name": "check_scope",
+    "description": "Inspect changed files vs scope \u2014 read-only. Provide a list of files to check.",
+    "inputSchema": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "files": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Files"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "check_scope_toolArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "check_scope_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "name": "claims",
+    "description": "List your active claims (for E_MULTIPLE_CLAIMS recovery).",
+    "inputSchema": {
+      "properties": {},
+      "title": "claims_toolArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "claims_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "name": "context",
+    "description": "Fetch bounded, guardrailed context for the claimed item; also how you re-read claim_token and next_action after a restart. Supports section/cursor/limit and fields projection.",
+    "inputSchema": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "fields": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fields"
+        },
+        "section": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Section"
+        },
+        "cursor": {
+          "default": 0,
+          "title": "Cursor",
+          "type": "integer"
+        },
+        "limit": {
+          "default": 20,
+          "title": "Limit",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "context_toolArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "context_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "name": "create_item",
+    "description": "Create a new item. Supports work, scope, preserves, verifications.",
+    "inputSchema": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "worktree": {
+          "title": "Worktree",
+          "type": "string"
+        },
+        "priority": {
+          "default": "medium",
+          "title": "Priority",
+          "type": "string"
+        },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "work": {
+          "anyOf": [
+            {
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Work"
+        },
+        "scope": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scope"
+        },
+        "preserves": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Preserves"
+        },
+        "verifications": {
+          "anyOf": [
+            {
+              "items": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Verifications"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "worktree"
+      ],
+      "title": "create_item_toolArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "create_item_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "name": "defer",
+    "description": "Defer an item.",
+    "inputSchema": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "summary": {
+          "title": "Summary",
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        }
+      },
+      "required": [
+        "id",
+        "summary"
+      ],
+      "title": "defer_toolArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "defer_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "name": "deferrals",
+    "description": "List open deferrals.",
+    "inputSchema": {
+      "properties": {},
+      "title": "deferrals_toolArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "deferrals_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "name": "deps",
+    "description": "Show item dependencies.",
+    "inputSchema": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "deps_toolArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "deps_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "name": "dismiss_deferral",
+    "description": "Dismiss a deferral.",
+    "inputSchema": {
+      "properties": {
+        "deferral_id": {
+          "title": "Deferral Id",
+          "type": "integer"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "deferral_id",
+        "reason"
+      ],
+      "title": "dismiss_deferral_toolArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "dismiss_deferral_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "name": "doctor",
+    "description": "Read-only tracker preflight check (database, schema, identity).",
+    "inputSchema": {
+      "properties": {},
+      "title": "doctor_toolArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "doctor_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "name": "export",
+    "description": "Export all items and verifications for backup/audit.",
+    "inputSchema": {
+      "properties": {},
+      "title": "export_toolArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "export_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "name": "finish",
+    "description": "The no-shell close gate. Model-assert only: requires a current workspace-fingerprint attestation and rejects a stale pass.",
+    "inputSchema": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "claim_token": {
+          "title": "Claim Token",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "claim_token"
+      ],
+      "title": "finish_toolArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "finish_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "name": "get_instructions",
+    "description": "Return the todo-db autonomous-agent workflow protocol as Markdown. Portable fallback for the todo://instructions resource and the todo/workflow prompt.",
+    "inputSchema": {
+      "properties": {},
+      "title": "get_instructionsArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "get_instructionsOutput",
+      "type": "object"
+    }
+  },
+  {
+    "name": "lint",
+    "description": "Planning-quality check, read-only.",
+    "inputSchema": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "lint_toolArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "lint_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "name": "list_items",
+    "description": "List items with optional filters. Supports fields projection and limit with paging fallback.",
+    "inputSchema": {
+      "properties": {
+        "fields": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fields"
+        },
+        "limit": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Limit"
+        },
+        "cursor": {
+          "default": 0,
+          "title": "Cursor",
+          "type": "integer"
+        }
+      },
+      "title": "list_items_toolArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "list_items_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "name": "next",
+    "description": "Inspect the ready queue or your existing claim. Returns claim-or-ready plus next_action.",
+    "inputSchema": {
+      "properties": {},
+      "title": "next_toolArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "next_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "name": "progress",
+    "description": "Mark a work unit done with evidence; this refreshes the lease.",
+    "inputSchema": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "wid": {
+          "title": "Wid",
+          "type": "string"
+        },
+        "evidence": {
+          "title": "Evidence",
+          "type": "string"
+        },
+        "claim_token": {
+          "title": "Claim Token",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "wid",
+        "evidence",
+        "claim_token"
+      ],
+      "title": "progress_toolArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "progress_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "name": "promote_deferral",
+    "description": "Promote a deferral to an item.",
+    "inputSchema": {
+      "properties": {
+        "deferral_id": {
+          "title": "Deferral Id",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "deferral_id"
+      ],
+      "title": "promote_deferral_toolArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "promote_deferral_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "name": "ready",
+    "description": "List ready items (no unmet dependencies, not blocked). Supports fields and limit.",
+    "inputSchema": {
+      "properties": {
+        "fields": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fields"
+        },
+        "limit": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Limit"
+        },
+        "cursor": {
+          "default": 0,
+          "title": "Cursor",
+          "type": "integer"
+        }
+      },
+      "title": "ready_toolArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "ready_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "name": "release",
+    "description": "Hand the claim back without finishing.",
+    "inputSchema": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "claim_token": {
+          "title": "Claim Token",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "claim_token"
+      ],
+      "title": "release_toolArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "release_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "name": "show_item",
+    "description": "Show one item. Supports fields projection.",
+    "inputSchema": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "fields": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fields"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "show_item_toolArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "show_item_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "name": "start_unit",
+    "description": "No-shell state change \u2014 marks a unit in progress.",
+    "inputSchema": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "wid": {
+          "title": "Wid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "wid"
+      ],
+      "title": "start_unit_toolArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "start_unit_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "name": "stats",
+    "description": "Tracker stats. Returns a coded error when project identity is unresolved for the drafts-dir path.",
+    "inputSchema": {
+      "properties": {},
+      "title": "stats_toolArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "stats_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "name": "take",
+    "description": "Atomically claim a ready item, or re-adopt the claim you already hold. Omit `id` to take the top of the ready queue.",
+    "inputSchema": {
+      "properties": {
+        "id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Id"
+        }
+      },
+      "title": "take_toolArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "take_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "name": "update_item",
+    "description": "Amend an item without touching its lifecycle.",
+    "inputSchema": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "priority": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Priority"
+        },
+        "worktree": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Worktree"
+        },
+        "approach": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Approach"
+        },
+        "category": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Category"
+        },
+        "add_work": {
+          "anyOf": [
+            {
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Add Work"
+        },
+        "edit_work": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Edit Work"
+        },
+        "add_verify": {
+          "anyOf": [
+            {
+              "items": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Add Verify"
+        },
+        "drop_verify": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "integer"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Drop Verify"
+        },
+        "add_scope": {
+          "anyOf": [
+            {
+              "items": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Add Scope"
+        },
+        "drop_scope": {
+          "anyOf": [
+            {
+              "items": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Drop Scope"
+        },
+        "add_deps": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Add Deps"
+        },
+        "drop_deps": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Drop Deps"
+        },
+        "add_preserves": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Add Preserves"
+        },
+        "drop_preserves": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Drop Preserves"
+        },
+        "add_anti_patterns": {
+          "anyOf": [
+            {
+              "items": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Add Anti Patterns"
+        },
+        "drop_anti_patterns": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Drop Anti Patterns"
+        },
+        "add_prior_art": {
+          "anyOf": [
+            {
+              "items": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Add Prior Art"
+        },
+        "drop_prior_art": {
+          "anyOf": [
+            {
+              "items": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Drop Prior Art"
+        },
+        "add_work_needs": {
+          "anyOf": [
+            {
+              "items": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Add Work Needs"
+        },
+        "drop_work_needs": {
+          "anyOf": [
+            {
+              "items": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Drop Work Needs"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "update_item_toolArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "update_item_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "name": "verify_list",
+    "description": "List stored verifications, never run them.",
+    "inputSchema": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "verify_list_toolArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "verify_list_toolDictOutput",
+      "type": "object"
+    }
+  }
+]
