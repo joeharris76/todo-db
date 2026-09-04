@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "lockedAt": "2026-09-04T03:01:21.647Z",
+  "lockedAt": "2026-09-04T15:21:39.238Z",
   "skills": {
     "code": {
       "source": {
@@ -145,68 +145,6 @@
         "skill.yaml": {
           "sha256": "99390c0e5aaacd50cb3554bd0c586cd153aab90b956b2c192b60df71126decda",
           "size": 179
-        }
-      }
-    },
-    "todo": {
-      "source": {
-        "type": "git",
-        "name": "catalog",
-        "url": "https://github.com/joeharris76/skill-sync-skills.git",
-        "ref": "c63378624588e19bef9698078d925161ff4e45c5",
-        "subdir": "skills",
-        "revision": "c63378624588e19bef9698078d925161ff4e45c5",
-        "fetchedAt": "2026-09-02T02:01:55.474Z"
-      },
-      "installMode": "mirror",
-      "files": {
-        "references/batch.md": {
-          "sha256": "fe178cbc2f64cca2764335e8f27f1d06878ff3e057e209334d939ac70750bcc2",
-          "size": 6430
-        },
-        "references/bootstrap.md": {
-          "sha256": "09c2b8f49d617b4319c8fe004184a9e7b4e83e6f13223bccd7f532049c15199d",
-          "size": 3095
-        },
-        "references/closeout.md": {
-          "sha256": "d2bd9ba6965e76020f2184d3aca1434c067bbfaa6dfcb43e1f6f51078af01773",
-          "size": 1894
-        },
-        "references/handoff.md": {
-          "sha256": "3c35c0001a14dae4c000750de7ccc75f89ee89daee6bd426a1677c894730dfe9",
-          "size": 1657
-        },
-        "references/ideate.md": {
-          "sha256": "8078255dd9835de869ccc33147f188db12ca8bfb21553766b11bf93eb3b2ab0d",
-          "size": 419
-        },
-        "references/implement.md": {
-          "sha256": "8fdeecf8ed57cc4f5ba355604610baad7ab66801087b53b940efc3a6b0ed45c2",
-          "size": 1166
-        },
-        "references/prioritize.md": {
-          "sha256": "0fd22f6a8cc0f51841fea3745559132ede4be39a27b5a01cdec3dacd98913c69",
-          "size": 4548
-        },
-        "references/queries.md": {
-          "sha256": "11ae465326ec08c012ea7beb5aadbd3d5faeee90ad2140a7f8d3a46fd022f724",
-          "size": 1829
-        },
-        "references/review.md": {
-          "sha256": "7e50646a87a8f53fadacff14eff843562f67daa717d554b5cd88b465487e2533",
-          "size": 756
-        },
-        "references/spec.md": {
-          "sha256": "53ec542be038fa52dc4f6e2728a21f6e4fe58b2da45573261ecf185f7422d234",
-          "size": 463
-        },
-        "SKILL.md": {
-          "sha256": "6376a93e53b1879fd052414fd5549a504cdb0d5d894335e83575894c2b0f0cad",
-          "size": 3942
-        },
-        "skill.yaml": {
-          "sha256": "3889fddb52b746c118ba4aab8b83780e89642efd519f8bc708e030964c6440fd",
-          "size": 213
         }
       }
     },
@@ -363,6 +301,25 @@
         "skill.yaml": {
           "sha256": "ec71a233b04c9c9d860316b330baab2898f7ad3641a68c91cb48359ce4a653fa",
           "size": 111
+        }
+      }
+    },
+    "todo-db": {
+      "source": {
+        "type": "local",
+        "name": "project",
+        "path": "skills/todo-db",
+        "fetchedAt": "2026-09-04T15:21:28.510Z"
+      },
+      "installMode": "mirror",
+      "files": {
+        "references/recovery.md": {
+          "sha256": "b48b4bcee165981e11de34786a48185d99a797b9766135151eaabfc364d48bbf",
+          "size": 2609
+        },
+        "SKILL.md": {
+          "sha256": "aa6324b1e877b1dbedcd34dea48023c8505719229f896dd3cdfe10075cf9a6a3",
+          "size": 5692
         }
       }
     }

@@ -1,5 +1,8 @@
 version: 1
 sources:
+  - name: project
+    type: local
+    path: skills
   - name: product
     type: git
     url: https://github.com/joeharris76/skill-sync.git
@@ -11,10 +14,10 @@ sources:
     ref: c63378624588e19bef9698078d925161ff4e45c5
     subdir: skills
 skills:
+  - todo-db
   - code
   - test
   - docs
-  - todo
   - tidy-perms
   - skill-sync
   - shared-change-framework
@@ -33,8 +36,7 @@ targets:
     tracked: true
 install_mode: mirror
 overrides:
+  todo-db:
+    source_name: project
   skill-sync:
     source_name: product
-config:
-  todo:
-    cli: "_project/scripts/todo"

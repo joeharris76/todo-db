@@ -55,7 +55,7 @@ def _worker_cleanup():
 # --------------------------------------------------------------------------- #
 # server start / tool surface
 # --------------------------------------------------------------------------- #
-def test_server_starts_and_lists_only_get_instructions(tmp_path):
+def test_server_exposes_instructions_surface(tmp_path):
     _make_project(tmp_path)
     server = build_server(resolve_launch_config(_args("--repo-root", str(tmp_path), "--actor", "tester")))
 
@@ -66,13 +66,16 @@ def test_server_starts_and_lists_only_get_instructions(tmp_path):
         async with connect(server, client_info=types.Implementation(name="x", version="0")) as session:
             tools = await session.list_tools()
             names = {t.name for t in tools.tools}
-            # Foundation had only get_instructions; after mcp-tools-work the
-            # six hot-path tools plus claims are always loaded (plan §5).
+            # The instructions surface is the portable fallback for clients that
+            # do not render MCP resources or prompts.
             assert "get_instructions" in names
             for expected in ("next", "take", "context", "progress", "finish", "release", "claims"):
                 assert expected in names, f"missing work tool {expected!r} in {sorted(names)}"
             result = await session.call_tool("get_instructions", {})
-            assert "Autonomous Agent Workflow Protocol" in result.content[0].text
+            body = result.content[0].text
+            assert "todo-db agent workflow" in body
+            for tool in ("next", "take", "context", "progress", "finish", "release"):
+                assert f"`{tool}`" in body, f"instructions omit {tool}"
             resources = await session.list_resources()
             assert "todo://instructions" in {str(r.uri) for r in resources.resources}
             prompts = await session.list_prompts()
@@ -292,7 +295,10 @@ def test_principal_pinned_via_get_instructions(tmp_path):
             # Access via server's closed-over principal holder is not directly exposed,
             # but we can verify the tool succeeded and no error was raised.
             result = await session.call_tool("get_instructions", {})
-            assert "Autonomous Agent Workflow Protocol" in result.content[0].text
+            body = result.content[0].text
+            assert "todo-db agent workflow" in body
+            for tool in ("next", "take", "context", "progress", "finish", "release"):
+                assert f"`{tool}`" in body, f"instructions omit {tool}"
 
     anyio.run(go)
 

@@ -28,6 +28,14 @@ CONFIG_FILENAME = "config.json"
 DEFAULT_DB_RELATIVE = f"{CONFIG_DIRNAME}/standalone.sqlite"
 SCAFFOLD_GITIGNORE = "*.sqlite*\nreplica.db*\n*.lock\n!config.json\n"
 
+# Registration for the agent interface. Written at the repository root so an
+# MCP client finds it; without one, an adopting project has the tracker but
+# no way for an agent to reach it.
+SCAFFOLD_MCP_JSON = json.dumps(
+    {"mcpServers": {"todo-db": {"command": "todo-db-mcp", "args": [], "env": {}}}},
+    indent=2,
+) + "\n"
+
 IDENTITY_SOURCES_HINT = (
     "supply --project-id/--repository, set TODO_DB_PROJECT_ID/TODO_DB_REPOSITORY, "
     f"or run from a repo with a discovered {CONFIG_DIRNAME}/{CONFIG_FILENAME} "
@@ -37,7 +45,7 @@ IDENTITY_SOURCES_HINT = (
 EXIT_CODES_EPILOG = """\
 exit codes:
   0  success (doctor: every check passed; warnings allowed)
-  1  findings reported (check-scope violations, lint findings, verify --run failures)
+  1  findings reported (a verify-run ladder that failed, or audit verify findings)
   2  generic error, or legacy-safe auth failure before the v2 contract is negotiated
   4  hosted authentication failure under TODO_DB_AUTH_CONTRACT=v2: set a valid bounded
      TODO_DB_AUTH_TOKEN (or TODO_DB_RO_AUTH_TOKEN for reads), or provision one into
@@ -357,6 +365,14 @@ def _init_project(args: argparse.Namespace, identity: ProjectIdentity, raw_db: s
     print(f"wrote {config_path}")
     gitignore_path.write_text(SCAFFOLD_GITIGNORE, encoding="utf-8")
     print(f"wrote {gitignore_path}")
+
+    mcp_path = root / ".mcp.json"
+    if mcp_path.exists():
+        print(f"kept existing {mcp_path}; add a `todo-db` entry to reach the tracker from an agent")
+    else:
+        mcp_path.write_text(SCAFFOLD_MCP_JSON, encoding="utf-8")
+        print(f"wrote {mcp_path}")
+
     _warn_if_git_ignored(config_path, root)
     return 0
 

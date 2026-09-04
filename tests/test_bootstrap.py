@@ -202,6 +202,37 @@ def test_init_project_scaffolds_config_and_gitignore(
     assert main(["audit", "verify"]) == 0
 
 
+def test_init_project_scaffolds_mcp_registration(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Planning lives only on the MCP surface, so adoption must reach it."""
+
+    from todo_db.cli import main
+
+    identity = ["--project-id", "mcp-scaffold", "--repository", "https://example.test/mcp"]
+    assert main(["init-project", *identity]) == 0
+
+    registration = json.loads((tmp_path / ".mcp.json").read_text(encoding="utf-8"))
+    assert registration["mcpServers"]["todo-db"]["command"] == "todo-db-mcp"
+    # No --actor: the server derives the principal from the initialize
+    # handshake, which resolves the host correctly. A hand-written
+    # "${USER}@${HOSTNAME}" expands to a truncated principal in most clients.
+    assert registration["mcpServers"]["todo-db"]["args"] == []
+
+
+def test_init_project_never_clobbers_an_existing_mcp_registration(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from todo_db.cli import main
+
+    existing = '{"mcpServers": {"other": {"command": "other-mcp"}}}\n'
+    (tmp_path / ".mcp.json").write_text(existing, encoding="utf-8")
+
+    identity = ["--project-id", "mcp-keep", "--repository", "https://example.test/keep"]
+    assert main(["init-project", *identity]) == 0
+
+    assert (tmp_path / ".mcp.json").read_text(encoding="utf-8") == existing
+    assert "kept existing" in capsys.readouterr().out
+
+
 def test_init_project_is_idempotent_only_with_force(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     from todo_db.cli import main
 

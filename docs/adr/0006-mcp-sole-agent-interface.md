@@ -244,3 +244,23 @@ the load-bearing target-support assumption is unverified.
   external catalog become cross-repo release dependencies of `0.6.0`.
 - The `E_LINT_GATE` claim-release behaviour changes (G7): finishing with lint
   findings now leaves the claim held.
+
+## Amendment: a teaching skill is not a per-agent port
+
+This record rejects "keep per-agent adapters or per-agent skill ports" because
+each such port is a second implementation of the workflow that has to be
+maintained per client and can drift from the server.
+
+A skill that *documents* the MCP surface is not that thing. It adds no
+mutation path, reimplements no logic, and is client-agnostic prose. The
+distinction that matters is whether an artefact can be used to change tracker
+state without going through a tool call. The rejected adapters could; a skill
+cannot.
+
+This repository therefore ships a `todo-db` skill, owned here rather than in an
+external catalog, mirrored into `.claude/skills/`, `.codex/skills/`, and
+`.gemini/skills/` so a clone is self-contained. It teaches the tool sequence,
+the response envelope, and gate recovery, and it names `verify-run` and
+`rebaseline` as human-only floor verbs.
+
+The rejection above still stands for anything that adds a mutation surface.
