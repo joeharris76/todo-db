@@ -1,11 +1,11 @@
 {
   "epilog_codes": {
     "0": "success (doctor: every check passed; warnings allowed)",
-    "1": "findings reported (check-scope violations, lint findings, verify --run failures)",
+    "1": "findings reported: reserved by the exit-code contract; the floor CLI does not",
     "2": "generic error, or legacy-safe auth failure before the v2 contract is negotiated",
     "4": "hosted authentication failure under TODO_DB_AUTH_CONTRACT=v2: set a valid bounded"
   },
-  "epilog_raw": "exit codes:\n  0  success (doctor: every check passed; warnings allowed)\n  1  findings reported (check-scope violations, lint findings, verify --run failures)\n  2  generic error, or legacy-safe auth failure before the v2 contract is negotiated\n  4  hosted authentication failure under TODO_DB_AUTH_CONTRACT=v2: set a valid bounded\n     TODO_DB_AUTH_TOKEN (or TODO_DB_RO_AUTH_TOKEN for reads), or provision one into\n     your secret store and point TODO_DB_CREDENTIAL_COMMAND at it, then retry\n     (docs/operations/hosted-credentials.md, Provision once)",
+  "epilog_raw": "exit codes:\n  0  success (doctor: every check passed; warnings allowed)\n  1  findings reported: reserved by the exit-code contract; the floor CLI does not\n     currently emit it (a failed verify-run ladder exits 2)\n  2  generic error, or legacy-safe auth failure before the v2 contract is negotiated\n  4  hosted authentication failure under TODO_DB_AUTH_CONTRACT=v2: set a valid bounded\n     TODO_DB_AUTH_TOKEN (or TODO_DB_RO_AUTH_TOKEN for reads), or provision one into\n     your secret store and point TODO_DB_CREDENTIAL_COMMAND at it, then retry\n     (docs/operations/hosted-credentials.md, Provision once)",
   "structured_codes": {
     "E_AUDIT": "E_AUDIT",
     "E_AUTH_MISSING": "E_AUTH_MISSING",
@@ -18,6 +18,7 @@
     "E_LINT_GATE": "E_LINT_GATE",
     "E_MULTIPLE_CLAIMS": "E_MULTIPLE_CLAIMS",
     "E_NOTHING_READY": "E_NOTHING_READY",
+    "E_NO_PRINCIPAL": "E_NO_PRINCIPAL",
     "E_NO_PROJECT": "E_NO_PROJECT",
     "E_OUTPUT_TRUNCATED": "E_OUTPUT_TRUNCATED",
     "E_SCHEMA": "E_SCHEMA",

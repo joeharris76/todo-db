@@ -646,7 +646,7 @@
   },
   "exit_codes": {
     "0": "success (doctor: every check passed; warnings allowed)",
-    "1": "findings reported (check-scope violations, lint findings, verify --run failures)",
+    "1": "findings reported: reserved by the exit-code contract; the floor CLI does not",
     "2": "generic error, or legacy-safe auth failure before the v2 contract is negotiated",
     "4": "hosted authentication failure under TODO_DB_AUTH_CONTRACT=v2: set a valid bounded"
   }

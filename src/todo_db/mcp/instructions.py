@@ -14,8 +14,10 @@ from __future__ import annotations
 INSTRUCTIONS = """\
 # todo-db agent workflow
 
-Drive the tracker through MCP tools. Every response carries a `next_action`
-naming the tool and arguments to call next -- follow it rather than guessing.
+Drive the tracker through MCP tools. The loop tools -- `next`, `take`,
+`context`, `progress` -- return a `next_action` naming the tool and arguments
+to call next; follow it rather than guessing. Other tools return their result
+alone.
 
 ## The loop
 

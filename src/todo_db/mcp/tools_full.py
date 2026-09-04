@@ -1,12 +1,19 @@
-"""Planning, findings, and admin tools behind --profile full (plan §5).
+"""Planning tools, plus the findings and admin tools behind ``--profile full``.
 
-Exposes ``create_item``, ``update_item``, ``add_dependency``, ``defer``,
-``promote_deferral``, ``dismiss_deferral``, ``block``, ``unblock``, ``drop``;
-``finding_create`` (draft file only), ``finding_list``, ``finding_show``,
-``finding_triage``, ``finding_link``, ``finding_promote``, ``finding_dismiss``;
-``init_project`` and ``config_get``. The credentialed landing step
-``finding_sync``, ``config_set``, ``sweep_stale``, ``migrate``, ``complete``,
-verification execution, and ``rebaseline`` are never tools.
+``register_planning_tools`` exposes ``create_item``, ``update_item``, and
+``add_dependency``. These load in **every** profile: an agent that cannot add
+an item cannot use the tracker, and the per-verb CLI that once covered this
+was removed in 0.6.0.
+
+``register_full_tools`` calls that, then adds the ``--profile full`` surface:
+``block``, ``unblock``, ``drop``; ``finding_create`` (draft file only),
+``finding_list``, ``finding_show``, ``finding_triage``, ``finding_link``,
+``finding_promote``, ``finding_dismiss``; ``init_project`` and ``config_get``.
+
+Deferral tools (``defer``, ``promote_deferral``, ``dismiss_deferral``) live in
+``tools_query.py``. The credentialed landing step ``finding_sync``,
+``config_set``, ``sweep_stale``, ``migrate``, ``complete``, verification
+execution, and ``rebaseline`` are never tools.
 """
 
 from __future__ import annotations

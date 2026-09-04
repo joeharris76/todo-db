@@ -64,25 +64,17 @@ todo-db init-project \
 todo-db doctor
 ```
 
-That writes two files:
+That writes three files:
 
 - `.todo-db/config.json` — the project identity, and optionally the database
   target. **Commit this**; it is the point of the scaffold.
 - `.todo-db/.gitignore` — ignores the local database while keeping
   `config.json` tracked.
+- `.mcp.json` — registers the server so an agent can reach the tracker. An
+  existing file is merged into, never replaced.
 
-Then register the MCP server with your agent. For Claude Code, `.mcp.json` at
-the project root:
-
-```json
-{
-  "mcpServers": {
-    "todo-db": { "command": "todo-db-mcp", "args": [] }
-  }
-}
-```
-
-Snippets for Codex, Cursor, Windsurf, Zed, and Continue are in
+That registration is what Claude Code and Cursor read. Codex, Zed, Windsurf,
+and Continue keep MCP config elsewhere; snippets for each are in
 [`docs/operations/mcp-clients.md`](docs/operations/mcp-clients.md).
 
 Your agent now has the tracker. It creates work with `create_item`, then runs
@@ -110,8 +102,9 @@ next  ──▶  take  ──▶  context  ──▶  progress ×N  ──▶  f
                                         └──▶  release   (hand the claim back)
 ```
 
-Every response carries a machine-readable `next_action` naming the next tool
-and its arguments. Tools return one of:
+The loop tools (`next`, `take`, `context`, `progress`) return a
+machine-readable `next_action` naming the next tool and its arguments; other
+tools return their result alone. Every tool returns one of:
 
 ```json
 {"ok": true,  "data": {...}}

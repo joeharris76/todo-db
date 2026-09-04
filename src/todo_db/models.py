@@ -64,10 +64,13 @@ class DatabaseConfig:
     #: a filename -- a confusing failure rather than a safe one.
     HOSTED_SCHEMES = ("libsql://", "https://", "http://", "wss://", "ws://")
 
-    #: The subset that carries the auth token over an encrypted transport.
-    #: `backends._secure_url` accepts only these; it is a strict subset, which
-    #: `tests/test_hosted_backend.py` pins.
-    SECURE_SCHEMES = ("libsql://", "https://", "wss://")
+    #: The subset the driver can actually open over an encrypted transport.
+    #: `backends._secure_url` accepts only these. `wss://` is deliberately
+    #: absent: libsql treats anything outside libsql/http/https as a local
+    #: path, so a `wss://` URL would be opened as a filename rather than a
+    #: connection. It stays in HOSTED_SCHEMES so it is refused with a real
+    #: message instead of that. A strict subset, which the suite pins.
+    SECURE_SCHEMES = ("libsql://", "https://")
 
     @property
     def is_hosted(self) -> bool:

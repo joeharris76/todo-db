@@ -170,21 +170,20 @@ def _normalize_url(value: str) -> str:
 
 
 def _secure_url(value: str) -> str:
-    """Accept only transports that encrypt the bearer token.
+    """Accept only transports the driver opens over an encrypted connection.
 
-    An allowlist, not a blocklist: `ws://` reaches libsql just as `http://`
-    does and would put the token on the wire in cleartext, so a scheme is
-    refused unless it is known to be encrypted.
+    An allowlist, not a blocklist. `http://` and `ws://` would put the bearer
+    token on the wire in cleartext. `wss://` is refused for a different reason:
+    libsql treats any scheme outside libsql/http/https as a local path, so it
+    would silently open a file named after the URL rather than connect.
     """
 
     value = _normalize_url(value)
     if value.startswith(DatabaseConfig.SECURE_SCHEMES):
         return value
     scheme = value.partition("://")[0] or value
-    raise TodoDBError(
-        f"refusing plaintext {scheme}:// for the hosted backend; "
-        "use " + ", ".join(s.rstrip(":/") + "://" for s in DatabaseConfig.SECURE_SCHEMES)
-    )
+    supported = ", ".join(s.rstrip(":/") + "://" for s in DatabaseConfig.SECURE_SCHEMES)
+    raise TodoDBError(f"refusing {scheme}:// for the hosted backend; use {supported}")
 
 
 CREDENTIAL_COMMAND_VARIABLE = "TODO_DB_CREDENTIAL_COMMAND"
@@ -366,6 +365,12 @@ def _redacted_error(exc: BaseException, *, url: str, token: str) -> str:
     return message.replace(token, "[REDACTED]") if token else message
 
 
+# High-confidence auth evidence only. Ambiguous failures -- quota, suspension,
+# network, TLS -- must stay generic: a caller that reads them as an auth failure
+# would rotate or mint a credential in response to an unrelated outage. Patterns
+# are anchored on the credential noun so that unrelated text merely containing
+# "invalid" or "token" (a JSON parse error, a missing request field) does not
+# match.
 _AUTH_MARKERS = re.compile(
     "|".join(
         (
@@ -376,9 +381,16 @@ _AUTH_MARKERS = re.compile(
             r"\bauthentication\s+(?:failed|error)\b",
             # concatenated forms such as "InvalidToken"
             r"\binvalid[ _-]?token\b",
-            # token/credential and a rejecting adjective, in either order
-            r"\b(?:token|credentials?)\b[^.;\n]{0,40}?\b(?:expired|rejected|invalid|revoked)\b",
-            r"\b(?:expired|rejected|invalid|revoked)\b[^.;\n]{0,40}?\b(?:token|credentials?)\b",
+            # "<adjective> auth/access/api token", never a bare "token"
+            r"\b(?:expired|rejected|invalid|revoked)\s+(?:auth\w*|access|api|bearer|db|database)"
+            r"[ _-]?tokens?\b",
+            # "auth token <adjective>"
+            r"\b(?:auth\w*|access|api|bearer|db|database)[ _-]?tokens?\s+(?:is\s+|was\s+|has\s+)?"
+            r"(?:expired|rejected|invalid|revoked)\b",
+            # credentials, in either order -- the noun is unambiguous on its own
+            r"\bcredentials?\s+(?:is\s+|are\s+|was\s+|were\s+|has\s+|have\s+)?"
+            r"(?:expired|rejected|invalid|revoked)\b",
+            r"\b(?:expired|rejected|invalid|revoked)\s+credentials?\b",
             # jwt, in either order
             r"\bjwt\b[^.;\n]{0,40}?\b(?:expired|invalid)\b",
             r"\b(?:expired|invalid)\b[^.;\n]{0,40}?\bjwt\b",
@@ -447,18 +459,20 @@ def _enable_foreign_keys(connection: "HostedConnection") -> None:
     verifies rather than assuming, and it never fails silently.
     """
 
+    warning = (
+        "hosted backend cannot confirm foreign-key enforcement (%s); this connection may not "
+        "honour ON DELETE CASCADE, so deletes can orphan rows"
+    )
     try:
         connection.execute("PRAGMA foreign_keys = ON")
         row = connection.execute("PRAGMA foreign_keys").fetchone()
     except Exception as exc:
-        LOG.warning(
-            "hosted backend rejected `PRAGMA foreign_keys = ON` (%s); this connection cannot "
-            "enforce ON DELETE CASCADE, so deletes may orphan rows",
-            type(exc).__name__,
-        )
+        LOG.warning(warning, f"pragma rejected: {type(exc).__name__}")
         return
-    if row is not None and not row[0]:
-        LOG.warning(
-            "hosted backend reports foreign keys still disabled after `PRAGMA foreign_keys = ON`; "
-            "this connection cannot enforce ON DELETE CASCADE, so deletes may orphan rows"
-        )
+    # An endpoint that accepts the SET but returns nothing for the GET has not
+    # confirmed anything. Treat unproven the same as disabled rather than
+    # assuming success, which is how this failed silently before.
+    if row is None:
+        LOG.warning(warning, "endpoint returned no value for `PRAGMA foreign_keys`")
+    elif not row[0]:
+        LOG.warning(warning, "still reported disabled after being set")

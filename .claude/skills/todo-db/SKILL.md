@@ -15,8 +15,10 @@ available, the MCP server is not registered — see
 
 - Call `get_instructions` first in a session. It returns this protocol and, on
   clients that supply no explicit actor, pins your audit principal.
-- Every response carries `next_action`: `{"tool": ..., "arguments": {...}}`.
-  Follow it rather than guessing the next call.
+- The loop tools (`next`, `take`, `context`, `progress`) return a
+  `next_action`: `{"tool": ..., "arguments": {...}}`. Follow it rather than
+  guessing. Query and planning tools return their result alone. An idle `next`
+  returns `{"action": "wait", ...}` with no tool to call.
 - One active claim per principal. `take` a second item and you get
   `E_MULTIPLE_CLAIMS`; use `claims` to see what you hold.
 - Only the claim holder may `progress`, `finish`, or `release` an item. Keep
@@ -63,6 +65,12 @@ pass a smaller `limit` and a `cursor`, or request a `section`.
 | `E_VERIFY_GATE` | No current workspace attestation. | Stop. A human runs the `todo-db verify-run` command in `recovery`. |
 | `E_BASE_DIVERGED` / `E_BASE_UNREACHABLE` | The scope git baseline no longer resolves. | Stop and report; a human runs `todo-db rebaseline`. |
 | `E_NO_PRINCIPAL` | Principal not resolved. | Call `get_instructions`, then retry. |
+| `E_OUTPUT_TRUNCATED` | Response exceeded 16 KiB. | Retry with a smaller `limit` plus `cursor`, or a `section`. |
+| `E_IDENTITY` | The database belongs to another project. | Stop. This is the isolation guarantee, not a bug. |
+| `E_SCHEMA` / `E_SCHEMA_BEHIND` / `E_SCHEMA_DIVERGED` | Schema mismatch. | Stop; a human runs `todo-db migrate`. |
+| `E_NO_PROJECT` | No project identity resolved. | Run `doctor`; a human fixes `.todo-db/config.json`. |
+| `E_AUDIT` | Audit chain verification failed. | Stop immediately and report; do not write. |
+| `E_HOSTED` | Hosted backend problem. | Report it; hosted access is configured outside the agent. |
 | `E_AUTH_MISSING` / `E_AUTH_REJECTED` | Hosted credential missing or rejected. | Stop writing. Report it; credentials are provisioned outside the agent. |
 
 `E_SCOPE_GATE` and `E_VERIFY_GATE` are the two that most often end a session.
@@ -96,6 +104,8 @@ items whose dependencies are met and that are not blocked.
 | Check before committing | `check_scope`, `lint`, `verify_list` |
 | Park work | `defer`, `deferrals`, `promote_deferral`, `dismiss_deferral` |
 | Health check | `doctor`, `stats` |
+| Back up or audit | `export` |
+| See what you hold | `claims` |
 | Capture an observation | `finding_create` (needs `--profile full`) |
 
 `verify_list` shows the stored verification commands; it never runs them.

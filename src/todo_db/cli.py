@@ -45,7 +45,8 @@ IDENTITY_SOURCES_HINT = (
 EXIT_CODES_EPILOG = """\
 exit codes:
   0  success (doctor: every check passed; warnings allowed)
-  1  findings reported (a verify-run ladder that failed, or audit verify findings)
+  1  findings reported: reserved by the exit-code contract; the floor CLI does not
+     currently emit it (a failed verify-run ladder exits 2)
   2  generic error, or legacy-safe auth failure before the v2 contract is negotiated
   4  hosted authentication failure under TODO_DB_AUTH_CONTRACT=v2: set a valid bounded
      TODO_DB_AUTH_TOKEN (or TODO_DB_RO_AUTH_TOKEN for reads), or provision one into
@@ -329,6 +330,42 @@ def _warn_if_git_ignored(path: Path, root: Path) -> None:
         )
 
 
+def _scaffold_mcp_registration(mcp_path: Path, *, force: bool) -> None:
+    """Ensure a `todo-db` MCP server entry exists, without discarding others.
+
+    `.mcp.json` is shared with every other MCP server the project registers, so
+    even `--force` merges rather than replacing the file: overwriting it would
+    silently delete unrelated servers the user configured.
+    """
+
+    if not mcp_path.exists():
+        mcp_path.write_text(SCAFFOLD_MCP_JSON, encoding="utf-8")
+        print(f"wrote {mcp_path}")
+        return
+
+    try:
+        existing = json.loads(mcp_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        print(f"kept unreadable {mcp_path}; add a `todo-db` entry to reach the tracker from an agent")
+        return
+
+    if not isinstance(existing, dict):
+        print(f"kept unrecognised {mcp_path}; add a `todo-db` entry to reach the tracker from an agent")
+        return
+
+    servers = existing.get("mcpServers")
+    if not isinstance(servers, dict):
+        servers = {}
+    if "todo-db" in servers and not force:
+        print(f"kept existing `todo-db` entry in {mcp_path}")
+        return
+
+    servers["todo-db"] = json.loads(SCAFFOLD_MCP_JSON)["mcpServers"]["todo-db"]
+    existing["mcpServers"] = servers
+    mcp_path.write_text(json.dumps(existing, indent=2) + "\n", encoding="utf-8")
+    print(f"updated {mcp_path}")
+
+
 def _init_project(args: argparse.Namespace, identity: ProjectIdentity, raw_db: str | None) -> int:
     """Run `init` and scaffold the repo: committed config and a scoped .gitignore."""
 
@@ -366,12 +403,7 @@ def _init_project(args: argparse.Namespace, identity: ProjectIdentity, raw_db: s
     gitignore_path.write_text(SCAFFOLD_GITIGNORE, encoding="utf-8")
     print(f"wrote {gitignore_path}")
 
-    mcp_path = root / ".mcp.json"
-    if mcp_path.exists() and not args.force:
-        print(f"kept existing {mcp_path}; add a `todo-db` entry to reach the tracker from an agent")
-    else:
-        mcp_path.write_text(SCAFFOLD_MCP_JSON, encoding="utf-8")
-        print(f"wrote {mcp_path}")
+    _scaffold_mcp_registration(root / ".mcp.json", force=args.force)
 
     _warn_if_git_ignored(config_path, root)
     return 0

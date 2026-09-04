@@ -185,7 +185,7 @@ def test_turso_backend_rejects_plaintext_urls(monkeypatch: pytest.MonkeyPatch, t
     from todo_db.errors import TodoDBError
 
     monkeypatch.setitem(sys.modules, "libsql", FakeLibsql(tmp_path / "primary.sqlite"))
-    with pytest.raises(TodoDBError, match="plaintext"):
+    with pytest.raises(TodoDBError, match="hosted backend"):
         TodoDatabase.open(
             DatabaseConfig(
                 path="http://project.example.test",
@@ -210,7 +210,7 @@ def test_turso_backend_rejects_cleartext_transports(
     from todo_db.errors import TodoDBError
 
     monkeypatch.setitem(sys.modules, "libsql", FakeLibsql(tmp_path / "primary.sqlite"))
-    with pytest.raises(TodoDBError, match="plaintext"):
+    with pytest.raises(TodoDBError, match="hosted backend"):
         TodoDatabase.open(
             DatabaseConfig(
                 path=url,
@@ -220,11 +220,29 @@ def test_turso_backend_rejects_cleartext_transports(
         )
 
 
-@pytest.mark.parametrize("url", ["https://p.example.test", "libsql://p.example.test", "wss://p.example.test"])
-def test_turso_backend_accepts_encrypted_transports(url: str) -> None:
+@pytest.mark.parametrize("url", ["https://p.example.test", "libsql://p.example.test"])
+def test_turso_backend_accepts_supported_encrypted_transports(url: str) -> None:
     from todo_db.backends import _secure_url
 
     assert _secure_url(url) == url
+
+
+@pytest.mark.parametrize("url", ["ws://p.example.test", "wss://p.example.test"])
+def test_turso_backend_refuses_websocket_urls(url: str) -> None:
+    """libsql opens anything outside libsql/http/https as a local file path.
+
+    `ws://` is cleartext; `wss://` is encrypted but unsupported by the driver,
+    so accepting it would silently create a file named after the URL. Both are
+    recognised as hosted so they are refused with a message instead.
+    """
+
+    from todo_db.backends import _secure_url
+    from todo_db.errors import TodoDBError
+    from todo_db.models import DatabaseConfig
+
+    assert DatabaseConfig(path=url, identity=None).is_hosted
+    with pytest.raises(TodoDBError, match="hosted backend"):
+        _secure_url(url)
 
 
 def test_secure_schemes_are_a_strict_subset_of_hosted_schemes() -> None:
@@ -247,8 +265,8 @@ def test_secure_schemes_are_a_strict_subset_of_hosted_schemes() -> None:
         "credential expired",
         "credentials are expired",
         "invalid credentials",
-        "token expired",
-        "the token was revoked",
+        "auth token expired",
+        "the auth token was revoked",
         "credentials rejected by server",
         "HTTP 401 Unauthorized",
         "JWT expired",
@@ -269,6 +287,11 @@ def test_auth_classifier_matches_unambiguous_auth_prose(detail: str) -> None:
         "TLS certificate verify failed",
         "503 service unavailable",
         "request timed out",
+        # Adjacent words are not evidence: matching these would rotate a
+        # credential in response to a parse error or an unrelated outage.
+        "invalid JSON: unexpected token",
+        "invalid request, missing token in body",
+        "TLS handshake failed: expired certificate for credentials store",
     ],
 )
 def test_auth_classifier_leaves_ambiguous_failures_generic(detail: str) -> None:
@@ -322,6 +345,55 @@ def test_hosted_write_warns_when_foreign_keys_cannot_be_enforced(
 
     assert any("foreign_keys" in r.message or "orphan rows" in r.getMessage() for r in caplog.records), (
         f"no warning emitted; records={[r.getMessage() for r in caplog.records]}"
+    )
+
+
+def test_hosted_write_warns_when_foreign_key_state_cannot_be_confirmed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Accepting the SET but returning nothing for the GET proves nothing.
+
+    This is the shape that failed silently before: the pragma appears to
+    succeed, so the connection is assumed to enforce cascades when it may not.
+    """
+
+    import logging
+
+    from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase
+
+    fake = FakeLibsql(tmp_path / "primary.sqlite")
+    real_connect = fake.connect
+
+    def connect(url, **kwargs):
+        raw = real_connect(url, **kwargs)
+        original_execute = raw.execute
+
+        class _Empty:
+            def fetchone(self):
+                return None
+
+        def execute(sql, *args, **kwargs):
+            if str(sql).strip().lower() == "pragma foreign_keys":
+                return _Empty()
+            return original_execute(sql, *args, **kwargs)
+
+        raw.execute = execute
+        return raw
+
+    fake.connect = connect
+    monkeypatch.setitem(sys.modules, "libsql", fake)
+
+    with caplog.at_level(logging.WARNING, logger="todo_db.backends"):
+        TodoDatabase.open(
+            DatabaseConfig(
+                path="libsql://project.example.test",
+                identity=ProjectIdentity(project_id="project-test", repository="https://example.test/project"),
+                auth_token="rw-token",
+            )
+        ).close()
+
+    assert any("orphan rows" in r.getMessage() for r in caplog.records), (
+        f"unconfirmed enforcement passed silently; records={[r.getMessage() for r in caplog.records]}"
     )
 
 

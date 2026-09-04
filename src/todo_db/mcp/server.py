@@ -1,10 +1,9 @@
-"""FastMCP stdio server foundation for the todo-db tracker.
+"""FastMCP stdio server for the todo-db tracker.
 
-This module builds the server skeleton: launch-arg parsing, stderr-only logging,
-target resolution + a READ_ONLY startup schema/identity check that never
-migrates, explicit identity, the single worker thread, and the instructions
-surface. The lifecycle tools are a later migration item and are absent here;
-``tools/list`` returns only ``get_instructions``.
+This module builds the server: launch-arg parsing, stderr-only logging,
+target resolution plus a READ_ONLY startup schema/identity check that never
+migrates, explicit identity, the single worker thread, the instructions
+surface, and tool registration per profile.
 """
 
 from __future__ import annotations
@@ -60,9 +59,15 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def configure_logging(level: str) -> None:
-    """Structured logging to stderr only -- stdout carries JSON-RPC framing."""
+    """Structured logging to stderr only -- stdout carries JSON-RPC framing.
 
-    root = logging.getLogger("todo_db.mcp")
+    Configured on ``todo_db`` rather than ``todo_db.mcp`` so that warnings from
+    the tracker and backends -- a hosted connection that cannot enforce foreign
+    keys, say -- reach the operator instead of being discarded by the default
+    handler-less logger.
+    """
+
+    root = logging.getLogger("todo_db")
     for handler in list(root.handlers):
         root.removeHandler(handler)
     handler = logging.StreamHandler(stream=sys.stderr)
@@ -94,7 +99,7 @@ def startup_check(target: ResolvedTarget) -> None:
     """Open the database READ_ONLY to run schema + identity checks only.
 
     READ_ONLY open runs ``_check_schema()`` + ``_check_identity()`` and never
-    ``_migrate()``. The connection is closed immediately; tools (later item)
+    ``_migrate()``. The connection is closed immediately; tools
     open their own connection per call.
     """
 

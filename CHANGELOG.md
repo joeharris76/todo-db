@@ -18,9 +18,10 @@ adheres to [Semantic Versioning](https://semver.org/).
   recognised only `libsql`, `https`, and `http`, so a `ws://` or `wss://` URL
   never reached the hosted backend and was opened as a local filename instead.
   Hosted routing now covers every network scheme libsql accepts, and the
-  transport check accepts only `https://`, `libsql://`, and `wss://`. Both
-  lists live on `DatabaseConfig`, with a test pinning the secure set as a
-  strict subset so they cannot drift apart.
+  transport check accepts only `https://` and `libsql://`. `ws://` is cleartext
+  and `wss://` is unsupported by the driver, so both are refused with a message
+  rather than being opened as a filename. Both lists live on `DatabaseConfig`,
+  with a test pinning the secure set as a strict subset so they cannot drift.
 - **A hosted backend that cannot enforce foreign keys says so.** The
   `PRAGMA foreign_keys = ON` failure was swallowed on the hosted path only, and
   the schema relies on `ON DELETE CASCADE`, so a silent downgrade orphaned rows.
@@ -44,9 +45,11 @@ adheres to [Semantic Versioning](https://semver.org/).
   mirrored into `.claude/skills/`, `.codex/skills/`, and `.gemini/skills/` so a
   clone is self-contained. It replaces the external-catalog `todo` skill, which
   targeted the `_project/scripts/todo` wrapper removed in 0.6.0.
-- **`init-project` scaffolds `.mcp.json`**, keeping an existing file rather than
-  overwriting it. Planning lives only on the MCP surface, so adoption without a
-  registration left a project unable to create work.
+- **`init-project` scaffolds `.mcp.json`**, merging into an existing file so a
+  project's other MCP servers survive, and leaving a hand-edited `todo-db`
+  entry alone unless `--force` is passed. Planning lives only on the MCP
+  surface, so adoption without a registration left a project unable to create
+  work.
 - **CI verifies the committed skill mirrors** against `skill-sync.lock`.
 
 ### Changed
@@ -56,7 +59,7 @@ adheres to [Semantic Versioning](https://semver.org/).
   reference prose moved to `docs/operations/hosted-credentials.md`.
 - The MCP `INSTRUCTIONS` text covers planning, the response envelope, and gate
   recovery rather than only the six hot-path tools.
-- The sdist ships `docs/`.
+- The sdist ships `docs/` and `skills/`.
 
 ### Removed
 

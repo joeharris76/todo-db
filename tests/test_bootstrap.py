@@ -218,24 +218,46 @@ def test_init_project_scaffolds_mcp_registration(tmp_path: Path, capsys: pytest.
     assert registration["mcpServers"]["todo-db"]["args"] == []
 
 
-def test_init_project_never_clobbers_an_existing_mcp_registration(
+def test_init_project_merges_into_an_existing_mcp_registration(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`.mcp.json` is shared, so scaffolding must not delete other servers."""
+
+    from todo_db.cli import main
+
+    (tmp_path / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"other": {"command": "other-mcp"}}}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    identity = ["--project-id", "mcp-merge", "--repository", "https://example.test/merge"]
+    assert main(["init-project", *identity]) == 0
+
+    merged = json.loads((tmp_path / ".mcp.json").read_text(encoding="utf-8"))
+    assert merged["mcpServers"]["todo-db"]["command"] == "todo-db-mcp"
+    assert merged["mcpServers"]["other"] == {"command": "other-mcp"}, "unrelated server was dropped"
+
+    # --force refreshes our entry and still leaves the others alone.
+    assert main(["init-project", *identity, "--force"]) == 0
+    forced = json.loads((tmp_path / ".mcp.json").read_text(encoding="utf-8"))
+    assert forced["mcpServers"]["other"] == {"command": "other-mcp"}, "--force dropped an unrelated server"
+    assert forced["mcpServers"]["todo-db"]["command"] == "todo-db-mcp"
+
+
+def test_init_project_keeps_a_hand_edited_todo_db_entry(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     from todo_db.cli import main
 
-    existing = '{"mcpServers": {"other": {"command": "other-mcp"}}}\n'
-    (tmp_path / ".mcp.json").write_text(existing, encoding="utf-8")
+    customised = {"mcpServers": {"todo-db": {"command": "todo-db-mcp", "args": ["--profile", "full"]}}}
+    (tmp_path / ".mcp.json").write_text(json.dumps(customised, indent=2) + "\n", encoding="utf-8")
 
     identity = ["--project-id", "mcp-keep", "--repository", "https://example.test/keep"]
     assert main(["init-project", *identity]) == 0
 
-    assert (tmp_path / ".mcp.json").read_text(encoding="utf-8") == existing
+    kept = json.loads((tmp_path / ".mcp.json").read_text(encoding="utf-8"))
+    assert kept["mcpServers"]["todo-db"]["args"] == ["--profile", "full"]
     assert "kept existing" in capsys.readouterr().out
-
-    # --force is an explicit request to overwrite the scaffold.
-    assert main(["init-project", *identity, "--force"]) == 0
-    rewritten = json.loads((tmp_path / ".mcp.json").read_text(encoding="utf-8"))
-    assert "todo-db" in rewritten["mcpServers"]
 
 
 def test_init_project_is_idempotent_only_with_force(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
