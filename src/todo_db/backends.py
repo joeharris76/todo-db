@@ -165,11 +165,20 @@ def _normalize_url(value: str) -> str:
     return scheme.lower() + separator + rest if separator else value
 
 
+# Only schemes that carry the auth token over an encrypted transport. An
+# allowlist, not a blocklist: `ws://` reaches libsql just as `http://` does and
+# would put the bearer token on the wire in cleartext.
+_SECURE_URL_SCHEMES = ("https://", "libsql://", "wss://")
+
+
 def _secure_url(value: str) -> str:
     value = _normalize_url(value)
-    if value.startswith("http://"):
-        raise TodoDBError("refusing plaintext http:// for the hosted backend; use https:// or libsql://")
-    return value
+    if value.startswith(_SECURE_URL_SCHEMES):
+        return value
+    scheme = value.partition("://")[0] or value
+    raise TodoDBError(
+        f"refusing plaintext {scheme}:// for the hosted backend; use https://, libsql://, or wss://"
+    )
 
 
 CREDENTIAL_COMMAND_VARIABLE = "TODO_DB_CREDENTIAL_COMMAND"
@@ -353,6 +362,7 @@ def _redacted_error(exc: BaseException, *, url: str, token: str) -> str:
 
 _AUTH_MARKERS = re.compile(
     r"(?:\b401\b|\bunauthorized\b|\bforbidden\b|\binvalid[ _-]?token\b|"
+    r"\bauthentication\s+failed\b|\bcredentials?\s+(?:expired|rejected|invalid)\b|"
     r"\bjwt(?:\s+error)?\b.*\b(?:expired|invalid)\b|\b(?:expired|invalid)\b.*\bjwt\b)",
     re.IGNORECASE,
 )
@@ -403,8 +413,14 @@ def _connect_hosted(
         raise hosted_error(exc, url=url, credential=credential, context="connection") from None
     connection = HostedConnection(raw, url=url, credential=credential)
     if config.credential_mode is not CredentialMode.READ_ONLY:
+        # The schema leans on ON DELETE CASCADE (migrations 003/004/005). A
+        # hosted backend that cannot enforce foreign keys would orphan rows
+        # silently, so this failure is raised rather than swallowed.
         try:
             connection.execute("PRAGMA foreign_keys = ON")
         except Exception:
-            pass
+            raise TodoDBError(
+                "hosted backend refused `PRAGMA foreign_keys = ON`; refusing to write without "
+                "referential integrity enforcement"
+            ) from None
     return connection

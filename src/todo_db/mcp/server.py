@@ -16,6 +16,7 @@ import sys
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
+from ..database import TOOL_VERSION
 from ..errors import HostedAuthError, SchemaBehindError, SchemaMismatchError, TodoDBError, TodoError
 from ..models import CredentialMode
 from .identity import Identity, PrincipalHolder, resolve_identity
@@ -25,7 +26,7 @@ from .worker import run_in_worker_sync, shutdown_worker
 
 LOG = logging.getLogger("todo_db.mcp")
 
-_INSTALL_HINT = "todo-db[mcp] is required: pip install 'todo-db[mcp]'"
+_INSTALL_HINT = "the mcp extra is required: install todo-db with the [mcp] extra"
 _LOG_LEVELS = ("debug", "info", "warning", "error")
 
 
@@ -41,7 +42,7 @@ class LaunchConfig:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="todo-db-mcp",
-        description="MCP stdio server for the todo-db tracker (foundation; lifecycle tools land later).",
+        description="MCP stdio server for the todo-db tracker: the agent interface for planning and workflow.",
     )
     parser.add_argument("--config", help="path to a .todo-db/config.json (overrides discovery)")
     parser.add_argument("--db", help="local SQLite path or secure libsql/https URL")
@@ -154,31 +155,25 @@ def build_server(launch: LaunchConfig) -> "FastMCP":  # noqa: F821
         instructions=INSTRUCTIONS,
         lifespan=lifespan,
     )
+    # FastMCP does not forward a version to the lowlevel server, so `serverInfo`
+    # would otherwise report the MCP SDK's own version to every client.
+    server._mcp_server.version = TOOL_VERSION
     register_instructions(server, principal)
     register_work_tools(server, launch.target, principal, launch.identity.session_id, allow_hosted=launch.allow_hosted)
-    # Query and full-profile tools are registered by later items; work tools
-    # are the hot path and are always loaded.
+
+    # Query and planning tools load in every profile: reads are cheap and
+    # constantly wanted, and an agent that cannot create an item cannot use
+    # the tracker at all. `full` adds findings and admin on top.
+    from .tools_full import register_full_tools, register_planning_tools
+    from .tools_query import register_query_tools
+
+    register_query_tools(server, launch.target, principal, launch.identity.session_id, allow_hosted=launch.allow_hosted)
     if launch.profile == "full":
-        try:
-            from .tools_query import register_query_tools  # type: ignore[import]
-
-            register_query_tools(server, launch.target, principal, launch.identity.session_id, allow_hosted=launch.allow_hosted)
-        except ImportError:
-            pass
-        try:
-            from .tools_full import register_full_tools  # type: ignore[import]
-
-            register_full_tools(server, launch.target, principal, launch.identity.session_id, allow_hosted=launch.allow_hosted)
-        except ImportError:
-            pass
+        register_full_tools(server, launch.target, principal, launch.identity.session_id, allow_hosted=launch.allow_hosted)
     else:
-        # Default profile also includes query tools per plan §5 (cheap + constantly wanted).
-        try:
-            from .tools_query import register_query_tools  # type: ignore[import]
-
-            register_query_tools(server, launch.target, principal, launch.identity.session_id, allow_hosted=launch.allow_hosted)
-        except ImportError:
-            pass
+        register_planning_tools(
+            server, launch.target, principal, launch.identity.session_id, allow_hosted=launch.allow_hosted
+        )
     return server
 
 

@@ -195,6 +195,98 @@ def test_turso_backend_rejects_plaintext_urls(monkeypatch: pytest.MonkeyPatch, t
         )
 
 
+@pytest.mark.parametrize("url", ["http://project.example.test", "ws://project.example.test"])
+def test_turso_backend_rejects_cleartext_transports(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, url: str
+) -> None:
+    """`ws://` carries the bearer token in cleartext exactly as `http://` does.
+
+    The scheme check is an allowlist, so a transport is refused unless it is
+    known to be encrypted -- adding a libsql scheme must not silently open a
+    plaintext path.
+    """
+
+    from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase
+    from todo_db.errors import TodoDBError
+
+    monkeypatch.setitem(sys.modules, "libsql", FakeLibsql(tmp_path / "primary.sqlite"))
+    with pytest.raises(TodoDBError, match="plaintext"):
+        TodoDatabase.open(
+            DatabaseConfig(
+                path=url,
+                identity=ProjectIdentity(project_id="project-test", repository="https://example.test/project"),
+                auth_token="rw-token",
+            )
+        )
+
+
+@pytest.mark.parametrize("url", ["https://p.example.test", "libsql://p.example.test", "wss://p.example.test"])
+def test_turso_backend_accepts_encrypted_transports(url: str) -> None:
+    from todo_db.backends import _secure_url
+
+    assert _secure_url(url) == url
+
+
+@pytest.mark.parametrize(
+    "detail",
+    [
+        "authentication failed for database",
+        "credential expired",
+        "credentials rejected by server",
+        "HTTP 401 Unauthorized",
+    ],
+)
+def test_auth_classifier_matches_unambiguous_auth_prose(detail: str) -> None:
+    from todo_db.backends import is_auth_shaped
+
+    assert is_auth_shaped(detail)
+
+
+@pytest.mark.parametrize("detail", ["429 quota exceeded", "connection reset by peer", "database is suspended"])
+def test_auth_classifier_leaves_ambiguous_failures_generic(detail: str) -> None:
+    """Ambiguity must stay generic so a caller never auto-mints a credential."""
+
+    from todo_db.backends import is_auth_shaped
+
+    assert not is_auth_shaped(detail)
+
+
+def test_hosted_write_refuses_when_foreign_keys_cannot_be_enforced(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The schema relies on ON DELETE CASCADE; a silent downgrade orphans rows."""
+
+    from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase
+    from todo_db.errors import TodoDBError
+
+    fake = FakeLibsql(tmp_path / "primary.sqlite")
+    real_connect = fake.connect
+
+    def connect(url, **kwargs):
+        raw = real_connect(url, **kwargs)
+        original_execute = raw.execute
+
+        def execute(sql, *args, **kwargs):
+            if "foreign_keys" in str(sql).lower():
+                raise RuntimeError("PRAGMA not supported over hrana")
+            return original_execute(sql, *args, **kwargs)
+
+        raw.execute = execute
+        return raw
+
+    fake.connect = connect
+    monkeypatch.setitem(sys.modules, "libsql", fake)
+
+    with pytest.raises(TodoDBError, match="foreign_keys"):
+        TodoDatabase.open(
+            DatabaseConfig(
+                path="libsql://project.example.test",
+                identity=ProjectIdentity(project_id="project-test", repository="https://example.test/project"),
+                auth_token="rw-token",
+            )
+        )
+
+
 def test_hosted_read_write_outage_redacts_url_and_token(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase
     from todo_db.errors import TodoDBError

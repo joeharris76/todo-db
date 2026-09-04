@@ -58,6 +58,12 @@ class DatabaseConfig:
             target = Path(self.path)
         object.__setattr__(self, "path", target)
 
+    #: Every network scheme libsql accepts, including the cleartext ones. They
+    #: are recognised here so `backends._secure_url` can refuse them with a
+    #: real message; leaving one out routes a remote URL to the local SQLite
+    #: backend instead, which is a confusing failure rather than a safe one.
+    HOSTED_SCHEMES = ("libsql://", "https://", "http://", "wss://", "ws://")
+
     @property
     def is_hosted(self) -> bool:
-        return isinstance(self.path, str) and self.path.lower().startswith(("libsql://", "https://", "http://"))
+        return isinstance(self.path, str) and self.path.lower().startswith(self.HOSTED_SCHEMES)

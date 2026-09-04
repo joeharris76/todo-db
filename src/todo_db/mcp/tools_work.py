@@ -121,7 +121,7 @@ def register_work_tools(
 
     @server.tool(
         name="take",
-        description="Atomically claim a ready item or re-adopt your active claim. Pass the server's session id internally so a restart auto-adopts.",
+        description="Atomically claim a ready item, or re-adopt the claim you already hold. Omit `id` to take the top of the ready queue.",
     )
     async def take_tool(id: str | None = None, ctx: Context = None) -> dict[str, Any]:  # type: ignore[assignment]
         principal = _principal(holder, ctx)

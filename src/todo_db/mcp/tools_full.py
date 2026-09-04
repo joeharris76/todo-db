@@ -45,13 +45,15 @@ def _principal(holder: PrincipalHolder, ctx: Context | None) -> str | None:
     return holder.principal
 
 
-def register_full_tools(
+def register_planning_tools(
     server: FastMCP,
     target: ResolvedTarget,
     holder: PrincipalHolder,
     session_id: str,
     allow_hosted: bool = False,
 ) -> None:
+    """Planning tools available in every profile: create, amend, and link items."""
+
     def _target() -> ResolvedTarget:
         return target
 
@@ -178,6 +180,21 @@ def register_full_tools(
                     return err(getattr(exc, "code", None) or "E_ERROR", str(exc))
 
         return await run_in_worker(_work)
+
+def register_full_tools(
+    server: FastMCP,
+    target: ResolvedTarget,
+    holder: PrincipalHolder,
+    session_id: str,
+    allow_hosted: bool = False,
+) -> None:
+    """Full profile: the planning tools plus findings and admin surfaces."""
+
+    register_planning_tools(server, target, holder, session_id, allow_hosted=allow_hosted)
+
+    def _target() -> ResolvedTarget:
+        return target
+
 
     @server.tool(name="block", description="Block an item.")
     async def block_tool(id: str, reason: str, ctx: Context = None) -> dict[str, Any]:  # type: ignore[assignment]

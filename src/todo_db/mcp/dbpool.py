@@ -1,8 +1,14 @@
 """Per-tool capability-scoped credential and connection lifecycle (ADR 0006 G3).
 
 Each MCP tool call resolves a credential for the capability it requires and opens
-a fresh connection that is closed when the call returns. Read-only tools never
-hold a read-write credential. A write tool never triggers schema migration.
+a fresh connection that is closed when the call returns. A write tool never
+triggers schema migration.
+
+``CredentialMode.READ_ONLY`` selects a credential; it does not constrain one. A
+read-only tool gets ``TODO_DB_RO_AUTH_TOKEN`` when it is set, and otherwise
+falls back to ``TODO_DB_AUTH_TOKEN`` (``backends.resolve_credential``). Least
+privilege on the hosted path therefore depends on actually provisioning a
+read-only token; without one, read tools hold a read-write credential.
 
 Maps every tool name to a ``CredentialMode`` using the same table the CLI uses
 per command (``cli._mode_for``). On ``E_AUTH_REJECTED`` the credential-provider
