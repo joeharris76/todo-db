@@ -191,8 +191,9 @@ todo-db --db libsql://example-project.aws-us-east-1.turso.io \
   --repository https://example.test/example-project
 ```
 
-Only encrypted transports are accepted (`https://`, `libsql://`, `wss://`);
-cleartext `http://` and `ws://` are refused. Read-only commands prefer
+Only `https://` and `libsql://` are accepted. Cleartext `http://` and `ws://`
+are refused. `wss://` is refused too: the driver treats it as a local path, so
+accepting it would open a file named after the URL. Read-only commands prefer
 `TODO_DB_RO_AUTH_TOKEN` and fall back to `TODO_DB_AUTH_TOKEN` only when the
 read-only variable is absent — so least privilege requires actually minting a
 token with `--read-only`. `CredentialMode.READ_ONLY` selects a credential; it
