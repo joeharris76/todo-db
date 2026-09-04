@@ -4,6 +4,59 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **The default agent profile can create work.** `create_item`, `update_item`,
+  and `add_dependency` moved from `--profile full` into every profile. With the
+  per-verb CLI removed in 0.6.0, an agent on the default profile previously had
+  no way to add an item through any sanctioned path. Findings, `block`,
+  `unblock`, `drop`, `init_project`, and `config_get` remain behind `full`. The
+  agent-profile tool count rises from 23 to 26.
+- **Encrypted-transport enforcement is an allowlist.** `DatabaseConfig.is_hosted`
+  recognised only `libsql`, `https`, and `http`, so a `ws://` or `wss://` URL
+  never reached the hosted backend and was opened as a local filename instead.
+  Hosted routing now covers every network scheme libsql accepts, and the
+  transport check accepts only `https://`, `libsql://`, and `wss://`.
+- **A hosted backend that cannot enforce foreign keys fails loudly.** The
+  `PRAGMA foreign_keys = ON` failure was swallowed on the hosted path only.
+  The schema relies on `ON DELETE CASCADE`, so a silent downgrade orphaned rows.
+- **Auth classification covers unambiguous prose.** "authentication failed" and
+  "credential expired" are now auth-shaped. Quota, suspension, network, and TLS
+  failures stay generic, so a caller still cannot mistake ambiguity for an auth
+  failure.
+- **`serverInfo` reports the tracker's version**, not the MCP SDK's.
+- **Client registration snippets no longer pass `${HOSTNAME}`.** It is a shell
+  variable rather than an exported one, so it expanded to empty and wrote a
+  truncated principal into `claimed_by` and every audit row. Omitting `--actor`
+  lets the server resolve the host from the `initialize` handshake.
+
+### Added
+
+- **A repo-owned `todo-db` agent skill**, sourced from `skills/todo-db/` and
+  mirrored into `.claude/skills/`, `.codex/skills/`, and `.gemini/skills/` so a
+  clone is self-contained. It replaces the external-catalog `todo` skill, which
+  targeted the `_project/scripts/todo` wrapper removed in 0.6.0.
+- **`init-project` scaffolds `.mcp.json`**, keeping an existing file rather than
+  overwriting it. Planning lives only on the MCP surface, so adoption without a
+  registration left a project unable to create work.
+- **CI verifies the committed skill mirrors** against `skill-sync.lock`.
+
+### Changed
+
+- The README is a front door: requirements, one quickstart, a glossary, the
+  response envelope, and a complete `TODO_DB_*` table. Credential-provider
+  reference prose moved to `docs/operations/hosted-credentials.md`.
+- The MCP `INSTRUCTIONS` text covers planning, the response envelope, and gate
+  recovery rather than only the six hot-path tools.
+- The sdist ships `docs/`.
+
+### Removed
+
+- `docs/operations/benchbox-parity-coordination.md`, which coordinated with a
+  private sibling repository.
+
 ## [0.6.1] - 2026-09-03
 
 ### Added
