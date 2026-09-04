@@ -27,6 +27,12 @@ available, the MCP server is not registered — see
   is the only store.
 - Do **not** run the stored verification commands yourself. A human runs them
   with `todo-db verify-run`.
+- Treat `export()` as an explicit full-snapshot operation. Do not call it to
+  inspect one item, search for audit or override history, discover fields, or
+  recover omitted context. If a targeted tool does not expose what you need,
+  report that gap instead of substituting a full export. Use
+  `export(confirm_full_snapshot=true)` only when a full snapshot is explicitly
+  requested.
 
 ## The loop
 
@@ -73,6 +79,7 @@ pass a smaller `limit` and a `cursor`, or request a `section`.
 | `E_SCHEMA` / `E_SCHEMA_BEHIND` / `E_SCHEMA_DIVERGED` | Schema mismatch. | Stop; a human runs `todo-db migrate`. |
 | `E_NO_PROJECT` | No project identity resolved. | Run `doctor`; a human fixes `.todo-db/config.json`. |
 | `E_AUDIT` | Audit chain verification failed. | Stop immediately and report; do not write. |
+| `E_EXPORT_CONFIRMATION` | Full item dump was not explicitly requested. | Do not retry it as a probe; use targeted reads or pass `confirm_full_snapshot=true` only for a requested snapshot. |
 | `E_HOSTED` | Hosted backend problem. | Report it; hosted access is configured outside the agent. |
 | `E_AUTH_MISSING` / `E_AUTH_REJECTED` | Hosted credential missing or rejected. | Stop writing. Report it; credentials are provisioned outside the agent. |
 
@@ -111,7 +118,7 @@ Use `update_item` to amend an item without touching its lifecycle, and
 | Check before committing | `check_scope`, `lint`, `verify_list` |
 | Park work | `defer`, `deferrals`, `promote_deferral`, `dismiss_deferral` |
 | Health check | `doctor`, `stats` |
-| Back up or audit | `export` |
+| Full snapshot (explicit request only) | `export(confirm_full_snapshot=true)` |
 | See what you hold | `claims` |
 | Capture an observation | `finding_create` (needs `--profile full`) |
 
@@ -149,4 +156,3 @@ human the exact command:
 - `todo-db finding sync` — lands finding drafts into the tracker.
 
 Details: `references/recovery.md` and `references/implement.md`.
-

@@ -446,9 +446,15 @@
   },
   {
     "name": "export",
-    "description": "Export all items and verifications for backup/audit.",
+    "description": "Full item dump for an explicitly requested snapshot. Expensive over hosted databases; not an audit-history query. Set confirm_full_snapshot=true only when a full snapshot is requested.",
     "inputSchema": {
-      "properties": {},
+      "properties": {
+        "confirm_full_snapshot": {
+          "default": false,
+          "title": "Confirm Full Snapshot",
+          "type": "boolean"
+        }
+      },
       "title": "export_toolArguments",
       "type": "object"
     },

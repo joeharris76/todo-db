@@ -8,6 +8,11 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Full MCP exports require explicit confirmation.** The `export` query now
+  returns `E_EXPORT_CONFIRMATION` without opening the database unless the
+  caller passes `confirm_full_snapshot=true`. The skill and server
+  instructions identify it as an expensive full item dump, not an
+  audit-history query, so normal item inspection uses targeted reads.
 - **The default agent profile can create work.** `create_item`, `update_item`,
   and `add_dependency` moved from `--profile full` into every profile. With the
   per-verb CLI removed in 0.6.0, an agent on the default profile previously had
