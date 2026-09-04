@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "lockedAt": "2026-09-04T15:48:04.004Z",
+  "lockedAt": "2026-09-04T17:44:13.453Z",
   "skills": {
     "code": {
       "source": {
@@ -309,17 +309,57 @@
         "type": "local",
         "name": "project",
         "path": "skills/todo-db",
-        "fetchedAt": "2026-09-04T15:47:52.744Z"
+        "fetchedAt": "2026-09-04T17:44:02.968Z"
       },
       "installMode": "mirror",
       "files": {
+        "references/batch.md": {
+          "sha256": "e95315e5768a6893beaca2b536605c3e6afa3a4f32671df4f0186c5746198f40",
+          "size": 2576
+        },
+        "references/bootstrap.md": {
+          "sha256": "b4d49e3a8f0469aa6f81f56bb26329d33f78f20c19e584f8f97ac3e9a1659224",
+          "size": 1666
+        },
+        "references/closeout.md": {
+          "sha256": "25bf97ba0a355dd9bc15aa52af6dae9fbd124284143ad94f3105a95f46a0b16d",
+          "size": 1974
+        },
+        "references/handoff.md": {
+          "sha256": "95701269dbb8154608282263697f6d5ce36b408681c7a6e843a47f350c03783e",
+          "size": 1554
+        },
+        "references/ideate.md": {
+          "sha256": "9007cb4fdc62d14c6a8357753fe1325a706e8db4ef42f6d917a4bab654d4fd9f",
+          "size": 1443
+        },
+        "references/implement.md": {
+          "sha256": "3cc0b83a58f1b150c7472f0aa8ba4ff7949e0b47965b613384515c14da3d1adc",
+          "size": 2424
+        },
+        "references/prioritize.md": {
+          "sha256": "b807172d9091bec0dede32f708a715e9290c20772853df7feed7076a2196eae9",
+          "size": 3089
+        },
+        "references/queries.md": {
+          "sha256": "fb26af728b0ec56f7bc9be6f688a01831185fc577f244964724972ea9d3e734e",
+          "size": 1701
+        },
         "references/recovery.md": {
           "sha256": "b48b4bcee165981e11de34786a48185d99a797b9766135151eaabfc364d48bbf",
           "size": 2609
         },
+        "references/review.md": {
+          "sha256": "9e8ed98c5caf6cb2e33a40267d0dc205bfd3eb37a429d831f3f03f1482af8231",
+          "size": 1415
+        },
+        "references/spec.md": {
+          "sha256": "ff9451262e07536f8209896b5f4d76bb68b5a9519eccffd46b6f6a7568a37235",
+          "size": 2376
+        },
         "SKILL.md": {
-          "sha256": "ff881eae02fe69b3588b35e39e6997fd9091e382cad4bdcc3c1a4579833b4bdf",
-          "size": 6589
+          "sha256": "fee6bc1859ea628668625651caa492592eed435964f8b85860be30b4ac8aa5ad",
+          "size": 8321
         }
       }
     }

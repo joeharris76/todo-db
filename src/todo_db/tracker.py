@@ -1510,12 +1510,14 @@ class TodoTracker:
             self._event("defer", item_id, {"deferral_id": deferral_id, "summary": summary})
             return deferral_id
 
-    def promote_deferral(self, deferral_id: int, new_item_id: str, **overrides: Any) -> None:
+    def promote_deferral(self, deferral_id: int, new_item_id: str | None = None, **overrides: Any) -> str:
         with self.database.transaction():
             row = self._require_deferral(deferral_id)
             if row["resolution"] != "open":
                 raise TodoError(f"deferral {deferral_id} is already {row['resolution']}")
             parent = self._require_item(row["from_item"])
+            if not new_item_id:
+                new_item_id = f"{parent['id']}-def{deferral_id}"
             title = overrides.get("title") or row["summary"][:200]
             description = overrides.get("description") or f"Promoted from deferral #{deferral_id}: {row['reason']}"
             self._insert_item(
@@ -1531,6 +1533,7 @@ class TodoTracker:
                 (new_item_id, deferral_id),
             )
             self._event("promote", row["from_item"], {"deferral_id": deferral_id, "new_item": new_item_id})
+            return new_item_id
 
     def dismiss_deferral(self, deferral_id: int, reason: str) -> None:
         if not reason.strip():

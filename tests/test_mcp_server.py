@@ -956,5 +956,16 @@ def test_agent_profile_doctor_and_deferral_tools(tmp_path):
             assert dismiss_data["ok"] is True
             assert dismiss_data["data"]["status"] == "dismissed"
 
+            # 4. promote_deferral in agent profile
+            defer2 = await session.call_tool("defer", {"id": "item-defer", "summary": "second deferral to promote"})
+            defer2_data = _json.loads(defer2.content[0].text)
+            d2_id = defer2_data["data"]["deferral_id"]
+            promote_res = await session.call_tool("promote_deferral", {"deferral_id": d2_id})
+            promote_data = _json.loads(promote_res.content[0].text)
+            assert promote_data["ok"] is True
+            assert promote_data["data"]["deferral_id"] == d2_id
+            assert promote_data["data"]["new_item"] == f"item-defer-def{d2_id}"
+
     anyio.run(go)
+
 
