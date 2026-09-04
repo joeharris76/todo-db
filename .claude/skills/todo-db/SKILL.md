@@ -83,9 +83,11 @@ verification is a human step.
 ## Planning
 
 `create_item` takes the work breakdown, scope rules, preserves, and
-verifications together. Titles must be non-empty and descriptions must be at
-least 10 characters. An item created without scope rules or verifications will
-fail `lint` and then `finish`, so supply them up front:
+verifications together. Titles must be 5–200 characters, descriptions must be
+at least 10 characters, and each work-unit ID must match `w` followed by one to
+three digits. Work-unit summaries must be 5–200 characters. An item created
+without scope rules or verifications will fail `lint` and then `finish`, so
+supply them up front:
 
 - **work** — the ordered work units, each independently evidenced.
 - **scope** — the paths the item may touch (`only_modify` and optional
@@ -147,5 +149,4 @@ human the exact command:
 - `todo-db finding sync` — lands finding drafts into the tracker.
 
 Details: `references/recovery.md` and `references/implement.md`.
-
 

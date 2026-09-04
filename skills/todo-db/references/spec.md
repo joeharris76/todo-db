@@ -14,13 +14,14 @@ A complete specification defines:
 3. **Item breakdown**:
    Define fields matching the `create_item` schema:
    - `id`: Kebab-case identifier (for example, `mcp-logging-refactor`).
-   - `title`: Short imperative sentence.
+   - `title`: Short imperative sentence, 5–200 characters long.
    - `worktree`: Relative directory or component root.
    - `priority`: `critical`, `high`, `medium-high`, `medium`, or `low`.
    - `description`: Context, rationale, and non-obvious constraints (must be at
      least 10 characters).
-   - `work`: Ordered list of units (`id` or `wid`, and `summary`). Each unit
-     must be independently implementable and verifiable.
+   - `work`: Ordered list of units (`id` or `wid`, and `summary`). Each unit ID
+     must match `^w[0-9]{1,3}$`, and each summary must be 5–200 characters.
+     Each unit must be independently implementable and verifiable.
    - `scope`: Path rules (`only_modify` and optional `do_not_modify`). Keep
      scope tight to protect against accidental edits.
    - `preserves`: Critical invariants, interfaces, or behaviors that must not change.

@@ -16,14 +16,18 @@ authorizes a write-back.
 
 Fetch active tracker state using MCP tools:
 
-1. Call `ready(fields=["id", "title", "priority", "worktree", "category", "state"])`
-   to find unblocked items with all dependencies satisfied.
-2. Call `list_items(fields=[...], limit=50, cursor=0)` to retrieve open items
-   (including blocked and dependent items). Use paging if needed to stay within
-   the 16 KiB ceiling.
-3. Call `deps(id=...)` to check an item's upstream prerequisites (`needs`), or
-   inspect the open item list to compute downstream unlocks (items that depend
-   on this item).
+1. Call `ready(fields=["id", "title", "priority", "worktree", "category", "state", "claimed_by"])
+   to find unblocked items with all dependencies satisfied and to see whether a
+   claim is already in flight.
+2. Call `list_items(fields=["id", "title", "priority", "worktree", "category", "state", "claimed_by"], limit=50, cursor=0)`
+   to retrieve the item list. This tool does not filter by state, so keep only
+   `planning` and `active` rows for an open-item ranking; terminal `done` and
+   `dropped` rows may also be present. Use paging if needed to stay within the
+   16 KiB ceiling.
+3. For each open candidate, call `deps(id=...)` to retrieve its upstream
+   prerequisites. The list response does not include `deps`; invert those
+   `needs` relationships across the open candidates to count downstream
+   unlocks (items that depend on this item).
 
 ### 2. Multi-signal ranking heuristic
 
