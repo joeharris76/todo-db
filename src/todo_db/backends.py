@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import shlex
@@ -14,6 +15,9 @@ from urllib.parse import urlsplit, urlunsplit
 
 from .errors import E_AUTH_MISSING, E_AUTH_REJECTED, HostedAuthError, TodoDBError
 from .models import CredentialMode, DatabaseConfig
+
+
+LOG = logging.getLogger("todo_db.backends")
 
 
 def connect(
@@ -165,19 +169,21 @@ def _normalize_url(value: str) -> str:
     return scheme.lower() + separator + rest if separator else value
 
 
-# Only schemes that carry the auth token over an encrypted transport. An
-# allowlist, not a blocklist: `ws://` reaches libsql just as `http://` does and
-# would put the bearer token on the wire in cleartext.
-_SECURE_URL_SCHEMES = ("https://", "libsql://", "wss://")
-
-
 def _secure_url(value: str) -> str:
+    """Accept only transports that encrypt the bearer token.
+
+    An allowlist, not a blocklist: `ws://` reaches libsql just as `http://`
+    does and would put the token on the wire in cleartext, so a scheme is
+    refused unless it is known to be encrypted.
+    """
+
     value = _normalize_url(value)
-    if value.startswith(_SECURE_URL_SCHEMES):
+    if value.startswith(DatabaseConfig.SECURE_SCHEMES):
         return value
     scheme = value.partition("://")[0] or value
     raise TodoDBError(
-        f"refusing plaintext {scheme}:// for the hosted backend; use https://, libsql://, or wss://"
+        f"refusing plaintext {scheme}:// for the hosted backend; "
+        "use " + ", ".join(s.rstrip(":/") + "://" for s in DatabaseConfig.SECURE_SCHEMES)
     )
 
 
@@ -361,9 +367,23 @@ def _redacted_error(exc: BaseException, *, url: str, token: str) -> str:
 
 
 _AUTH_MARKERS = re.compile(
-    r"(?:\b401\b|\bunauthorized\b|\bforbidden\b|\binvalid[ _-]?token\b|"
-    r"\bauthentication\s+failed\b|\bcredentials?\s+(?:expired|rejected|invalid)\b|"
-    r"\bjwt(?:\s+error)?\b.*\b(?:expired|invalid)\b|\b(?:expired|invalid)\b.*\bjwt\b)",
+    "|".join(
+        (
+            r"\b401\b",
+            r"\bunauthorized\b",
+            r"\bforbidden\b",
+            # "authentication failed" / "authentication error"
+            r"\bauthentication\s+(?:failed|error)\b",
+            # concatenated forms such as "InvalidToken"
+            r"\binvalid[ _-]?token\b",
+            # token/credential and a rejecting adjective, in either order
+            r"\b(?:token|credentials?)\b[^.;\n]{0,40}?\b(?:expired|rejected|invalid|revoked)\b",
+            r"\b(?:expired|rejected|invalid|revoked)\b[^.;\n]{0,40}?\b(?:token|credentials?)\b",
+            # jwt, in either order
+            r"\bjwt\b[^.;\n]{0,40}?\b(?:expired|invalid)\b",
+            r"\b(?:expired|invalid)\b[^.;\n]{0,40}?\bjwt\b",
+        )
+    ),
     re.IGNORECASE,
 )
 
@@ -413,14 +433,32 @@ def _connect_hosted(
         raise hosted_error(exc, url=url, credential=credential, context="connection") from None
     connection = HostedConnection(raw, url=url, credential=credential)
     if config.credential_mode is not CredentialMode.READ_ONLY:
-        # The schema leans on ON DELETE CASCADE (migrations 003/004/005). A
-        # hosted backend that cannot enforce foreign keys would orphan rows
-        # silently, so this failure is raised rather than swallowed.
-        try:
-            connection.execute("PRAGMA foreign_keys = ON")
-        except Exception:
-            raise TodoDBError(
-                "hosted backend refused `PRAGMA foreign_keys = ON`; refusing to write without "
-                "referential integrity enforcement"
-            ) from None
+        _enable_foreign_keys(connection)
     return connection
+
+
+def _enable_foreign_keys(connection: "HostedConnection") -> None:
+    """Turn on foreign keys for a hosted write connection, and say so if it fails.
+
+    The schema leans on ON DELETE CASCADE (migrations 003/004/005), so a
+    connection without enforcement can orphan rows. Not every hosted endpoint
+    honours a session PRAGMA over Hrana, and refusing to connect would take a
+    working deployment offline, so this warns rather than raising -- but it
+    verifies rather than assuming, and it never fails silently.
+    """
+
+    try:
+        connection.execute("PRAGMA foreign_keys = ON")
+        row = connection.execute("PRAGMA foreign_keys").fetchone()
+    except Exception as exc:
+        LOG.warning(
+            "hosted backend rejected `PRAGMA foreign_keys = ON` (%s); this connection cannot "
+            "enforce ON DELETE CASCADE, so deletes may orphan rows",
+            type(exc).__name__,
+        )
+        return
+    if row is not None and not row[0]:
+        LOG.warning(
+            "hosted backend reports foreign keys still disabled after `PRAGMA foreign_keys = ON`; "
+            "this connection cannot enforce ON DELETE CASCADE, so deletes may orphan rows"
+        )

@@ -227,13 +227,31 @@ def test_turso_backend_accepts_encrypted_transports(url: str) -> None:
     assert _secure_url(url) == url
 
 
+def test_secure_schemes_are_a_strict_subset_of_hosted_schemes() -> None:
+    """Two lists that drift let a remote URL be opened as a local filename."""
+
+    from todo_db.models import DatabaseConfig
+
+    assert set(DatabaseConfig.SECURE_SCHEMES) < set(DatabaseConfig.HOSTED_SCHEMES)
+    # Every scheme routed to the hosted backend is either accepted or refused
+    # with a real message -- none may fall through to the local SQLite path.
+    for scheme in DatabaseConfig.HOSTED_SCHEMES:
+        assert DatabaseConfig(path=f"{scheme}example.test", identity=None).is_hosted
+
+
 @pytest.mark.parametrize(
     "detail",
     [
         "authentication failed for database",
+        "authentication error",
         "credential expired",
+        "credentials are expired",
+        "invalid credentials",
+        "token expired",
+        "the token was revoked",
         "credentials rejected by server",
         "HTTP 401 Unauthorized",
+        "JWT expired",
     ],
 )
 def test_auth_classifier_matches_unambiguous_auth_prose(detail: str) -> None:
@@ -242,7 +260,17 @@ def test_auth_classifier_matches_unambiguous_auth_prose(detail: str) -> None:
     assert is_auth_shaped(detail)
 
 
-@pytest.mark.parametrize("detail", ["429 quota exceeded", "connection reset by peer", "database is suspended"])
+@pytest.mark.parametrize(
+    "detail",
+    [
+        "429 quota exceeded",
+        "connection reset by peer",
+        "database is suspended",
+        "TLS certificate verify failed",
+        "503 service unavailable",
+        "request timed out",
+    ],
+)
 def test_auth_classifier_leaves_ambiguous_failures_generic(detail: str) -> None:
     """Ambiguity must stay generic so a caller never auto-mints a credential."""
 
@@ -251,13 +279,19 @@ def test_auth_classifier_leaves_ambiguous_failures_generic(detail: str) -> None:
     assert not is_auth_shaped(detail)
 
 
-def test_hosted_write_refuses_when_foreign_keys_cannot_be_enforced(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+def test_hosted_write_warns_when_foreign_keys_cannot_be_enforced(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """The schema relies on ON DELETE CASCADE; a silent downgrade orphans rows."""
+    """The schema relies on ON DELETE CASCADE, so a silent downgrade must be visible.
+
+    Not every hosted endpoint honours a session PRAGMA over Hrana, and refusing
+    to connect would take a working deployment offline -- so this warns loudly
+    rather than raising, and never passes silently.
+    """
+
+    import logging
 
     from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase
-    from todo_db.errors import TodoDBError
 
     fake = FakeLibsql(tmp_path / "primary.sqlite")
     real_connect = fake.connect
@@ -277,14 +311,18 @@ def test_hosted_write_refuses_when_foreign_keys_cannot_be_enforced(
     fake.connect = connect
     monkeypatch.setitem(sys.modules, "libsql", fake)
 
-    with pytest.raises(TodoDBError, match="foreign_keys"):
+    with caplog.at_level(logging.WARNING, logger="todo_db.backends"):
         TodoDatabase.open(
             DatabaseConfig(
                 path="libsql://project.example.test",
                 identity=ProjectIdentity(project_id="project-test", repository="https://example.test/project"),
                 auth_token="rw-token",
             )
-        )
+        ).close()
+
+    assert any("foreign_keys" in r.message or "orphan rows" in r.getMessage() for r in caplog.records), (
+        f"no warning emitted; records={[r.getMessage() for r in caplog.records]}"
+    )
 
 
 def test_hosted_read_write_outage_redacts_url_and_token(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

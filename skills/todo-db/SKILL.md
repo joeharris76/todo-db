@@ -5,10 +5,11 @@ description: Use when working in a project tracked by todo-db - "what should I w
 
 # todo-db
 
-The tracker is driven through **MCP tool calls**, not shell commands. There is
-no `todo` or `todo-db` subcommand for planning or lifecycle work; those verbs
-exist only as tools. If the tools are not available, the MCP server is not
-registered — see `docs/operations/mcp-clients.md` in the todo-db repository.
+The tracker is driven through **MCP tool calls**, not shell commands. Planning
+and the working loop exist only as tools; the `todo-db` CLI keeps a small floor
+of human and CI verbs listed at the end of this page. If the tools are not
+available, the MCP server is not registered — see
+`docs/operations/mcp-clients.md` in the todo-db repository.
 
 ## Critical rules
 

@@ -869,6 +869,55 @@ def test_finding_promote_duplicate_item_returns_coded_error(tmp_path):
     anyio.run(go)
 
 
+def test_agent_profile_can_create_work_end_to_end(tmp_path):
+    """An agent on the default profile must be able to add work.
+
+    Planning sat behind `--profile full` while the per-verb CLI was removed in
+    0.6.0, so the default profile had no sanctioned way to create an item at
+    all. Assert the behaviour, not just the frozen snapshot, so regenerating
+    the snapshot cannot quietly restore the dead end.
+    """
+
+    import json as _json
+    import subprocess
+
+    _make_project(tmp_path)
+    subprocess.run(["git", "init", "--quiet"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True)
+
+    server = build_server(resolve_launch_config(_args("--repo-root", str(tmp_path), "--actor", "tester")))
+
+    import mcp.types as types
+    from mcp.shared.memory import create_connected_server_and_client_session as connect
+
+    async def go():
+        async with connect(server, client_info=types.Implementation(name="x", version="0")) as session:
+            names = {t.name for t in (await session.list_tools()).tools}
+            for tool in ("create_item", "update_item", "add_dependency"):
+                assert tool in names, f"{tool} missing from the default profile"
+            # Findings and destructive admin stay behind --profile full.
+            for tool in ("drop", "finding_create", "init_project"):
+                assert tool not in names, f"{tool} must not be in the default profile"
+
+            created = await session.call_tool(
+                "create_item",
+                {
+                    "id": "agent-made",
+                    "title": "Created on the agent profile",
+                    "worktree": "main",
+                    "description": "Proves the default profile can add work end to end.",
+                },
+            )
+            payload = _json.loads(created.content[0].text)
+            assert payload["ok"] is True, payload
+
+            listed = await session.call_tool("show_item", {"id": "agent-made"})
+            assert _json.loads(listed.content[0].text)["ok"] is True
+
+    anyio.run(go)
+
+
 def test_agent_profile_doctor_and_deferral_tools(tmp_path):
     import json as _json
     import subprocess

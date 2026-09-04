@@ -57,6 +57,9 @@ truncate, so retry with a smaller `limit` plus `cursor`.
 - `E_LINT_GATE` -- planning quality insufficient. `lint` says why.
 - `E_VERIFY_GATE` -- no current workspace attestation. Stop: a human runs the
   `todo-db verify-run` command given in `recovery`. Your `finish` still closes.
+- `E_BASE_DIVERGED` / `E_BASE_UNREACHABLE` -- the scope git baseline no longer
+  resolves. Stop; a human runs `todo-db rebaseline`.
+- `E_NO_PRINCIPAL` -- principal not resolved. Call `get_instructions`, retry.
 - `E_AUTH_MISSING` / `E_AUTH_REJECTED` -- hosted credential problem. Stop
   writing and report; credentials are provisioned outside the agent.
 

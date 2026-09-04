@@ -367,7 +367,7 @@ def _init_project(args: argparse.Namespace, identity: ProjectIdentity, raw_db: s
     print(f"wrote {gitignore_path}")
 
     mcp_path = root / ".mcp.json"
-    if mcp_path.exists():
+    if mcp_path.exists() and not args.force:
         print(f"kept existing {mcp_path}; add a `todo-db` entry to reach the tracker from an agent")
     else:
         mcp_path.write_text(SCAFFOLD_MCP_JSON, encoding="utf-8")

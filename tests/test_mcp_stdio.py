@@ -67,6 +67,11 @@ def test_stdio_smoke_initialize_and_tools_list(tmp_path: Path):
             req_id=1,
         )
         assert "result" in resp, f"initialize failed: {resp}"
+        # FastMCP does not forward a version to the lowlevel server, so this
+        # reported the MCP SDK's version to every client instead of ours.
+        from todo_db.database import TOOL_VERSION
+
+        assert resp["result"]["serverInfo"] == {"name": "todo-db", "version": TOOL_VERSION}
         # initialized notification
         proc.stdin.write(json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}) + "\n")
         proc.stdin.flush()

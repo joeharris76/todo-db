@@ -156,8 +156,13 @@ def build_server(launch: LaunchConfig) -> "FastMCP":  # noqa: F821
         lifespan=lifespan,
     )
     # FastMCP does not forward a version to the lowlevel server, so `serverInfo`
-    # would otherwise report the MCP SDK's own version to every client.
-    server._mcp_server.version = TOOL_VERSION
+    # would otherwise report the MCP SDK's own version to every client. The
+    # attribute is reachable only through FastMCP's private handle, so a future
+    # SDK could move it; a cosmetic label must not break startup if it does.
+    try:
+        server._mcp_server.version = TOOL_VERSION
+    except AttributeError:  # pragma: no cover - depends on the installed SDK
+        LOG.debug("MCP SDK does not expose a server version field; leaving it unset")
     register_instructions(server, principal)
     register_work_tools(server, launch.target, principal, launch.identity.session_id, allow_hosted=launch.allow_hosted)
 

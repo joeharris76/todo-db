@@ -58,11 +58,16 @@ class DatabaseConfig:
             target = Path(self.path)
         object.__setattr__(self, "path", target)
 
-    #: Every network scheme libsql accepts, including the cleartext ones. They
-    #: are recognised here so `backends._secure_url` can refuse them with a
-    #: real message; leaving one out routes a remote URL to the local SQLite
-    #: backend instead, which is a confusing failure rather than a safe one.
+    #: Network schemes routed to the hosted backend, cleartext ones included so
+    #: `backends._secure_url` can refuse them with a real message. Leaving one
+    #: out would route a remote URL to the local SQLite backend and open it as
+    #: a filename -- a confusing failure rather than a safe one.
     HOSTED_SCHEMES = ("libsql://", "https://", "http://", "wss://", "ws://")
+
+    #: The subset that carries the auth token over an encrypted transport.
+    #: `backends._secure_url` accepts only these; it is a strict subset, which
+    #: `tests/test_hosted_backend.py` pins.
+    SECURE_SCHEMES = ("libsql://", "https://", "wss://")
 
     @property
     def is_hosted(self) -> bool:

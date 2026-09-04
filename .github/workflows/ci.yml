@@ -34,10 +34,12 @@ jobs:
       - name: Parity conformance (CLI help, exit codes, tracker+findings DDL)
         run: uv run python scripts/parity_conformance.py --check
 
-      # Offline integrity gate: proves the committed skill mirrors under
-      # .claude/.codex/.gemini match skill-sync.lock. Needs no source access.
+      # Integrity gate: proves the committed skill mirrors under
+      # .claude/.codex/.gemini match skill-sync.lock. It reads no skill source,
+      # so it cannot be broken by an upstream catalog moving; the tool itself
+      # is pinned by commit so CI does not execute a moving target.
       - name: Skill mirrors match the lock
-        run: npx --yes github:joeharris76/skill-sync verify
+        run: npx --yes github:joeharris76/skill-sync#6bca368c35ce0db26ffdb314e25094a70ae9dd43 verify
 
       # The hosted run stays out of CI on purpose: CI injects credentials into
       # the environment, which is the condition that hid the v0.4.2 failure.

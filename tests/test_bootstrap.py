@@ -232,6 +232,11 @@ def test_init_project_never_clobbers_an_existing_mcp_registration(
     assert (tmp_path / ".mcp.json").read_text(encoding="utf-8") == existing
     assert "kept existing" in capsys.readouterr().out
 
+    # --force is an explicit request to overwrite the scaffold.
+    assert main(["init-project", *identity, "--force"]) == 0
+    rewritten = json.loads((tmp_path / ".mcp.json").read_text(encoding="utf-8"))
+    assert "todo-db" in rewritten["mcpServers"]
+
 
 def test_init_project_is_idempotent_only_with_force(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     from todo_db.cli import main
