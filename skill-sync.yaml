@@ -11,20 +11,16 @@ sources:
     ref: c63378624588e19bef9698078d925161ff4e45c5
     subdir: skills
 skills:
-  - blog
   - code
   - test
   - docs
   - todo
-  - benchbox
-  - substack
   - tidy-perms
   - skill-sync
   - shared-change-framework
   - shared-investigation-framework
   - shared-review-protocol
   - shared-agent-execution
-  - bossmode
 targets:
   claude:
     dir: .claude/skills
