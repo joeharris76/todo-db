@@ -4,6 +4,7 @@
 .todo-db/*.lock
 .todo-db/archive/
 .todo-db/export/
+.todo-batch/
 .venv/
 __pycache__/
 *.py[cod]

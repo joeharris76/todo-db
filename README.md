@@ -17,9 +17,9 @@ audit/export, and human recovery. See
 Release artifacts are available from GitHub with published SHA-256 checksums:
 
 ```sh
-gh release download v0.6.0 --repo joeharris76/todo-db \
-  --pattern 'todo_db-0.6.0-py3-none-any.whl'
-uv tool install './todo_db-0.6.0-py3-none-any.whl[mcp]'
+gh release download v0.6.1 --repo joeharris76/todo-db \
+  --pattern 'todo_db-0.6.1-py3-none-any.whl'
+uv tool install './todo_db-0.6.1-py3-none-any.whl[mcp]'
 # pipx accepts the same downloaded wheel; add the mcp extra the same way.
 ```
 

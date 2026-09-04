@@ -1,8 +1,7 @@
 name: Audit Chain Operational Monitor
 
+# Operational audit monitor. Run on demand or configure schedule in private ops runner.
 on:
-  schedule:
-    - cron: "0 */6 * * *"  # Every 6 hours
   workflow_dispatch:
     inputs:
       database_target:
