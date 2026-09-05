@@ -12,7 +12,7 @@ database queries.
 | Inspect one item | `show_item(id=..., fields=[...])` | Retrieves full item details or selected fields. |
 | Check dependencies | `deps(id=...)` | Returns upstream prerequisite items (`needs`). |
 | View open deferrals | `deferrals()` | Lists open work parked for later triage. |
-| Full backup snapshot | `export()` | Exports all items and verification ladders (large payload). |
+| Full item dump (explicit request only) | `export(confirm_full_snapshot=true)` | Returns all items and verification ladders; expensive over hosted databases and does not return audit history. |
 | Check held claims | `claims()` | Shows all active claims held by your principal. |
 | System statistics | `stats()` | Item counts by priority, state, and findings. |
 
@@ -23,8 +23,11 @@ Responses are capped at 16 KiB. To avoid `E_OUTPUT_TRUNCATED`:
   `list_items(fields=["id", "title", "priority", "state"])`
 - Use pagination:
   Pass `limit=20` and increment `cursor` across pages.
-- Note that `export()` produces an uncapped payload intended for full snapshots;
-  use `list_items` or `ready` during normal sessions.
+- `export()` is not a normal inspection query and is not an audit-history
+  lookup. It produces an uncapped full item dump; use `list_items`, `ready`,
+  `show_item`, or `context` during normal sessions. If those tools omit data
+  you need, report the unsupported read instead of calling `export()` as a
+  probe.
 
 ## Administrative mutations (profile: full)
 

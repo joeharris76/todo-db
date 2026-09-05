@@ -74,12 +74,41 @@ def test_server_exposes_instructions_surface(tmp_path):
             result = await session.call_tool("get_instructions", {})
             body = result.content[0].text
             assert "todo-db agent workflow" in body
+            assert "E_EXPORT_CONFIRMATION" in body
             for tool in ("next", "take", "context", "progress", "finish", "release"):
                 assert f"`{tool}`" in body, f"instructions omit {tool}"
             resources = await session.list_resources()
             assert "todo://instructions" in {str(r.uri) for r in resources.resources}
             prompts = await session.list_prompts()
             assert "todo/workflow" in {p.name for p in prompts.prompts}
+
+    anyio.run(go)
+
+
+def test_export_requires_explicit_full_snapshot_confirmation(tmp_path):
+    _make_project(tmp_path)
+    server = build_server(resolve_launch_config(_args("--repo-root", str(tmp_path), "--actor", "tester")))
+
+    import json as _json
+    from unittest.mock import patch
+
+    import mcp.types as types
+    from mcp.shared.memory import create_connected_server_and_client_session as connect
+
+    async def go():
+        async with connect(server, client_info=types.Implementation(name="test-export-guard", version="0")) as session:
+            with patch("todo_db.mcp.tools_query.database_for_tool") as database_for_tool:
+                result = await session.call_tool("export", {})
+            data = _json.loads(result.content[0].text)
+            assert data["ok"] is False
+            assert data["code"] == "E_EXPORT_CONFIRMATION"
+            assert data["kind"] == "gate"
+            database_for_tool.assert_not_called()
+
+            confirmed = await session.call_tool("export", {"confirm_full_snapshot": True})
+            confirmed_data = _json.loads(confirmed.content[0].text)
+            assert confirmed_data["ok"] is True
+            assert confirmed_data["data"] == {"items": []}
 
     anyio.run(go)
 
@@ -967,5 +996,3 @@ def test_agent_profile_doctor_and_deferral_tools(tmp_path):
             assert promote_data["data"]["new_item"] == f"item-defer-def{d2_id}"
 
     anyio.run(go)
-
-

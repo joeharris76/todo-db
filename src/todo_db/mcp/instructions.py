@@ -62,6 +62,9 @@ truncate, so retry with a smaller `limit` plus `cursor`.
 - `E_BASE_DIVERGED` / `E_BASE_UNREACHABLE` -- the scope git baseline no longer
   resolves. Stop; a human runs `todo-db rebaseline`.
 - `E_NO_PRINCIPAL` -- principal not resolved. Call `get_instructions`, retry.
+- `E_EXPORT_CONFIRMATION` -- `export` is an unbounded full item dump, not an
+  audit-history query. Do not retry it as a probe; pass
+  `confirm_full_snapshot=true` only for an explicitly requested snapshot.
 - `E_AUTH_MISSING` / `E_AUTH_REJECTED` -- hosted credential problem. Stop
   writing and report; credentials are provisioned outside the agent.
 

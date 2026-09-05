@@ -232,11 +232,27 @@ def register_query_tools(
 
         return await run_in_worker(_work)
 
-    @server.tool(name="export", description="Export all items and verifications for backup/audit.")
-    async def export_tool(ctx: Context = None) -> dict[str, Any]:  # type: ignore[assignment]
+    @server.tool(
+        name="export",
+        description=(
+            "Full item dump for an explicitly requested snapshot. Expensive over hosted databases; "
+            "not an audit-history query. Set confirm_full_snapshot=true only when a full snapshot is requested."
+        ),
+    )
+    async def export_tool(
+        confirm_full_snapshot: bool = False, ctx: Context = None  # type: ignore[assignment]
+    ) -> dict[str, Any]:
         principal = _principal(holder, ctx)
         if not principal:
             return err(E_NO_PRINCIPAL, "principal not yet resolved; call get_instructions first", kind="error")
+        if not confirm_full_snapshot:
+            return err(
+                "E_EXPORT_CONFIRMATION",
+                "export is an unbounded full item dump, not an audit-history query; "
+                "set confirm_full_snapshot=true only for an explicitly requested full snapshot",
+                recovery=["Call export(confirm_full_snapshot=true) only when a full snapshot is required."],
+                kind="gate",
+            )
 
         def _work():
             with database_for_tool(_target(), "export", allow_hosted=allow_hosted) as db:
@@ -366,4 +382,3 @@ def register_query_tools(
                     return err(getattr(exc, "code", None) or "E_ERROR", str(exc))
 
         return await run_in_worker(_work)
-

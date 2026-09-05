@@ -40,6 +40,7 @@ GATE_CODES = frozenset(
         "E_SCHEMA_DIVERGED",
         "E_IDENTITY",
         "E_AUDIT",
+        "E_EXPORT_CONFIRMATION",
         "E_OUTPUT_TRUNCATED",
         "E_HOSTED",
     }
