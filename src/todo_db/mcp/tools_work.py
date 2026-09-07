@@ -69,10 +69,21 @@ def _to_err(
             return err(code, msg, recovery=recovery, kind="gate")
         except Exception:
             pass
-    # E_VERIFY_GATE: provide copy-pasteable operator command
+    # E_VERIFY_GATE: hosted keeps the human-run operator command; a local
+    # database can be closed by retrying finish with run_verifications=true.
     if code == E_VERIFY_GATE and principal and item_id and claim_token:
-        cmd = f"todo-db --actor {principal} verify-run {item_id} --claim-token {claim_token}"
-        return err(code, msg, recovery=[cmd], kind="gate")
+        if db is not None and getattr(db, "is_hosted", False):
+            cmd = f"todo-db --actor {principal} verify-run {item_id} --claim-token {claim_token}"
+            return err(code, msg, recovery=[cmd], kind="gate")
+        return err(
+            code,
+            msg,
+            recovery=[
+                f"review the stored commands with verify_list(id='{item_id}'), then "
+                f"call finish(id='{item_id}', claim_token='<token>', run_verifications=True)"
+            ],
+            kind="gate",
+        )
     # Heuristic gate vs error: codes in GATE_CODES are gates, others are errors.
     return err(code, msg, recovery=[], kind=None)
 
@@ -200,9 +211,11 @@ def register_work_tools(
 
     @server.tool(
         name="finish",
-        description="The no-shell close gate. Model-assert only: requires a current workspace-fingerprint attestation and rejects a stale pass.",
+        description="The no-shell close gate. Model-assert only: requires a current workspace-fingerprint attestation and rejects a stale pass. Pass run_verifications=true to run the stored ladder on a local database; hosted ladders stay human-run via todo-db verify-run.",
     )
-    async def finish_tool(id: str, claim_token: str, ctx: Context = None) -> dict[str, Any]:  # type: ignore[assignment]
+    async def finish_tool(  # type: ignore[assignment]
+        id: str, claim_token: str, run_verifications: bool = False, ctx: Context = None
+    ) -> dict[str, Any]:
         principal = _principal(holder, ctx)
         if not principal:
             return err(E_NO_PRINCIPAL, "principal not yet resolved; call get_instructions first", kind="error")
@@ -211,8 +224,18 @@ def register_work_tools(
             with database_for_tool(_target(), "finish", allow_hosted=allow_hosted) as db:
                 tracker = TodoTracker(db, actor=principal)
                 wf = AgentWorkflow(tracker, git_engine=GitScopeEngine(_target().repo_root))
+                if run_verifications and db.is_hosted:
+                    cmd = f"todo-db --actor {principal} verify-run {id} --claim-token {claim_token}"
+                    return err(
+                        E_VERIFY_GATE,
+                        f"cannot finish {id!r}: hosted verification ladders are previewed and run by a human",
+                        recovery=[cmd],
+                        kind="gate",
+                    )
                 try:
-                    data = wf.finish(id, claim_token=claim_token, model_assert=True)
+                    data = wf.finish(
+                        id, claim_token=claim_token, model_assert=True, run_verifications=run_verifications
+                    )
                 except TodoDBError as exc:
                     return _to_err(exc, principal=principal, db=db, item_id=id, claim_token=claim_token)
                 return ok(data)

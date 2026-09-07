@@ -50,7 +50,7 @@ Run items serially:
      `progress(id=..., wid=..., evidence=..., claim_token=...)`.
 4. **Verify and finish**:
    - Call `check_scope(id=...)` before committing.
-   - Request human verification via `todo-db verify-run` when hitting `E_VERIFY_GATE`.
+   - On `E_VERIFY_GATE`: local databases retry `finish` with `run_verifications=true`; hosted databases request human verification via `todo-db verify-run`.
    - Call `finish(id=..., claim_token=...)` to close the item.
 5. **Rotate context**:
    - Update the ledger status.

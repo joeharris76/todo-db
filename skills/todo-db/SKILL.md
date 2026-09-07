@@ -25,8 +25,10 @@ available, the MCP server is not registered — see
   the `claim_token` from `take`; re-read it with `context` after a restart.
 - Never hand-edit tracker state, and never create tracker files. The database
   is the only store.
-- Do **not** run the stored verification commands yourself. A human runs them
-  with `todo-db verify-run`.
+- Do **not** run a hosted database's stored verification commands yourself. A
+  human runs them with `todo-db verify-run`. On a local database, review them
+  with `verify_list` and run them by passing `run_verifications=true` to
+  `finish`.
 - Treat `export()` as an explicit full-snapshot operation. Do not call it to
   inspect one item, search for audit or override history, discover fields, or
   recover omitted context. If a targeted tool does not expose what you need,
@@ -71,7 +73,7 @@ pass a smaller `limit` and a `cursor`, or request a `section`.
 | `E_CLAIM_STALE` | Your lease expired or the token is wrong. | `context` to re-read, or `take` again. |
 | `E_SCOPE_GATE` | A changed file is outside the item's scope rules. | `check_scope`; narrow the change or amend scope with `update_item`. |
 | `E_LINT_GATE` | The item's planning quality is insufficient. | `lint` to see why; fix with `update_item`. |
-| `E_VERIFY_GATE` | No current workspace attestation. | Stop. A human runs the `todo-db verify-run` command in `recovery`. |
+| `E_VERIFY_GATE` | No current workspace attestation. | Local: review with `verify_list`, then `finish` again with `run_verifications=true`. Hosted: stop. A human runs the `todo-db verify-run` command in `recovery`. |
 | `E_BASE_DIVERGED` / `E_BASE_UNREACHABLE` | The scope git baseline no longer resolves. | Stop and report; a human runs `todo-db rebaseline`. |
 | `E_NO_PRINCIPAL` | Principal not resolved. | Call `get_instructions`, then retry. |
 | `E_OUTPUT_TRUNCATED` | Response exceeded 16 KiB. | Retry with a smaller `limit` plus `cursor`, or a `section`. |
@@ -84,8 +86,8 @@ pass a smaller `limit` and a `cursor`, or request a `section`.
 | `E_AUTH_MISSING` / `E_AUTH_REJECTED` | Hosted credential missing or rejected. | Stop writing. Report it; credentials are provisioned outside the agent. |
 
 `E_SCOPE_GATE` and `E_VERIFY_GATE` are the two that most often end a session.
-Neither is worked around — scope is narrowed or amended deliberately, and
-verification is a human step.
+Neither is worked around — scope is narrowed or amended deliberately, and a
+hosted verification ladder is a human step.
 
 ## Planning
 
@@ -144,8 +146,10 @@ For multi-step workflows, follow the dedicated reference guide:
 
 ## Human-only floor verbs
 
-These are not tools. When you hit a gate that needs one, stop and tell the
-human the exact command:
+These are not tools. `verify-run` stays human-only on a hosted database, where
+the stored commands were written by other actors; on a local database, pass
+`run_verifications=true` to `finish` instead. When you hit a gate that needs a
+human verb, stop and tell the human the exact command:
 
 - `todo-db verify-run <id> --claim-token <token> --actor <principal>` — runs the
   verification ladder once and binds a workspace attestation. It attests; it

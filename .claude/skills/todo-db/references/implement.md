@@ -57,7 +57,10 @@ modified files against the item's git baseline.
 1. Call `lint(id=...)` to confirm planning consistency.
 2. Call `finish(id=..., claim_token=...)`.
 3. If `finish` returns `E_VERIFY_GATE`:
-   - Agents cannot run verification commands directly.
+   - On a local database: review the stored commands with
+     `verify_list(id=...)`, then call `finish` again with
+     `run_verifications=true`.
+   - On a hosted database: agents cannot run verification commands directly.
    - Copy the exact `todo-db verify-run` command from the `recovery` envelope.
    - Ask the human to execute it:
      ```sh
