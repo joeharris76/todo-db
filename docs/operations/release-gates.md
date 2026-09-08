@@ -67,11 +67,12 @@ the release.
 Record in the release PR body:
 
 - the command line used for gate 1 and its final line;
-- the consumer, the floor-CLI command run for gate 2, whether the consumer's
-  database was local SQLite, and whether it succeeded;
+- the consumer, the floor-CLI command run for gate 2, the state branch it
+  addressed, and whether it succeeded;
 - the date and the operator.
 
-Record no credential value, no hosted URL, and no consumer secret.
+Record no consumer secret and no private remote URL beyond what the release
+already names.
 
 ## What does not satisfy these gates
 
@@ -88,7 +89,8 @@ All five held for v0.4.2.
 
 ## Automation boundary
 
-Gate 1's full run and gate 2 stay local operator steps. CI validates the
-harness's syntax and its skip contract only. Giving CI a hosted read-write
-credential to automate gate 1 would contradict ADR 0004 and would defeat the
-harness, whose entire premise is running without an injected credential.
+Gate 1's full run and gate 2 stay local operator steps. CI runs a scratch
+state-branch smoke (bootstrap/validate/list against a disposable bare
+remote) plus `uv sync --locked`, which fails the build when the committed
+lockfile drifts from the manifest. CI never touches a real state branch:
+routine automation must not write to authoritative task state.

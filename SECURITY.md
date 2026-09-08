@@ -18,7 +18,7 @@ Please report vulnerabilities via [GitHub Private Vulnerability Reporting](https
 Please include:
 1. Description of the vulnerability and potential security impact.
 2. Reproduction steps, code snippet, or proof of concept.
-3. Affected versions, runtime environment, and storage backend (local SQLite or hosted Turso/libSQL).
+3. Affected versions, runtime environment, and state remote/branch.
 4. Any proposed mitigations.
 
 We will acknowledge receipt within 72 hours and provide status updates as triage and fixes proceed.
@@ -26,7 +26,14 @@ We will acknowledge receipt within 72 hours and provide status updates as triage
 ## Security Scope
 
 Security-critical areas in `todo-db` include:
-- **Credential isolation and resolution**: Ensuring credentials resolved via `TODO_DB_CREDENTIAL_COMMAND` or environment variables never leak into logs, doctor output, subprocess environments, or tracker evidence.
-- **Audit chain integrity**: Ensuring the hash-chained audit envelope (`sha256-chain-v2`) detects tampering or history rewrite.
-- **MCP server trust boundaries**: Ensuring client principals are explicitly tracked and capability-scoped credentials are not reused across distinct actor boundaries.
-- **Subprocess execution**: Safeguards in `verify-run` (including `TODO_DB_ALLOW_HOSTED_VERIFY_RUN` requirements and environment allowlisting) preventing lateral code execution channels.
+- **State-branch confidentiality**: the state branch shares its repository's
+  access and visibility. Never publish credentials, tokens, or connection
+  strings to it, and never assume a separate branch is private.
+- **Claim integrity**: ownership plus generation checks protect renew,
+  release, and finish from stale writers; adoption rotates the generation
+  so a duplicated worker identity fails closed.
+- **MCP server trust boundaries**: client principals are explicitly tracked
+  (one server instance is one worker identity) and never treated as access
+  control against a malicious repository writer.
+- **Symlink and path safety**: state checkouts never follow symlinks, and
+  task IDs cannot escape the `items/` directory.

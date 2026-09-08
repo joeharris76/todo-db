@@ -16,8 +16,7 @@ from typing import Any
 from mcp.server.fastmcp import Context, FastMCP
 
 from ..errors import E_NO_PRINCIPAL
-from ..service import TrackerService
-from .envelope import err
+from ..service import TrackerService, err
 from .identity import PrincipalHolder
 from .target import ResolvedTarget
 
@@ -72,20 +71,21 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
 
     @server.tool(
         name="show_item",
-        description="Show one task with needs, readiness, and sections. Large fields spill to section reads: field/offset/budget.",
+        description="Show one task with needs, readiness, and sections. Large fields spill to section reads: field/offset/budget/rev.",
     )
     async def show_item_tool(
         id: str,
         field: str | None = None,
         offset: int = 0,
         budget: int = 6000,
+        rev: str | None = None,
         ctx: Context = None,  # type: ignore[assignment]
     ) -> dict[str, Any]:
         worker = _need_principal(holder, ctx)
         if not isinstance(worker, str):
             return worker
         svc = _service(target, worker)
-        return await asyncio.to_thread(svc.show_item, id, field=field, offset=offset, budget=budget)
+        return await asyncio.to_thread(svc.show_item, id, field=field, offset=offset, budget=budget, rev=rev)
 
     @server.tool(
         name="create_item",
@@ -208,3 +208,17 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
             return worker
         svc = _service(target, worker)
         return await asyncio.to_thread(svc.renew, id, generation)
+
+    @server.tool(
+        name="drop",
+        description="Abandon a task as dropped. Refused while another worker holds a live claim on it.",
+    )
+    async def drop_tool(
+        id: str,
+        ctx: Context = None,  # type: ignore[assignment]
+    ) -> dict[str, Any]:
+        worker = _need_principal(holder, ctx)
+        if not isinstance(worker, str):
+            return worker
+        svc = _service(target, worker)
+        return await asyncio.to_thread(svc.drop, id)

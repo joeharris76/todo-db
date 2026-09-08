@@ -7,9 +7,11 @@ and continue. Do not retry the same call unchanged.
 
 ## Lost claim or restarted session
 
-`take` the same item again: re-adopting your own claim is allowed, keeps
-the same generation, and refreshes the lease. If someone else holds it,
-you get `E_CONFLICT`; report that rather than forcing it.
+`take` the same item again: re-adopting your own claim is allowed, mints a
+fresh generation, and refreshes the lease. An earlier process image still
+holding the old generation goes stale — that is the protection working.
+If someone else holds the claim, you get `E_CONFLICT`; report that rather
+than forcing it.
 
 `E_MULTIPLE_CLAIMS` means you already hold a live claim on another task.
 Finish or `release` it first — one live claim per worker.

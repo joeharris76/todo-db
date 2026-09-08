@@ -64,6 +64,89 @@ def test_stale_cursor_never_skips_silently(tmp_path: Path) -> None:
     assert not stale["ok"] and stale["code"] == "E_CURSOR_STALE"
 
 
+def test_cursor_bound_to_filters(tmp_path: Path) -> None:
+    svc = _svc(tmp_path)
+    for i in range(6):
+        svc.create_item(f"t{i:02d}", f"Task {i}")
+    page = svc.list_items()
+    assert page["ok"]
+    # Same cursor with different filters restarts instead of skipping.
+    reused = svc.list_items(cursor=page["data"]["next_cursor"], text="t00")
+    assert not reused["ok"] and reused["code"] == "E_CURSOR_STALE"
+
+
+def test_empty_ready_queue_reports_gate(tmp_path: Path) -> None:
+    svc = _svc(tmp_path)
+    svc.create_item("t1", "Task one")
+    empty = svc.list_items(ready_only=True)
+    assert empty["ok"]  # claimable work exists
+    took = svc.take("t1")
+    assert took["ok"]
+    idle = svc.list_items(ready_only=True)
+    assert not idle["ok"] and idle["code"] == "E_NOTHING_READY"
+
+
+def test_update_retry_conflicts_on_touched_fields(tmp_path: Path, monkeypatch) -> None:
+    from todo_db import store as S
+    from todo_db.errors import TodoError
+
+    svc = _svc(tmp_path)
+    assert svc.create_item("t", "v1")["ok"]
+
+    def fake_mutate(ref, *, op, summary, worker, op_id, apply, max_retries=5):
+        # First attempt records the pre-image; a competing writer changes
+        # the same field before the retry is evaluated.
+        first = git_backend.read(ref, tmp_path / "c1").snapshot
+        apply(first)
+        second = git_backend.read(ref, tmp_path / "c2").snapshot
+        S.op_update(second, "t", title="winner")
+        try:
+            apply(second)
+        except TodoError as exc:
+            return git_backend.MutationOutcome(
+                ok=False, outcome="conflict", op_id=op_id,
+                code=exc.code or "E_STATE", error=str(exc),
+            )
+        raise AssertionError("retry should have conflicted")
+
+    monkeypatch.setattr(git_backend, "mutate", fake_mutate)
+    out = svc.update_item("t", title="loser")
+    assert not out["ok"] and out["code"] == "E_CONFLICT"
+
+
+def test_take_with_huge_needs_keeps_generation(tmp_path: Path) -> None:
+    svc = _svc(tmp_path)
+    for i in range(500):
+        assert svc.create_item(f"d{i:03d}", f"dep {i}")["ok"]
+    assert svc.create_item("hub", "Hub", needs=[f"d{i:03d}" for i in range(500)])["ok"]
+    took = svc.take("hub")
+    assert took["ok"], took
+    assert took["data"]["claim"]["generation"]
+    assert _size(took) <= MAX_BYTES
+    shown = svc.show_item("hub")
+    assert shown["ok"] and _size(shown) <= MAX_BYTES
+    assert shown["data"]["needs"]["total"] == 500
+    first = svc.show_item("hub", field="needs", offset=0, budget=6000)
+    assert first["ok"] and first["data"]["window"]
+    assert "continuation" in first["data"]
+    cont = first["data"]["continuation"]
+    second = svc.show_item(
+        "hub", field="needs", offset=cont["offset"], budget=6000, rev=cont["rev"])
+    assert second["ok"]
+    stale_section = svc.show_item(
+        "hub", field="needs", offset=0, budget=6000, rev="0" * 40)
+    assert not stale_section["ok"] and stale_section["code"] == "E_CURSOR_STALE"
+
+
+def test_error_envelopes_stay_bounded(tmp_path: Path) -> None:
+    svc = _svc(tmp_path)
+    huge = "z" * 100000
+    failed = svc.create_item("ok-id", huge)
+    assert not failed["ok"] and _size(failed) <= MAX_BYTES
+    missing = svc.show_item("nope", field="description")
+    assert not missing["ok"] and _size(missing) <= MAX_BYTES
+
+
 def test_oversized_item_reports_alternate_read(tmp_path: Path) -> None:
     svc = _svc(tmp_path)
     big = "x" * 60000 + "日本語" * 1000

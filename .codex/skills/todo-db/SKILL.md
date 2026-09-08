@@ -26,7 +26,8 @@ change goes through a tool so publication stays atomic.
   finishing is refused with `E_MULTIPLE_CLAIMS`.
 - Only the claim holder may `renew`, `finish`, or `release` an item. Keep
   the `generation` from `take`; after a restart, `take` the same item
-  again to re-adopt (same generation, refreshed lease).
+  again to re-adopt (fresh generation, refreshed lease — any earlier
+  process image holding the old generation goes stale).
 - Never hand-edit tracker state, and never invent a second store. The
   state branch is the only store.
 
@@ -40,6 +41,7 @@ change goes through a tool so publication stays atomic.
 | 4 | `renew` | Extend a long-running claim. Same generation; no progress milestones required. |
 | 5 | `finish` | Close the task with the `generation` from `take`. No work breakdown or attestation required. |
 | — | `release` | Hand the claim back without finishing (needs the `generation`). |
+| — | `drop` | Abandon a task as dropped. Refused while another worker holds a live claim. |
 
 ## Reading the response envelope
 
@@ -48,7 +50,7 @@ change goes through a tool so publication stays atomic.
 {"ok": false, "code": "E_...", "error": "...", "recovery": [...], "kind": "gate|error"}
 ```
 
-`get_instructions` returns markdown text directly; the eight task tools
+`get_instructions` returns markdown text directly; the nine task tools
 return the `{ok, ...}` JSON envelope.
 
 `kind: "gate"` is an expected result you should act on. `kind: "error"` is an
@@ -100,7 +102,7 @@ computed by the program — never scan history yourself.
 | Inspect one item | `show_item` |
 | List or search items | `list_items` with `status`/`priority`/`text` |
 | Create or amend work | `create_item`, `update_item` |
-| Claim, extend, close, hand back | `take`, `renew`, `finish`, `release` |
+| Claim, extend, close, hand back, drop | `take`, `renew`, `finish`, `release`, `drop` |
 
 ## Process guides
 

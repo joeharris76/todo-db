@@ -123,9 +123,78 @@ def test_expired_claim_allows_adoption_and_restart() -> None:
     retake = store.op_take(snap, "task", "w2")
     assert retake["adopted"] is False
     assert retake["claim"]["worker"] == "w2"
+    gen1 = retake["claim"]["generation"]
     same = store.op_take(snap, "task", "w2")
     assert same["adopted"] is True
-    store.op_finish(snap, "task", "w2", retake["claim"]["generation"])
+    # Re-adoption rotates the generation: the old one goes stale so a
+    # duplicated worker identity fails closed instead of sharing control.
+    assert same["claim"]["generation"] != gen1
+    with pytest.raises(TodoError) as excinfo:
+        store.op_release(snap, "task", "w2", gen1)
+    assert excinfo.value.code == "E_CLAIM_STALE"
+    store.op_finish(snap, "task", "w2", same["claim"]["generation"])
+
+
+def test_stale_generation_rejected_after_adoption() -> None:
+    snap = _snap()
+    store.op_create(snap, item_id="task", title="Adopted")
+    past = datetime.now(timezone.utc) - timedelta(hours=30)
+    old = store.op_take(snap, "task", "w1", now=past)
+    new = store.op_take(snap, "task", "w2")
+    assert new["claim"]["generation"] != old["claim"]["generation"]
+    for op in ("renew", "release", "finish"):
+        with pytest.raises(TodoError) as excinfo:
+            if op == "renew":
+                store.op_renew(snap, "task", "w1", old["claim"]["generation"])
+            elif op == "release":
+                store.op_release(snap, "task", "w1", old["claim"]["generation"])
+            else:
+                store.op_finish(snap, "task", "w1", old["claim"]["generation"])
+        assert excinfo.value.code == "E_CLAIM_STALE"
+
+
+def test_index_entries_reject_unknown_keys() -> None:
+    snap = _snap()
+    store.op_create(snap, item_id="task", title="Strict")
+    snap.index["items"]["task"]["description"] = "shadow copy in the index"
+    with pytest.raises(TodoError):
+        store.validate_snapshot(snap.index, snap.details)
+
+
+def test_update_cannot_bypass_claim_paths() -> None:
+    snap = _snap()
+    store.op_create(snap, item_id="task", title="Parked")
+    # open -> blocked -> open is the only update status path.
+    store.op_update(snap, "task", status="blocked")
+    assert snap.index["items"]["task"]["status"] == "blocked"
+    store.op_update(snap, "task", status="open")
+    with pytest.raises(TodoError):
+        store.op_update(snap, "task", status="active")
+    take = store.op_take(snap, "task", "w1")
+    assert snap.index["items"]["task"]["status"] == "active"
+    with pytest.raises(TodoError):
+        store.op_update(snap, "task", status="open")
+    with pytest.raises(TodoError):
+        store.op_update(snap, "task", status="blocked")
+    store.op_release(snap, "task", "w1", take["claim"]["generation"])
+    store.op_update(snap, "task", status="blocked")
+    with pytest.raises(TodoError):
+        # A live claim blocks even the parked moves.
+        store.op_take(snap, "task", "w1")
+        store.op_update(snap, "task", status="open")
+
+
+def test_symlinked_state_files_are_refused(tmp_path) -> None:
+    snap = _snap()
+    store.op_create(snap, item_id="aa", title="Real", description="here")
+    store.save_snapshot(tmp_path, snap)
+    outside = tmp_path / "outside.json"
+    outside.write_text('{"description": "smuggled"}', encoding="utf-8")
+    target = tmp_path / "items" / "aa.json"
+    target.unlink()
+    target.symlink_to(outside)
+    with pytest.raises(TodoError):
+        store.load_snapshot(tmp_path)
 
 
 def test_terminal_tasks_carry_no_claim_and_drop_clears() -> None:

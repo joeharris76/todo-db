@@ -2,14 +2,17 @@
 
 This module backs both the MCP agent interface and the human/CI CLI, so
 transport logic is never duplicated. Every response is capped at its final
-model-visible serialization (:data:`MAX_BYTES`); lists page with stable
-cursors scoped to a state revision; oversized fields report a usable
-section read instead of looping or truncating silently.
+model-visible serialization (:data:`MAX_BYTES`): size checks use the same
+indented JSON the MCP transport emits, not a compact encoding. Lists page
+with stable cursors scoped to a state revision plus the query that produced
+them; oversized fields report a usable section read instead of looping or
+truncating silently.
 """
 
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -19,8 +22,10 @@ from typing import Any
 from . import git_backend
 from . import store as S
 from .errors import (
+    E_CONFLICT,
     E_CURSOR_STALE,
     E_MULTIPLE_CLAIMS,
+    E_NOTHING_READY,
     E_OFFLINE,
     E_OUTPUT_TRUNCATED,
     E_OVERSIZED,
@@ -34,6 +39,8 @@ LIST_DEFAULT_LIMIT = 5
 LIST_MAX_LIMIT = 50
 SECTION_BUDGET = 6000
 TAKE_EXCERPT = 2000
+NEEDS_INLINE = 50
+MAX_ERROR_CHARS = 2000
 TOKENIZER_NAME = "o200k_base"
 
 
@@ -51,28 +58,51 @@ def _compact(obj: Any) -> str:
     return json.dumps(obj, separators=(",", ":"), sort_keys=True, ensure_ascii=False)
 
 
+def _wire(obj: Any) -> str:
+    """The transport serialization size checks run against: indented JSON."""
+    return json.dumps(obj, indent=2, sort_keys=True, ensure_ascii=False)
+
+
 def ok(data: Any) -> dict[str, Any]:
     return {"ok": True, "data": data}
 
 
-def err(code: str, message: str, recovery: list[str] | None = None) -> dict[str, Any]:
-    kind = "error" if code in (E_OFFLINE, E_UNKNOWN, E_STATE) else "gate"
-    return {"ok": False, "code": code, "error": message, "recovery": recovery or [], "kind": kind}
+def _trim(text: str, limit: int) -> str:
+    return text if len(text) <= limit else text[:limit] + "…"
+
+
+def err(code: str, message: str, recovery: list[str] | None = None, kind: str | None = None) -> dict[str, Any]:
+    # Error envelopes are bounded too: echoed inputs and remote chatter are
+    # trimmed before they can blow the cap the success path honors.
+    if kind is None:
+        kind = "error" if code in (E_OFFLINE, E_UNKNOWN, E_STATE) else "gate"
+    return {
+        "ok": False,
+        "code": code,
+        "error": _trim(str(message), MAX_ERROR_CHARS),
+        "recovery": [_trim(str(step), 500) for step in (recovery or [])],
+        "kind": kind,
+    }
 
 
 def _fits(envelope: dict[str, Any]) -> bool:
-    return len(_compact(envelope).encode("utf-8")) <= MAX_BYTES
+    return len(_wire(envelope).encode("utf-8")) <= MAX_BYTES
 
 
-def encode_cursor(rev: str, offset: int) -> str:
-    raw = _compact({"rev": rev, "offset": offset})
+def _query_fingerprint(status: str | None, priority: str | None, text: str | None, ready_only: bool, limit: int) -> str:
+    raw = _compact({"s": status, "p": priority, "t": text, "r": ready_only, "l": limit})
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def encode_cursor(rev: str, offset: int, fingerprint: str) -> str:
+    raw = _compact({"rev": rev, "offset": offset, "q": fingerprint})
     return base64.urlsafe_b64encode(raw.encode()).decode()
 
 
-def decode_cursor(cursor: str) -> tuple[str, int]:
+def decode_cursor(cursor: str) -> tuple[str, int, str]:
     try:
         payload = json.loads(base64.urlsafe_b64decode(cursor.encode()).decode())
-        return str(payload["rev"]), int(payload["offset"])
+        return str(payload["rev"]), int(payload["offset"]), str(payload["q"])
     except Exception as exc:
         raise TodoError(f"invalid cursor: {exc}", code=E_CURSOR_STALE) from exc
 
@@ -115,16 +145,21 @@ class TrackerService:
                 text=text, ready_only=ready_only, now=now,
             )
             total = len(rows)
+            limit = max(1, min(int(limit), LIST_MAX_LIMIT))
+            fingerprint = _query_fingerprint(status, priority, text, ready_only, limit)
             offset = 0
             if cursor:
-                rev, offset = decode_cursor(cursor)
-                if rev != outcome.rev:
+                rev, offset, seen = decode_cursor(cursor)
+                if rev != outcome.rev or seen != fingerprint:
                     return err(
                         E_CURSOR_STALE,
-                        "cursor revision changed while listing; retry from the first page",
+                        "cursor is stale (state moved) or was made for different filters; "
+                        "retry from the first page",
                         recovery=["call list_items without a cursor"],
                     )
-            limit = max(1, min(int(limit), LIST_MAX_LIMIT))
+            if total == 0 and not cursor:
+                if ready_only:
+                    return err(E_NOTHING_READY, "no ready tasks", kind="gate")
             page = rows[offset : offset + limit]
             items = []
             for item_id, entry in page:
@@ -143,7 +178,7 @@ class TrackerService:
             else:
                 data["rev"] = outcome.rev
             if remaining > 0:
-                data["next_cursor"] = encode_cursor(outcome.rev, offset + len(page))
+                data["next_cursor"] = encode_cursor(outcome.rev, offset + len(page), fingerprint)
             env: dict[str, Any] = ok(data)
             while items and not _fits(env):
                 items.pop()
@@ -151,7 +186,7 @@ class TrackerService:
                 data["truncated"] = True
                 data.pop("next_cursor", None)
                 if offset + len(items) < total:
-                    data["next_cursor"] = encode_cursor(outcome.rev, offset + len(items))
+                    data["next_cursor"] = encode_cursor(outcome.rev, offset + len(items), fingerprint)
                 env = ok(data)
             if not _fits(env):
                 return err(
@@ -163,6 +198,16 @@ class TrackerService:
         except TodoError as exc:
             return err(exc.code or E_STATE, str(exc))
 
+    def _page_ids(self, values: list[str], rev: str, field: str) -> dict[str, Any]:
+        # Index-owned collections page too: inline the head, spill the rest.
+        if len(values) <= NEEDS_INLINE:
+            return {"values": values, "total": len(values)}
+        return {
+            "values": values[:NEEDS_INLINE],
+            "total": len(values),
+            "continuation": {"field": field, "offset": NEEDS_INLINE, "budget": SECTION_BUDGET, "rev": rev},
+        }
+
     def show_item(
         self,
         item_id: str,
@@ -170,6 +215,7 @@ class TrackerService:
         field: str | None = None,
         offset: int = 0,
         budget: int = SECTION_BUDGET,
+        rev: str | None = None,
     ) -> dict[str, Any]:
         try:
             now = datetime.now(timezone.utc)
@@ -180,16 +226,17 @@ class TrackerService:
             entry = snap.index["items"][item_id]
             detail = snap.details[item_id]
             if field is not None:
-                return self._show_section(item_id, detail, field, offset, budget)
+                return self._show_section(item_id, snap, outcome.rev, field, offset, budget, rev)
             needs = list(entry.get("needs", []))
+            unmet = [dep for dep in needs if snap.index["items"][dep]["status"] != "done"]
             data: dict[str, Any] = {
                 "id": item_id,
                 "title": entry["title"],
                 "priority": entry["priority"],
                 "status": entry["status"],
                 "ready": S.is_ready(item_id, snap, now),
-                "needs": needs,
-                "unmet_needs": [dep for dep in needs if snap.index["items"][dep]["status"] != "done"],
+                "needs": self._page_ids(needs, outcome.rev, "needs"),
+                "unmet_needs": self._page_ids(unmet, outcome.rev, "unmet_needs"),
                 "unlocks": S.downstream_unlocks(item_id, snap),
                 "rev": outcome.rev,
             }
@@ -204,6 +251,7 @@ class TrackerService:
             for key in ("description", "acceptance", "links", "context", "legacy"):
                 if key in detail:
                     sections[key] = self._section_summary(detail[key])
+            sections["needs"] = {"total": len(needs)}
             data["sections"] = sections
             # Inline small fields; spill large ones to section reads.
             for key in ("description", "context"):
@@ -211,14 +259,18 @@ class TrackerService:
                 if isinstance(value, str) and len(value.encode("utf-8")) <= SECTION_BUDGET:
                     data[key] = value
                 elif isinstance(value, str) and value:
-                    data[f"{key}_continuation"] = {"field": key, "offset": 0, "budget": SECTION_BUDGET}
+                    data[f"{key}_continuation"] = {
+                        "field": key, "offset": 0, "budget": SECTION_BUDGET, "rev": outcome.rev,
+                    }
             for key in ("acceptance", "links"):
                 value = detail.get(key, [])
                 blob = _compact(value)
                 if len(blob.encode("utf-8")) <= SECTION_BUDGET:
                     data[key] = value
                 elif value:
-                    data[f"{key}_continuation"] = {"field": key, "offset": 0, "budget": SECTION_BUDGET}
+                    data[f"{key}_continuation"] = {
+                        "field": key, "offset": 0, "budget": SECTION_BUDGET, "rev": outcome.rev,
+                    }
             env = ok(data)
             if _fits(env):
                 return env
@@ -247,7 +299,48 @@ class TrackerService:
         tokens, tokenizer = count_tokens(blob)
         return {"bytes": size, "tokens": tokens, "tokenizer": tokenizer}
 
-    def _show_section(self, item_id: str, detail: dict[str, Any], field: str, offset: int, budget: int) -> dict[str, Any]:
+    def _show_section(
+        self,
+        item_id: str,
+        snap: S.Snapshot,
+        current_rev: str,
+        field: str,
+        offset: int,
+        budget: int,
+        want_rev: str | None,
+    ) -> dict[str, Any]:
+        # Section continuations bind the revision they were issued for: state
+        # may have moved since, and splicing versions must be explicit.
+        if want_rev is not None and want_rev != current_rev:
+            return err(
+                E_CURSOR_STALE,
+                "section revision changed; re-read show_item before continuing",
+                recovery=["call show_item without field/offset"],
+            )
+        entry = snap.index["items"][item_id]
+        detail = snap.details[item_id]
+        if field in ("needs", "unmet_needs"):
+            needs = list(entry.get("needs", []))
+            values = needs if field == "needs" else [
+                dep for dep in needs if snap.index["items"][dep]["status"] != "done"
+            ]
+            offset = max(0, int(offset))
+            if offset >= len(values) and values:
+                return err(E_STATE, f"section offset {offset} is past the end ({len(values)})")
+            window = values[offset : offset + NEEDS_INLINE]
+            data: dict[str, Any] = {
+                "id": item_id, "field": field, "offset": offset,
+                "total": len(values), "window": window, "rev": current_rev,
+            }
+            if offset + NEEDS_INLINE < len(values):
+                data["continuation"] = {
+                    "field": field, "offset": offset + NEEDS_INLINE,
+                    "budget": budget, "rev": current_rev,
+                }
+            env = ok(data)
+            if not _fits(env):
+                return err(E_OVERSIZED, "section window exceeds the byte cap")
+            return env
         if field not in detail:
             return err(E_STATE, f"task {item_id!r} has no section {field!r}")
         budget = max(1, min(int(budget), MAX_BYTES))
@@ -258,9 +351,14 @@ class TrackerService:
         if offset >= total:
             return err(E_STATE, f"section offset {offset} is past the end ({total})")
         window = blob[offset : offset + budget]
-        data: dict[str, Any] = {"id": item_id, "field": field, "offset": offset, "total": total, "window": window}
+        data = {
+            "id": item_id, "field": field, "offset": offset,
+            "total": total, "window": window, "rev": current_rev,
+        }
         if offset + budget < total:
-            data["continuation"] = {"field": field, "offset": offset + budget, "budget": budget}
+            data["continuation"] = {
+                "field": field, "offset": offset + budget, "budget": budget, "rev": current_rev,
+            }
         env = ok(data)
         if not _fits(env):
             return err(
@@ -282,6 +380,10 @@ class TrackerService:
             return err(exc.code or E_STATE, str(exc))
         if result.ok:
             ack = {"id": result.ack.get("id"), "rev": result.sha, **{k: v for k, v in result.ack.items() if k != "id"}}
+            # Section continuations minted pre-commit learn their revision here.
+            for value in ack.values():
+                if isinstance(value, dict) and set(value) >= {"field", "offset"}:
+                    value.setdefault("rev", result.sha)
             env = ok(ack)
             if not _fits(env):
                 return err(E_OUTPUT_TRUNCATED, "acknowledgement exceeded the byte cap")
@@ -310,8 +412,40 @@ class TrackerService:
 
         return self._mutate("create", f"add {item_id}", apply)
 
+    UPDATE_GUARDED_FIELDS = ("title", "priority", "status", "needs")
+
     def update_item(self, item_id: str, **kwargs: Any) -> dict[str, Any]:
+        guarded = {key: kwargs[key] for key in self.UPDATE_GUARDED_FIELDS if key in kwargs}
+        detail_guarded = {key: kwargs[key] for key in ("description", "acceptance", "links", "context") if key in kwargs}
+        pre_image: dict[str, Any] | None = None
+
+        def snapshot_pre_image(snap: S.Snapshot) -> dict[str, Any]:
+            entry = snap.index["items"][item_id]
+            detail = snap.details[item_id]
+            image = {key: json.loads(json.dumps(entry.get(key))) for key in guarded}
+            for key in detail_guarded:
+                image[f"detail:{key}"] = json.loads(json.dumps(detail.get(key)))
+            return image
+
         def apply(snap: S.Snapshot) -> dict[str, Any]:
+            nonlocal pre_image
+            if item_id not in snap.index["items"]:
+                raise TodoError(f"unknown task {item_id!r}", code=E_STATE)
+            if pre_image is None:
+                # First attempt: record what the touched fields look like.
+                pre_image = snapshot_pre_image(snap)
+            else:
+                # Retry after a competing push: the fields we intend to
+                # write must be untouched since our first attempt, or this
+                # retry would silently overwrite the winner.
+                current = snapshot_pre_image(snap)
+                for key, old in pre_image.items():
+                    if current.get(key) != old:
+                        raise TodoError(
+                            f"conflict: {key} on {item_id!r} changed concurrently; "
+                            "re-read and retry deliberately",
+                            code=E_CONFLICT,
+                        )
             return S.op_update(snap, item_id, **kwargs)
 
         return self._mutate("update", f"edit {item_id}", apply)
@@ -328,35 +462,60 @@ class TrackerService:
                     code=E_MULTIPLE_CLAIMS,
                 )
             took = S.op_take(snap, item_id, worker, ttl_hours=self.ttl_hours)
-            if took.get("adopted"):
-                # Restart/re-adoption refreshes the lease under the same
-                # generation instead of failing as a no-op.
-                S.op_renew(snap, item_id, worker, took["claim"]["generation"], ttl_hours=self.ttl_hours)
-                took = {"id": item_id, "claim": snap.index["items"][item_id]["claim"], "adopted": True}
             entry = snap.index["items"][item_id]
             detail = snap.details[item_id]
             needs = list(entry.get("needs", []))
+            unmet = [d for d in needs if snap.index["items"][d]["status"] != "done"]
             description = detail.get("description", "")
-            excerpt = description[:TAKE_EXCERPT]
+            # The claim is already committed by the time the acknowledgement
+            # is built, so the minimal ack — identity, claim, revision —
+            # always survives: context is trimmed to fit before publication,
+            # never after.
             ack: dict[str, Any] = {
                 "id": item_id,
                 "status": "active",
                 "title": entry["title"],
                 "priority": entry["priority"],
-                "needs": needs,
-                "unmet_needs": [d for d in needs if snap.index["items"][d]["status"] != "done"],
                 "claim": {
                     "generation": took["claim"]["generation"],
                     "expires_at": took["claim"]["expires_at"],
                 },
-                "description_excerpt": excerpt,
             }
+            context: dict[str, Any] = {}
+            if len(needs) <= NEEDS_INLINE:
+                context["needs"] = needs
+                context["unmet_needs"] = unmet
+            else:
+                context["needs"] = {
+                    "values": needs[:NEEDS_INLINE],
+                    "total": len(needs),
+                    "continuation": {"field": "needs", "offset": NEEDS_INLINE, "budget": SECTION_BUDGET},
+                }
+                context["unmet_needs"] = {
+                    "values": unmet[:NEEDS_INLINE],
+                    "total": len(unmet),
+                    "continuation": {"field": "unmet_needs", "offset": NEEDS_INLINE, "budget": SECTION_BUDGET},
+                }
+            excerpt = description[:TAKE_EXCERPT]
+            while excerpt and not _fits(ok({**ack, **context, "description_excerpt": excerpt})):
+                excerpt = excerpt[: len(excerpt) // 2]
+            context["description_excerpt"] = excerpt
             if len(description) > len(excerpt):
-                ack["description_continuation"] = {
+                context["description_continuation"] = {
                     "field": "description",
                     "offset": len(excerpt),
                     "budget": SECTION_BUDGET,
                 }
+            candidate = {**ack, **context}
+            if _fits(ok(candidate)):
+                return candidate
+            # Degenerate fallback: context that still overflows is dropped
+            # rather than stranding the worker without its generation.
+            del context["description_excerpt"]
+            context["description_continuation"] = {"field": "description", "offset": 0, "budget": SECTION_BUDGET}
+            candidate = {**ack, **context}
+            if _fits(ok(candidate)):
+                return candidate
             return ack
 
         return self._mutate("take", f"{worker} takes {item_id}", apply)

@@ -96,9 +96,19 @@ def migrate_export(export: dict[str, Any], *, now: datetime | None = None) -> tu
             code=E_STATE,
         )
     items = _rows(export, "items")
+    item_ids = set()
+    for row in items:
+        if not isinstance(row, dict):
+            raise TodoError("export items rows must be objects", code=E_STATE)
+        item_ids.add(str(row.get("id", "")))
     deps: dict[str, list[str]] = {}
     for row in _rows(export, "item_deps"):
-        deps.setdefault(str(row.get("item_id", "")), []).append(str(row.get("needs_item", "")))
+        source, target = str(row.get("item_id", "")), str(row.get("needs_item", ""))
+        if source not in item_ids:
+            raise TodoError(f"export dependency from unknown item {source!r}", code=E_STATE)
+        if target not in item_ids:
+            raise TodoError(f"export dependency on unknown item {target!r}", code=E_STATE)
+        deps.setdefault(source, []).append(target)
     by_item: dict[str, dict[str, list[dict[str, Any]]]] = {}
     scoped = (
         ("work_units", "item_id"), ("work_needs", "item_id"), ("scope_rules", "item_id"),
@@ -148,13 +158,13 @@ def migrate_export(export: dict[str, Any], *, now: datetime | None = None) -> tu
                 legacy[table] = extra[table]
         if extra.get("deferrals"):
             legacy["deferrals"] = extra["deferrals"]
-        for key in (
-            "worktree", "category", "blocked_reason", "created_at", "completed_at",
-            "completed_pr", "claimed_by", "claimed_at", "claimed_session",
-            "claim_token", "claimed_branch", "claimed_worktree", "git_baseline",
-        ):
-            if row.get(key) is not None:
-                legacy.setdefault("item_meta", {})[key] = row[key]
+        # Archive every source column that has no canonical home. The mapped
+        # set below is exhaustive by construction: anything not mapped here
+        # lands in item_meta, so no column is silently discarded.
+        mapped = {"id", "title", "priority", "state", "description", "approach"}
+        for key, value in row.items():
+            if key not in mapped and value is not None:
+                legacy.setdefault("item_meta", {})[key] = value
         # Claims are never carried into the new system.
         if legacy.get("item_meta", {}).get("claimed_by") and not _lease_live(
             str(row.get("claimed_at") or ""), moment
@@ -191,20 +201,36 @@ def migrate_file(
     backup_dir: str | Path | None = None,
 ) -> dict[str, Any]:
     """Migrate an export file onto a freshly bootstrapped state branch."""
+    import hashlib as _hashlib
+
     source = Path(input_path)
     try:
-        export = json.loads(source.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
+        raw = source.read_bytes()
+    except OSError as exc:
+        raise TodoError(f"cannot read export file {source}: {exc}", code=E_STATE) from exc
+    try:
+        export = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise TodoError(f"invalid export file {source}: {exc}", code=E_STATE) from exc
     snapshot, report = migrate_export(export)
     report = dict(report)
     report["dry_run"] = dry_run
+    report["source_sha256"] = _hashlib.sha256(raw).hexdigest()
     if backup_dir is not None:
         dest_dir = Path(backup_dir)
         dest_dir.mkdir(parents=True, exist_ok=True)
         backup = dest_dir / (source.name + ".backup")
         shutil.copy2(source, backup)
         report["backup"] = str(backup)
+    elif not dry_run:
+        # Global tables survive only as row counts unless the source envelope
+        # is preserved durably. Applying without a backup would make the
+        # "preserved in backup" report line a lie, so refuse instead.
+        raise TodoError(
+            "refusing to apply migration without --backup-dir: the source envelope "
+            "is the durable archive for findings, events, and audit data",
+            code=E_STATE,
+        )
     if dry_run:
         report["applied"] = False
         return report

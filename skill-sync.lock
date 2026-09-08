@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "lockedAt": "2026-09-08T15:41:16.827Z",
+  "lockedAt": "2026-09-08T16:19:58.588Z",
   "skills": {
     "code": {
       "source": {
@@ -309,7 +309,7 @@
         "type": "local",
         "name": "project",
         "path": "skills/todo-db",
-        "fetchedAt": "2026-09-08T15:41:06.150Z"
+        "fetchedAt": "2026-09-08T16:19:48.400Z"
       },
       "installMode": "mirror",
       "files": {
@@ -346,8 +346,8 @@
           "size": 1261
         },
         "references/recovery.md": {
-          "sha256": "e7baf84d6543148793ae8d4b4147b7949b3e0df27e02189f158365812dfc39a8",
-          "size": 1498
+          "sha256": "92ed8da93b38f2eb7c7958fa90cea57c591a5a1843a458ea40c3e40404b3009c",
+          "size": 1609
         },
         "references/review.md": {
           "sha256": "b1709d4720148d8cb061e35288b67916e02d7948cb29b6e09b394b9d21956133",
@@ -358,8 +358,8 @@
           "size": 1133
         },
         "SKILL.md": {
-          "sha256": "ce745711e29fdf85b41e281957472f1c764116b1093b240bcc3301716729b031",
-          "size": 7159
+          "sha256": "4c3fa046e9967f307f7d6d21d96f566f0759532d5f89b69b2223ae1a42e4d9a3",
+          "size": 7338
         }
       }
     }

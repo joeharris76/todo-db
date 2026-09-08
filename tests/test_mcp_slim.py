@@ -65,6 +65,10 @@ def test_lifecycle_over_tools(tmp_path: Path) -> None:
             assert renewed["ok"], renewed
             finished = _payload(await session.call_tool("finish", {"id": "t1", "generation": gen}))
             assert finished["ok"] and finished["data"]["status"] == "done"
+            dropped = _payload(await session.call_tool("create_item", {"id": "t2", "title": "Drop me"}))
+            assert dropped["ok"]
+            gone = _payload(await session.call_tool("drop", {"id": "t2"}))
+            assert gone["ok"] and gone["data"]["status"] == "dropped"
 
     anyio.run(go)
 
@@ -142,6 +146,8 @@ def test_startup_schema_cost_is_small(tmp_path: Path) -> None:
                                       for t in tools.tools])
             tokens, tokenizer = count_tokens(schema_blob + INSTRUCTIONS)
             assert tokenizer == "o200k_base"
-            assert tokens <= 2500, tokens
+            # 10 tools plus the full protocol guidance, against 3,344 for
+            # the old 26 tool definitions alone.
+            assert tokens <= 3500, tokens
 
     anyio.run(go)

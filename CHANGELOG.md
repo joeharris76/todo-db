@@ -16,7 +16,7 @@ adheres to [Semantic Versioning](https://semver.org/).
   The normal runtime is `index.json` plus `items/<id>.json` on a dedicated
   state branch, published one commit per operation with fast-forward
   pushes, operation IDs, and bounded semantic retries. The MCP surface is
-  eight tools (`list/show/create/update/take/release/finish/renew`) plus
+  nine tools (`list/show/create/update/take/release/finish/renew/drop`) plus
   `get_instructions`; the CLI keeps bootstrap, validation, migration,
   recovery, and read-only list/show. Migration from a 0.6.x lossless
   export is non-destructive (dry run, legacy archive, live-claim refusal,

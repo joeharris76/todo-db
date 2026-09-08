@@ -59,9 +59,29 @@ def _cache(args: argparse.Namespace) -> Path:
     return Path.home() / ".cache" / "todo-db-state"
 
 
+def _preflight_write_config(args: argparse.Namespace, ref: git_backend.StateRef) -> Path | None:
+    """Decide the config write before any remote mutation, so a config
+    refusal can never strand a freshly created branch."""
+    if not args.write_config:
+        return None
+    root = Path(args.repo_root).expanduser().resolve() if args.repo_root else Path.cwd().resolve()
+    path = root / git_backend.CONFIG_DIRNAME / git_backend.CONFIG_FILENAME
+    payload = {"state_remote": ref.remote, "state_branch": ref.branch}
+    if path.is_file():
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8"))
+        except ValueError:
+            existing = None
+        if existing != payload:
+            raise TodoDBError(f"refusing to overwrite differing config at {path}")
+        return None
+    return path
+
+
 def cmd_bootstrap(args: argparse.Namespace) -> int:
     try:
         ref, _ = _ref_from(args)
+        config_path = _preflight_write_config(args, ref)
     except TodoDBError as exc:
         # Bootstrap may be the very first command: allow explicit remote
         # without a config file even when discovery finds nothing.
@@ -70,21 +90,12 @@ def cmd_bootstrap(args: argparse.Namespace) -> int:
         sha = git_backend.bootstrap(ref, worker=_worker(args))
     except TodoDBError as exc:
         return _fail(str(exc))
-    if args.write_config:
-        root = Path(args.repo_root).expanduser().resolve() if args.repo_root else Path.cwd().resolve()
-        cfgdir = root / git_backend.CONFIG_DIRNAME
-        cfgdir.mkdir(parents=True, exist_ok=True)
-        path = cfgdir / git_backend.CONFIG_FILENAME
-        payload = {"state_remote": ref.remote, "state_branch": ref.branch}
-        if path.is_file():
-            try:
-                existing = json.loads(path.read_text(encoding="utf-8"))
-            except ValueError:
-                existing = None
-            if existing != payload:
-                return _fail(f"refusing to overwrite differing config at {path}")
-        else:
-            path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    if config_path is not None:
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(
+            json.dumps({"state_remote": ref.remote, "state_branch": ref.branch}, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
     _emit({"rev": sha, "remote": ref.remote, "branch": ref.branch})
     return EXIT_OK
 
@@ -109,6 +120,12 @@ def cmd_validate(args: argparse.Namespace) -> int:
         "by_status": by_status,
         "live_claims": live,
     })
+    # Authoritative validation must inspect authoritative state. A stale
+    # cache passes only behind an explicit flag, so a CI gate cannot go
+    # green on a cached revision while the remote is down.
+    if outcome.stale and not args.allow_stale:
+        print("error: served a stale cached revision; remote unreachable (retry, or pass --allow-stale)", file=sys.stderr)
+        return EXIT_ERROR
     return EXIT_OK
 
 
@@ -135,12 +152,22 @@ def cmd_recover(args: argparse.Namespace) -> int:
         return _fail(str(exc))
     try:
         if args.op_id:
-            sha = git_backend.reconcile(ref, args.op_id)
-            if sha:
-                _emit({"op_id": args.op_id, "rev": sha, "applied": True})
-            else:
-                _emit({"op_id": args.op_id, "applied": False})
-            return EXIT_OK
+            try:
+                result = git_backend.reconcile(ref, args.op_id)
+            except TodoDBError as exc:
+                return _fail(str(exc))
+            if result.state == "applied":
+                _emit({"op_id": args.op_id, "rev": result.sha, "applied": True})
+                return EXIT_OK
+            if result.state == "absent":
+                _emit({
+                    "op_id": args.op_id,
+                    "applied": False,
+                    "checked_rev": result.sha,
+                    "note": "not present at the inspected tip; re-apply only deliberately",
+                })
+                return EXIT_OK
+            return _fail(f"reconciliation unknown: {result.detail}; retry later with --op-id {args.op_id}")
         if args.restore_rev:
             outcome = git_backend.restore_rev(ref, args.restore_rev, _worker(args))
             if not outcome.ok:
@@ -201,6 +228,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     validate = sub.add_parser("validate", help="validate the accepted tip and report counts")
     _add_target_options(validate)
+    validate.add_argument(
+        "--allow-stale",
+        action="store_true",
+        help="accept a cached revision when the remote is unreachable (default: fail)",
+    )
     validate.set_defaults(func=cmd_validate)
 
     migrate = sub.add_parser("migrate", help="migrate a v2 lossless export envelope onto a fresh state branch")

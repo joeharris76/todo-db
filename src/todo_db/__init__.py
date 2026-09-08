@@ -8,6 +8,7 @@ from .errors import (
     E_CURSOR_STALE,
     E_MULTIPLE_CLAIMS,
     E_NOTHING_READY,
+    E_NO_PRINCIPAL,
     E_OFFLINE,
     E_OUTPUT_TRUNCATED,
     E_OVERSIZED,
@@ -17,7 +18,7 @@ from .errors import (
     TodoDBError,
     TodoError,
 )
-from .git_backend import StateRef, bootstrap, history, mutate, new_op_id, read, reconcile
+from .git_backend import ReconcileResult, StateRef, bootstrap, history, mutate, new_op_id, read, reconcile
 from .service import TrackerService, count_tokens
 
 TOOL_VERSION = "0.7.0"
@@ -29,6 +30,7 @@ __all__ = [
     "E_CURSOR_STALE",
     "E_MULTIPLE_CLAIMS",
     "E_NOTHING_READY",
+    "E_NO_PRINCIPAL",
     "E_OFFLINE",
     "E_OUTPUT_TRUNCATED",
     "E_OVERSIZED",
@@ -36,6 +38,7 @@ __all__ = [
     "E_STATE",
     "E_UNKNOWN",
     "TOOL_VERSION",
+    "ReconcileResult",
     "StateRef",
     "TodoDBError",
     "TodoError",

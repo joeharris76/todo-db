@@ -87,6 +87,28 @@
     }
   },
   {
+    "description": "Abandon a task as dropped. Refused while another worker holds a live claim on it.",
+    "inputSchema": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "drop_toolArguments",
+      "type": "object"
+    },
+    "name": "drop",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "drop_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
     "description": "Close a task. Needs the generation returned by take. No work breakdown or attestation required.",
     "inputSchema": {
       "properties": {
@@ -263,7 +285,7 @@
     }
   },
   {
-    "description": "Show one task with needs, readiness, and sections. Large fields spill to section reads: field/offset/budget.",
+    "description": "Show one task with needs, readiness, and sections. Large fields spill to section reads: field/offset/budget/rev.",
     "inputSchema": {
       "properties": {
         "budget": {
@@ -291,6 +313,18 @@
           "default": 0,
           "title": "Offset",
           "type": "integer"
+        },
+        "rev": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rev"
         }
       },
       "required": [

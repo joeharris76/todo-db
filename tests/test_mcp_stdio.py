@@ -9,6 +9,7 @@ from pathlib import Path
 
 EXPECTED_TOOLS = {
     "create_item",
+    "drop",
     "finish",
     "get_instructions",
     "list_items",

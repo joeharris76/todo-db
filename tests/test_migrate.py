@@ -112,6 +112,24 @@ def test_migration_refuses_unknown_tables() -> None:
         migrate_export(export)
 
 
+def test_migration_archives_every_unmapped_column() -> None:
+    export = _export()
+    export["tables"]["items"][0]["future_column"] = "keep me"
+    export["tables"]["items"][0]["another_one"] = 42
+    snapshot, _ = migrate_export(export)
+    meta = snapshot.details["alpha"]["legacy"]["item_meta"]
+    assert meta["future_column"] == "keep me"
+    assert meta["another_one"] == 42
+    assert meta["category"] == "feature"
+
+
+def test_migration_rejects_dangling_dependencies() -> None:
+    export = _export()
+    export["tables"]["item_deps"].append({"item_id": "beta", "needs_item": "ghost"})
+    with pytest.raises(TodoError):
+        migrate_export(export)
+
+
 def test_migrate_file_dry_run_and_apply(tmp_path: Path) -> None:
     source = tmp_path / "legacy-export.json"
     source.write_text(json.dumps(_export()), encoding="utf-8")

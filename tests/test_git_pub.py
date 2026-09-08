@@ -166,7 +166,12 @@ def test_lost_reply_reconciles_without_duplicate(tmp_path: Path) -> None:
     second = git_backend.mutate(ref, op="create", summary="add once", worker="w", op_id=op_id, apply=create)
     assert second.ok and second.sha == first.sha
     assert _tip(ref) == before
-    assert git_backend.reconcile(ref, op_id) == first.sha
+    found = git_backend.reconcile(ref, op_id)
+    assert found.state == "applied" and found.sha == first.sha
+    missing = git_backend.reconcile(ref, "0" * 32)
+    assert missing.state == "absent" and missing.sha == before
+    with pytest.raises(TodoError):
+        git_backend.reconcile(ref, "not-an-op-id")
 
 
 def test_crash_before_commit_leaves_tip_unchanged(tmp_path: Path) -> None:
@@ -189,6 +194,88 @@ def test_offline_mutation_never_succeeds_locally(tmp_path: Path) -> None:
         apply=lambda snap: (S.op_create(snap, item_id="x", title="X"), {}),
     )
     assert not out.ok and out.outcome == "offline"
+
+
+def test_caches_are_namespaced_per_state_branch(tmp_path: Path) -> None:
+    ref_a = _remote(tmp_path)
+    other = tmp_path / "other.git"
+    subprocess.run(["git", "init", "--quiet", "--bare", str(other)], check=True)
+    ref_b = git_backend.StateRef(remote=str(other), branch="todo-state")
+    git_backend.bootstrap(ref_a)
+    git_backend.bootstrap(ref_b)
+    git_backend.mutate(
+        ref_a, op="create", summary="add a", worker="w",
+        apply=lambda snap: (S.op_create(snap, item_id="only-a", title="A"), {}),
+    )
+    shared = tmp_path / "shared-cache"
+    ro_a = git_backend.read(ref_a, shared)
+    assert "only-a" in ro_a.snapshot.index["items"]
+    # B shares the cache directory but must never see A's state, online or off.
+    ro_b = git_backend.read(ref_b, shared)
+    assert "only-a" not in ro_b.snapshot.index["items"]
+    subprocess.run(["rm", "-rf", str(other)], check=True)
+    offline_b = git_backend.read(ref_b, shared)
+    assert offline_b.stale is True
+    assert "only-a" not in offline_b.snapshot.index["items"]
+
+
+def test_read_revision_is_the_loaded_commit(tmp_path: Path) -> None:
+    ref = _remote(tmp_path)
+    git_backend.bootstrap(ref)
+    git_backend.mutate(
+        ref, op="create", summary="add t", worker="w",
+        apply=lambda snap: (S.op_create(snap, item_id="t", title="v1"), {}),
+    )
+    ro = git_backend.read(ref, tmp_path / "cache")
+    assert ro.rev == _tip(ref)
+    # The reported revision always matches the loaded content.
+    at_rev = git_backend.read_rev(ref, ro.rev)
+    assert at_rev.index == ro.snapshot.index
+    assert at_rev.details == ro.snapshot.details
+
+
+def test_push_landed_but_confirmation_lost_is_unknown(tmp_path: Path, monkeypatch) -> None:
+    ref = _remote(tmp_path)
+    git_backend.bootstrap(ref)
+
+    def flaky_tip(r):
+        raise TodoError("simulated confirmation blackout", code="E_OFFLINE")
+
+    def blind_reconcile(work, r, op_id):
+        return git_backend.ReconcileResult(state="unknown", detail="simulated blackout")
+
+    monkeypatch.setattr(git_backend, "ls_remote_tip", flaky_tip)
+    monkeypatch.setattr(git_backend, "_reconcile", blind_reconcile)
+    out = git_backend.mutate(
+        ref, op="create", summary="add ghost", worker="w",
+        apply=lambda snap: (S.op_create(snap, item_id="ghost", title="Ghost"), {}),
+    )
+    # The push landed but every confirmation channel failed: unknown with
+    # the operation ID, never a blind success and never a blind failure.
+    assert not out.ok and out.outcome == "unknown" and out.code == "E_UNKNOWN"
+    assert out.op_id in (out.error or "")
+    monkeypatch.undo()
+    found = git_backend.reconcile(ref, out.op_id)
+    assert found.state == "applied"
+
+
+def test_restore_refuses_off_branch_revisions(tmp_path: Path) -> None:
+    ref = _remote(tmp_path)
+    git_backend.bootstrap(ref)
+    foreign = tmp_path / "foreign.git"
+    subprocess.run(["git", "init", "--quiet", "--bare", str(foreign)], check=True)
+    work = tmp_path / "fw"
+    subprocess.run(["git", "init", "--quiet", str(work)], check=True)
+    subprocess.run(["git", "-C", str(work), "config", "user.name", "t"], check=True)
+    subprocess.run(["git", "-C", str(work), "config", "user.email", "t@t"], check=True)
+    (work / "f").write_text("x")
+    subprocess.run(["git", "-C", str(work), "add", "f"], check=True)
+    subprocess.run(["git", "-C", str(work), "commit", "--quiet", "-m", "foreign"], check=True)
+    sha = subprocess.run(["git", "-C", str(work), "rev-parse", "HEAD"],
+                         check=True, capture_output=True, text=True).stdout.strip()
+    subprocess.run(["git", "-C", str(work), "push", "--quiet", str(foreign), "HEAD:todo-state"], check=True)
+    with pytest.raises(TodoError):
+        git_backend.restore_rev(ref, sha, "w")
 
 
 def test_readers_stay_on_one_accepted_snapshot(tmp_path: Path) -> None:

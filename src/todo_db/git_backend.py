@@ -32,6 +32,8 @@ deletion invalidate its assumptions.
 
 from __future__ import annotations
 
+import hashlib
+import re
 import shutil
 import subprocess
 import tempfile
@@ -42,6 +44,24 @@ from uuid import uuid4
 
 from .errors import E_CONFLICT, E_OFFLINE, E_STATE, E_UNKNOWN, TodoError
 from .store import Snapshot, load_snapshot, save_snapshot, validate_snapshot
+
+OP_ID_RE = re.compile(r"^[0-9a-f]{32}$")
+MAX_STDERR_CHARS = 500
+
+
+def _brief(stderr: str, limit: int = MAX_STDERR_CHARS) -> str:
+    """Bound remote stderr before it reaches a user-facing message."""
+    text = " ".join(stderr.strip().split())
+    return text if len(text) <= limit else text[:limit] + "…"
+
+
+def _check_op_id(op_id: str) -> str:
+    if not isinstance(op_id, str) or not OP_ID_RE.fullmatch(op_id):
+        raise TodoError(
+            f"invalid operation ID {op_id!r}: expected 32 hex chars",
+            code=E_STATE,
+        )
+    return op_id
 
 STATE_BRANCH_FALLBACK = "todo-state"
 DEFAULT_MAX_RETRIES = 5
@@ -209,7 +229,7 @@ def ls_remote_tip(ref: StateRef) -> str | None:
     proc = _git(["ls-remote", ref.remote, ref.branch])
     if proc.returncode != 0:
         raise TodoError(
-            f"remote {ref.remote!r} unreachable or not permitted: {proc.stderr.strip()}",
+            f"remote {ref.remote!r} unreachable or not permitted: {_brief(proc.stderr)}",
             code=E_OFFLINE,
         )
     line = proc.stdout.strip()
@@ -221,10 +241,62 @@ def ls_remote_tip(ref: StateRef) -> str | None:
 def _find_op_commit(clone: Path, rev: str, op_id: str) -> str | None:
     # NOTE: callers fetch with an explicit refspec, which updates FETCH_HEAD
     # but not necessarily the tracking ref, so search from the given rev.
-    proc = _git(["log", rev, f"--grep={OP_ID_TRAILER}: {op_id}", "--format=%H"], clone)
+    # Fixed-strings: operation IDs are data, never a pattern.
+    _check_op_id(op_id)
+    proc = _git(
+        ["log", rev, "--fixed-strings", f"--grep={OP_ID_TRAILER}: {op_id}", "--format=%H"],
+        clone,
+    )
     if proc.returncode != 0:
         return None
     return proc.stdout.strip().splitlines()[0] if proc.stdout.strip() else None
+
+
+def namespace(ref: StateRef) -> str:
+    """Cache namespace for one state branch: SHA-256 of remote + branch."""
+    digest = hashlib.sha256(f"{ref.remote}\0{ref.branch}".encode("utf-8")).hexdigest()
+    return digest[:16]
+
+
+def _ns_dir(cache_dir: str | Path, ref: StateRef) -> Path:
+    return Path(cache_dir) / namespace(ref)
+
+
+def _remember_rev(ns: Path, rev: str) -> None:
+    ns.mkdir(parents=True, exist_ok=True)
+    tmp = ns / ".last.tmp"
+    tmp.write_text(rev + "\n", encoding="utf-8")
+    tmp.replace(ns / "last")
+
+
+def _last_rev(ns: Path) -> str | None:
+    try:
+        return (ns / "last").read_text(encoding="utf-8").strip() or None
+    except OSError:
+        return None
+
+
+@dataclass(frozen=True)
+class ReconcileResult:
+    """Tri-state reconciliation: applied, definitively absent, or unknown."""
+
+    state: str  # "applied" | "absent" | "unknown"
+    sha: str | None = None  # applied commit, or inspected tip when absent
+    detail: str = ""
+
+
+def reconcile(ref: StateRef, op_id: str) -> ReconcileResult:
+    """Look up an operation ID against the accepted branch history.
+
+    Transport failure and true absence are distinct: absence reports the
+    inspected tip so the caller can see what was checked; only an
+    unreachable remote reports unknown.
+    """
+    _check_op_id(op_id)
+    found = _reconcile_best_effort(ref, op_id)
+    if found is None:
+        return ReconcileResult(state="unknown", detail=f"remote {ref.remote!r} unreachable")
+    return found
 
 
 def _commit_message(op: str, summary: str, op_id: str, worker: str) -> str:
@@ -249,14 +321,14 @@ def mutate(
     external side effects: it runs again on every retry, and retries never
     rerun verification commands or side effects (there are none to rerun).
     """
-    op_id = op_id or new_op_id()
+    op_id = _check_op_id(op_id or new_op_id())
     tmp = Path(tempfile.mkdtemp(prefix="todo-state-"))
     try:
         clone = _git(["clone", "--quiet", "--origin", "origin", ref.remote, str(tmp / "w")])
         if clone.returncode != 0:
             return MutationOutcome(
                 ok=False, outcome="offline", op_id=op_id,
-                code=E_OFFLINE, error=f"remote {ref.remote!r} unreachable: {clone.stderr.strip()}",
+                code=E_OFFLINE, error=f"remote {ref.remote!r} unreachable: {_brief(clone.stderr)}",
             )
         work = tmp / "w"
         _git(["config", "user.name", "todo-db"], work)
@@ -273,7 +345,7 @@ def mutate(
                     )
                 return MutationOutcome(
                     ok=False, outcome="offline", op_id=op_id, code=E_OFFLINE,
-                    error=f"fetch failed: {fetch.stderr.strip()}",
+                    error=f"fetch failed: {_brief(fetch.stderr)} (operation ID {op_id})",
                 )
             tip = _git_ok(["rev-parse", "FETCH_HEAD"], work)
 
@@ -287,7 +359,7 @@ def mutate(
             if checkout.returncode != 0:
                 return MutationOutcome(
                     ok=False, outcome="error", op_id=op_id, code=E_STATE,
-                    error=f"cannot check out {tip}: {checkout.stderr.strip()}",
+                    error=f"cannot check out {tip}: {_brief(checkout.stderr)}",
                 )
             try:
                 snapshot = load_snapshot(work)
@@ -324,7 +396,7 @@ def mutate(
                     )
                 return MutationOutcome(
                     ok=False, outcome="error", op_id=op_id, code=E_STATE,
-                    error=f"commit failed: {commit.stderr.strip()}",
+                    error=f"commit failed: {_brief(commit.stderr)}",
                 )
             new_sha = _git_ok(["rev-parse", "HEAD"], work)
             # Sanity: the commit's parent must be exactly the snapshot used.
@@ -340,23 +412,26 @@ def mutate(
                 push = None
             if push is None:
                 # Ambiguous: the push may or may not have landed. Reconcile.
-                reconciled = _reconcile(work, ref, op_id)
-                if reconciled:
-                    return MutationOutcome(ok=True, outcome="applied", op_id=op_id, sha=reconciled, ack=ack)
+                rec = _reconcile(work, ref, op_id)
+                if rec.state == "applied":
+                    return MutationOutcome(ok=True, outcome="applied", op_id=op_id, sha=rec.sha, ack=ack)
                 return MutationOutcome(
                     ok=False, outcome="unknown", op_id=op_id, code=E_UNKNOWN,
                     error="push timed out with an undetermined outcome; "
                     f"reconcile later with operation ID {op_id}",
                 )
             if push.returncode == 0:
-                confirmed = ls_remote_tip(ref)
+                try:
+                    confirmed = ls_remote_tip(ref)
+                except TodoError:
+                    confirmed = "unreachable"
                 if confirmed == new_sha:
                     return MutationOutcome(ok=True, outcome="applied", op_id=op_id, sha=new_sha, ack=ack)
-                # Push reported success but the tip disagrees: reconcile
+                # Push reported success but confirmation disagrees: reconcile
                 # rather than claiming success or failure without evidence.
-                reconciled = _reconcile(work, ref, op_id)
-                if reconciled:
-                    return MutationOutcome(ok=True, outcome="applied", op_id=op_id, sha=reconciled, ack=ack)
+                rec = _reconcile(work, ref, op_id)
+                if rec.state == "applied":
+                    return MutationOutcome(ok=True, outcome="applied", op_id=op_id, sha=rec.sha, ack=ack)
                 return MutationOutcome(
                     ok=False, outcome="unknown", op_id=op_id, code=E_UNKNOWN,
                     error="push reply was lost and the outcome cannot be determined; "
@@ -374,17 +449,29 @@ def mutate(
                 continue
             if kind == "offline":
                 # The push may have landed before the connection broke.
-                reconciled = _reconcile_best_effort(ref, op_id)
-                if reconciled:
-                    return MutationOutcome(ok=True, outcome="applied", op_id=op_id, sha=reconciled, ack=ack)
-                return MutationOutcome(
-                    ok=False, outcome="unknown", op_id=op_id, code=E_UNKNOWN,
-                    error="push failed ambiguously and the remote is now unreachable; "
-                    f"reconcile later with operation ID {op_id}",
-                )
+                # Reconcile in this same clone: applied wins, unreachable is
+                # unknown, and a definitive absence re-enters the retry loop
+                # for semantic re-evaluation instead of blindly repeating.
+                rec = _reconcile(work, ref, op_id)
+                if rec.state == "applied":
+                    return MutationOutcome(ok=True, outcome="applied", op_id=op_id, sha=rec.sha, ack=ack)
+                if rec.state == "unknown":
+                    return MutationOutcome(
+                        ok=False, outcome="unknown", op_id=op_id, code=E_UNKNOWN,
+                        error="push failed ambiguously and the outcome cannot be determined; "
+                        f"reconcile later with operation ID {op_id}",
+                    )
+                attempts += 1
+                if attempts > max_retries:
+                    return MutationOutcome(
+                        ok=False, outcome="conflict", op_id=op_id, code=E_CONFLICT,
+                        error=f"competing updates did not settle within {max_retries} retries",
+                    )
+                _git(["reset", "--quiet", "--hard", "FETCH_HEAD"], work)
+                continue
             return MutationOutcome(
                 ok=False, outcome="error", op_id=op_id, code=E_STATE,
-                error=f"push rejected by the remote: {push.stderr.strip()}",
+                error=f"push rejected by the remote: {_brief(push.stderr)}",
             )
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -394,75 +481,89 @@ INDEX_NAME = "index.json"
 ITEMS_NAME = "items"
 
 
-def _reconcile(work: Path, ref: StateRef, op_id: str) -> str | None:
-    _git(["fetch", "--quiet", "origin", ref.branch], work)
-    return _find_op_commit(work, "FETCH_HEAD", op_id)
+def _search(work: Path, op_id: str) -> ReconcileResult:
+    tip = _git(["rev-parse", "FETCH_HEAD"], work)
+    if tip.returncode != 0:
+        return ReconcileResult(state="unknown", detail="fetch did not resolve a tip")
+    rev = tip.stdout.strip()
+    found = _find_op_commit(work, "FETCH_HEAD", op_id)
+    if found:
+        return ReconcileResult(state="applied", sha=found)
+    return ReconcileResult(state="absent", sha=rev)
 
 
-def _reconcile_best_effort(ref: StateRef, op_id: str) -> str | None:
+def _reconcile(work: Path, ref: StateRef, op_id: str) -> ReconcileResult:
+    fetch = _git(["fetch", "--quiet", "origin", ref.branch], work)
+    if fetch.returncode != 0:
+        return ReconcileResult(state="unknown", detail=f"fetch failed: {_brief(fetch.stderr)}")
+    return _search(work, op_id)
+
+
+def _reconcile_best_effort(ref: StateRef, op_id: str) -> ReconcileResult | None:
+    """None only when the remote cannot be reached at all."""
     tmp = Path(tempfile.mkdtemp(prefix="todo-reconcile-"))
     try:
         clone = _git(["clone", "--quiet", "--origin", "origin", ref.remote, str(tmp / "w")])
         if clone.returncode != 0:
             return None
         work = tmp / "w"
-        _git(["fetch", "--quiet", "origin", ref.branch], work)
-        return _find_op_commit(work, "FETCH_HEAD", op_id)
+        fetch = _git(["fetch", "--quiet", "origin", ref.branch], work)
+        if fetch.returncode != 0:
+            return ReconcileResult(state="unknown", detail=f"fetch failed: {_brief(fetch.stderr)}")
+        return _search(work, op_id)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-def reconcile(ref: StateRef, op_id: str) -> str | None:
-    """Return the accepted commit SHA for an operation ID, if any."""
-    return _reconcile_best_effort(ref, op_id)
+def _offline_cached(ns: Path, ref: StateRef) -> ReadOutcome:
+    # Offline reads serve ONLY this state branch's last accepted revision,
+    # never another project's cache and never an inferred ordering.
+    rev = _last_rev(ns)
+    if rev is None or not (ns / "revs" / rev / INDEX_NAME).is_file():
+        raise TodoError(
+            f"remote {ref.remote!r} unreachable and no cached revision "
+            "for this state branch is available",
+            code=E_OFFLINE,
+        )
+    return ReadOutcome(snapshot=load_snapshot(ns / "revs" / rev), rev=rev, stale=True)
 
 
 def read(ref: StateRef, cache_dir: str | Path) -> ReadOutcome:
     """Load the accepted tip, falling back to a cached revision offline.
 
-    Mutations never use this path: they go through :func:`mutate`, which
-    fails offline rather than succeeding locally.
+    The reported revision is always the commit actually loaded, resolved
+    after the fetch — never an earlier observation. Mutations never use
+    this path: they go through :func:`mutate`, which fails offline rather
+    than succeeding locally.
     """
-    cache = Path(cache_dir)
-    cache.mkdir(parents=True, exist_ok=True)
+    ns = _ns_dir(cache_dir, ref)
     try:
         tip = ls_remote_tip(ref)
     except TodoError:
-        tip = None
-    if tip is None and ls_branch_missing(ref):
+        return _offline_cached(ns, ref)
+    if tip is None:
         raise TodoError(
             f"state branch {ref.branch!r} is missing; run bootstrap", code=E_STATE
         )
-    if tip is not None:
-        tmp = Path(tempfile.mkdtemp(prefix="todo-read-"))
-        try:
-            _git(["clone", "--quiet", "--origin", "origin", ref.remote, str(tmp / "w")])
-            work = tmp / "w"
-            _git(["fetch", "--quiet", "origin", ref.branch], work)
-            _git(["checkout", "--quiet", "FETCH_HEAD"], work)
-            snapshot = load_snapshot(work)
-            dest = cache / tip
-            if not dest.exists():
-                snapshot_dir = tmp / "snap"
-                snapshot_dir.mkdir()
-                save_snapshot(snapshot_dir, snapshot)
-                dest.mkdir(exist_ok=True)
-                shutil.copy2(work / INDEX_NAME, dest / INDEX_NAME)
-                items_src = work / ITEMS_NAME
-                if items_src.is_dir():
-                    shutil.copytree(items_src, dest / ITEMS_NAME, dirs_exist_ok=True)
-            return ReadOutcome(snapshot=snapshot, rev=tip, stale=False)
-        finally:
-            shutil.rmtree(tmp, ignore_errors=True)
-    # Offline: serve the newest cached revision, clearly identified.
-    cached = sorted(p.name for p in cache.iterdir() if (p / INDEX_NAME).is_file()) if cache.exists() else []
-    if not cached:
-        raise TodoError(
-            f"remote {ref.remote!r} unreachable and no cached revision is available",
-            code=E_OFFLINE,
-        )
-    rev = cached[-1]
-    return ReadOutcome(snapshot=load_snapshot(cache / rev), rev=rev, stale=True)
+    tmp = Path(tempfile.mkdtemp(prefix="todo-read-"))
+    try:
+        clone = _git(["clone", "--quiet", "--origin", "origin", ref.remote, str(tmp / "w")])
+        work = tmp / "w"
+        fetch = _git(["fetch", "--quiet", "origin", ref.branch], work)
+        checkout = _git(["checkout", "--quiet", "FETCH_HEAD"], work)
+        if clone.returncode != 0 or fetch.returncode != 0 or checkout.returncode != 0:
+            # The remote flaked mid-read; fall back to this branch's cache.
+            return _offline_cached(ns, ref)
+        actual = _git_ok(["rev-parse", "HEAD"], work)
+        snapshot = load_snapshot(work)
+        dest = ns / "revs" / actual
+        if not (dest / INDEX_NAME).is_file():
+            dest.mkdir(parents=True, exist_ok=True)
+            save_snapshot(dest, snapshot)
+        _remember_rev(ns, actual)
+        return ReadOutcome(snapshot=snapshot, rev=actual, stale=False)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def read_rev(ref: StateRef, rev: str) -> Snapshot:
@@ -509,10 +610,32 @@ def read_rev(ref: StateRef, rev: str) -> Snapshot:
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def _assert_on_branch(ref: StateRef, rev: str) -> None:
+    """Refuse revisions that are not part of the state branch's history."""
+    tmp = Path(tempfile.mkdtemp(prefix="todo-ancestry-"))
+    try:
+        clone = _git(["clone", "--quiet", "--origin", "origin", ref.remote, str(tmp / "w")])
+        if clone.returncode != 0:
+            raise TodoError(f"remote {ref.remote!r} unreachable", code=E_OFFLINE)
+        work = tmp / "w"
+        fetch = _git(["fetch", "--quiet", "origin", ref.branch], work)
+        if fetch.returncode != 0:
+            raise TodoError(f"cannot inspect state branch: {_brief(fetch.stderr)}", code=E_OFFLINE)
+        ancestor = _git(["merge-base", "--is-ancestor", rev, "FETCH_HEAD"], work)
+        if ancestor.returncode != 0:
+            raise TodoError(
+                f"revision {rev!r} is not part of {ref.branch!r} history; restore refuses it",
+                code=E_STATE,
+            )
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def restore_rev(ref: StateRef, rev: str, worker: str) -> MutationOutcome:
     """Append-only restore: a new commit returning state to *rev*'s content."""
     import json as _json
 
+    _assert_on_branch(ref, rev)
     wanted = read_rev(ref, rev)
     payload = _json.loads(_json.dumps({"index": wanted.index, "details": wanted.details}))
 
@@ -523,13 +646,6 @@ def restore_rev(ref: StateRef, rev: str, worker: str) -> MutationOutcome:
         return {"id": "restore", "rev": rev}
 
     return mutate(ref, op="restore", summary=f"restore state to {rev[:12]}", worker=worker, apply=apply)
-
-
-def ls_branch_missing(ref: StateRef) -> bool:
-    try:
-        return ls_remote_tip(ref) is None
-    except TodoError:
-        return False
 
 
 def bootstrap(ref: StateRef, *, worker: str = "bootstrap") -> str:
@@ -560,7 +676,7 @@ def bootstrap(ref: StateRef, *, worker: str = "bootstrap") -> str:
             # rather than overwriting.
             raise TodoError(
                 f"bootstrap push failed (another writer may have created {ref.branch!r}): "
-                f"{push.stderr.strip()}",
+                f"{_brief(push.stderr)}",
                 code=E_CONFLICT,
             )
         return sha

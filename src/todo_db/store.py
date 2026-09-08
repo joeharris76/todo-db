@@ -48,7 +48,6 @@ from .errors import (
     E_ACTIVE_CLAIMS,
     E_CLAIM_STALE,
     E_CONFLICT,
-    E_NOTHING_READY,
     E_SCHEMA,
     E_STATE,
     TodoError,
@@ -74,15 +73,11 @@ ITEMS_DIRNAME = "items"
 #: rejected so there is never an ambiguous second copy to merge.
 INDEX_OWNED_FIELDS = frozenset({"title", "priority", "status", "claim", "needs"})
 
-#: Status transitions. Close paths (finish/drop) are separate ops with claim
-#: checks; plain ``update`` may not enter ``done``/``dropped`` directly.
-TRANSITIONS: dict[str, frozenset[str]] = {
-    "open": frozenset({"active", "blocked", "dropped"}),
-    "active": frozenset({"open", "blocked", "done", "dropped"}),
-    "blocked": frozenset({"open", "active", "done", "dropped"}),
-    "done": frozenset(),
-    "dropped": frozenset(),
-}
+#: Status moves allowed to plain ``update``. Entering ``active`` needs a claim
+#: (take); leaving ``active`` releases or closes it (release/finish);
+#: terminal states go through finish/drop. Anything else is rejected so the
+#: claim protocol cannot be bypassed.
+UPDATE_STATUSES = frozenset({"open", "blocked"})
 
 
 def utc_now() -> str:
@@ -138,9 +133,21 @@ def empty_index() -> dict[str, Any]:
     return {"schema_version": SCHEMA_VERSION, "items": {}}
 
 
+#: The exact index-entry schema. Anything else is rejected so detail files
+#: can never shadow index-owned fields and index entries can never shadow
+#: detail-owned fields: authority is exact on both sides.
+ENTRY_KEYS = frozenset({"title", "priority", "status", "claim", "needs"})
+
+
 def _check_entry_shape(item_id: str, entry: Any) -> dict[str, Any]:
     if not isinstance(entry, dict):
         raise TodoError(f"index entry {item_id!r} must be an object", code=E_STATE)
+    unknown = set(entry) - ENTRY_KEYS
+    if unknown:
+        raise TodoError(
+            f"index entry {item_id!r} has unexpected keys: {', '.join(sorted(unknown))}",
+            code=E_STATE,
+        )
     for key in ("title", "priority", "status"):
         if key not in entry:
             raise TodoError(f"index entry {item_id!r} is missing {key!r}", code=E_STATE)
@@ -255,16 +262,23 @@ class Snapshot:
     details: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
+def _read_state_file(path: Path, label: str) -> Any:
+    # State checkouts are Git content, but a hostile or corrupted worktree
+    # could smuggle a symlink here; never follow one out of the checkout.
+    if path.is_symlink():
+        raise TodoError(f"refusing to follow symlink at {label}", code=E_STATE)
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise TodoError(f"missing {label} in {path.parent}: is this a state checkout?", code=E_STATE) from exc
+    except json.JSONDecodeError as exc:
+        raise TodoError(f"invalid {label}: {exc}", code=E_STATE) from exc
+
+
 def load_snapshot(state_dir: str | Path) -> Snapshot:
     """Load and validate one local state directory."""
     root = Path(state_dir)
-    index_path = root / INDEX_FILENAME
-    try:
-        index = json.loads(index_path.read_text(encoding="utf-8"))
-    except FileNotFoundError as exc:
-        raise TodoError(f"no {INDEX_FILENAME} in {root}: is this a state checkout?", code=E_STATE) from exc
-    except json.JSONDecodeError as exc:
-        raise TodoError(f"invalid {INDEX_FILENAME}: {exc}", code=E_STATE) from exc
+    index = _read_state_file(root / INDEX_FILENAME, INDEX_FILENAME)
     items_dir = root / ITEMS_DIRNAME
     details: dict[str, dict[str, Any]] = {}
     if isinstance(index, dict) and isinstance(index.get("items"), dict):
@@ -274,20 +288,11 @@ def load_snapshot(state_dir: str | Path) -> Snapshot:
             except TodoError:
                 continue
             path = items_dir / f"{item_id}.json"
-            try:
-                payload = json.loads(path.read_text(encoding="utf-8"))
-            except FileNotFoundError as exc:
-                raise TodoError(f"missing detail file for {item_id!r}", code=E_STATE) from exc
-            except json.JSONDecodeError as exc:
-                raise TodoError(f"invalid detail file for {item_id!r}: {exc}", code=E_STATE) from exc
-            details[item_id] = payload
+            details[item_id] = _read_state_file(path, f"detail file for {item_id!r}")
         if items_dir.is_dir():
             for path in sorted(items_dir.glob("*.json")):
                 if path.name[:-5] not in index["items"]:
-                    try:
-                        details[path.name[:-5]] = json.loads(path.read_text(encoding="utf-8"))
-                    except json.JSONDecodeError as exc:
-                        raise TodoError(f"invalid detail file {path.name}: {exc}", code=E_STATE) from exc
+                    details[path.name[:-5]] = _read_state_file(path, f"detail file {path.name}")
     validate_snapshot(index, details)
     return Snapshot(index=index, details=details)
 
@@ -471,19 +476,24 @@ def op_update(
         entry["needs"] = list(needs)
         changed.append("needs")
     if status is not None:
-        if status in TERMINAL_STATUSES:
-            raise TodoError(
-                f"cannot move {item_id!r} to {status!r} via update; use finish/drop",
-                code=E_STATE,
-            )
         if status not in STATUSES:
             raise TodoError(f"unknown status {status!r}", code=E_STATE)
-        if status != entry["status"] and status not in TRANSITIONS[entry["status"]]:
-            raise TodoError(
-                f"illegal status transition {entry['status']!r} -> {status!r} for {item_id!r}",
-                code=E_STATE,
-            )
         if status != entry["status"]:
+            # Plain updates may only park and unpark work. Entering active
+            # needs a claim (take); leaving active releases or closes it
+            # (release/finish); terminal states go through finish/drop.
+            # Bypassing those paths would strand or fabricate claims.
+            if {entry["status"], status} != UPDATE_STATUSES:
+                raise TodoError(
+                    f"cannot move {item_id!r} from {entry['status']!r} to {status!r} via update; "
+                    "use take/release/finish/drop",
+                    code=E_STATE,
+                )
+            if claim_is_live(entry.get("claim")):
+                raise TodoError(
+                    f"cannot move claimed task {item_id!r} via update; release it first",
+                    code=E_STATE,
+                )
             entry["status"] = status
             changed.append("status")
     detail = snapshot.details[item_id]
@@ -538,15 +548,24 @@ def op_take(
     worker = validate_worker(worker)
     entry = _require_entry(snapshot, item_id)
     moment = now or datetime.now(timezone.utc)
+    if not 0 < ttl_hours <= MAX_TTL_HOURS:
+        raise TodoError(f"ttl must be within (0, {MAX_TTL_HOURS}] hours", code=E_STATE)
     claim = entry.get("claim")
     if claim_is_live(claim, moment):
         if claim["worker"] == worker:
-            return {"id": item_id, "claim": claim, "adopted": True}
+            # Restart re-adoption rotates the generation: the returning
+            # worker resumes with fresh credentials, and any earlier
+            # process image holding the old generation goes stale instead
+            # of sharing control of the claim.
+            claim["generation"] = new_generation()
+            claim["expires_at"] = (moment + timedelta(hours=ttl_hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            claim["renewals"] = int(claim.get("renewals", 0)) + 1
+            entry["status"] = "active"
+            validate_snapshot(snapshot.index, snapshot.details)
+            return {"id": item_id, "claim": dict(claim), "adopted": True}
         raise TodoError(f"task {item_id!r} is claimed by {claim['worker']!r}", code=E_CONFLICT)
     if entry["status"] not in ("open", "blocked", "active"):
         raise TodoError(f"task {item_id!r} is {entry['status']} and cannot be taken", code=E_STATE)
-    if not 0 < ttl_hours <= MAX_TTL_HOURS:
-        raise TodoError(f"ttl must be within (0, {MAX_TTL_HOURS}] hours", code=E_STATE)
     fresh = {
         "worker": worker,
         "expires_at": (moment + timedelta(hours=ttl_hours)).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -657,10 +676,3 @@ def assert_quiescent(snapshot: Snapshot, now: datetime | None = None) -> None:
 
 def ready_rows(snapshot: Snapshot, now: datetime | None = None) -> list[tuple[str, dict[str, Any]]]:
     return query_items(snapshot, ready_only=True, now=now)
-
-
-def require_ready(snapshot: Snapshot, now: datetime | None = None) -> list[tuple[str, dict[str, Any]]]:
-    rows = ready_rows(snapshot, now)
-    if not rows:
-        raise TodoError("no ready tasks", code=E_NOTHING_READY)
-    return rows

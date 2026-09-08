@@ -73,7 +73,11 @@ def test_recover_op_id_and_restore(tmp_path: Path, capsys) -> None:
     found = json.loads(capsys.readouterr().out)
     assert found["applied"] and found["rev"] == outcome.sha
     assert main(["recover", *_args(remote), "--op-id", "0" * 32]) == 0
-    assert json.loads(capsys.readouterr().out)["applied"] is False
+    absent = json.loads(capsys.readouterr().out)
+    assert absent["applied"] is False and absent["checked_rev"]
+    # Malformed operation IDs are rejected, not silently looked up.
+    assert main(["recover", *_args(remote), "--op-id", "nope"]) == 2
+    capsys.readouterr()
     # Append-only restore of the bootstrap revision drops the seeded item
     # without rewriting history.
     first = git_backend.history(ref, limit=10)[-1]["sha"]
@@ -83,6 +87,56 @@ def test_recover_op_id_and_restore(tmp_path: Path, capsys) -> None:
     ro = git_backend.read(ref, tmp_path / "cache")
     assert "s1" not in ro.snapshot.index["items"]
     assert len(git_backend.history(ref, limit=10)) >= 3
+
+
+def test_validate_rejects_stale_cache(tmp_path: Path, capsys) -> None:
+    import subprocess
+
+    remote = tmp_path / "gone.git"
+    subprocess.run(["git", "init", "--quiet", "--bare", str(remote)], check=True)
+    args = ["--state-remote", str(remote), "--state-branch", "todo-state"]
+    assert main(["bootstrap", *args]) == 0
+    capsys.readouterr()
+    assert main(["validate", *args]) == 0
+    capsys.readouterr()
+    subprocess.run(["rm", "-rf", str(remote)], check=True)
+    # A gate that goes green on a cached revision while the remote is down
+    # is a lie; stale needs an explicit flag.
+    assert main(["validate", *args]) == 2
+    capsys.readouterr()
+    assert main(["validate", *args, "--allow-stale"]) == 0
+    allowed = json.loads(capsys.readouterr().out)
+    assert allowed["stale"] is True
+
+
+def test_migrate_requires_backup_to_apply(tmp_path: Path, capsys) -> None:
+    remote = _remote(tmp_path)
+    assert main(["bootstrap", *_args(remote)]) == 0
+    capsys.readouterr()
+    source = tmp_path / "export.json"
+    source.write_text(json.dumps({
+        "format_version": 2, "project": {}, "tables": {"items": [], "meta": []},
+    }))
+    assert main(["migrate", *_args(remote), "--from-export", str(source), "--dry-run"]) == 0
+    capsys.readouterr()
+    assert main(["migrate", *_args(remote), "--from-export", str(source)]) == 2
+
+
+def test_recover_refuses_off_branch_restore(tmp_path: Path, capsys) -> None:
+    import subprocess
+
+    remote = _remote(tmp_path)
+    assert main(["bootstrap", *_args(remote)]) == 0
+    capsys.readouterr()
+    work = tmp_path / "fw"
+    subprocess.run(["git", "init", "--quiet", str(work)], check=True)
+    (work / "f").write_text("x")
+    subprocess.run(["git", "-C", str(work), "add", "f"], check=True)
+    subprocess.run(["git", "-C", str(work), "-c", "user.name=t", "-c", "user.email=t@t",
+                    "commit", "--quiet", "-m", "foreign"], check=True)
+    sha = subprocess.run(["git", "-C", str(work), "rev-parse", "HEAD"],
+                         check=True, capture_output=True, text=True).stdout.strip()
+    assert main(["recover", *_args(remote), "--restore-rev", sha, "--actor", "w"]) == 2
 
 
 def test_migrate_via_cli(tmp_path: Path, capsys) -> None:

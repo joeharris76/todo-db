@@ -21,9 +21,9 @@ All fixtures are disposable local bare remotes on this machine
 
 | Surface | Measured | Target |
 | --- | --- | --- |
-| Startup: 9 tool schemas + instructions | 2,950 tokens | — (was 3,344 for 26 tool defs alone, 4,688 for 38) |
-| Five list rows | 288–297 tokens | ~300 |
-| One take with work context | 128–133 tokens (small fixture) | ~1,500 for a full task context |
+| Startup: 10 tool schemas + instructions | 3,150 tokens | — (was 3,344 for 26 tool defs alone, 4,688 for 38) |
+| Five list rows | 288–316 tokens | ~300 |
+| One take with work context | 128–137 tokens (small fixture) | ~1,500 for a full task context |
 | One finish acknowledgement | ≤ 100 tokens (asserted in `test_mcp_slim.py`) | ~100 |
 
 Targets are benchmark acceptance targets, not universal guarantees: token
@@ -55,7 +55,7 @@ at ordinary tracker sizes the cost is sub-second.
 | --- | --- | --- |
 | `src/todo_db` Python | 8,563 lines + 237 migration lines | 3,101 lines, no migrations |
 | `tests/` | 7,870 lines | 1,134 lines |
-| MCP tools | 26 default / 38 full | 8 + `get_instructions` |
+| MCP tools | 26 default / 38 full | 9 + `get_instructions` |
 | Runtime dependencies | libsql, cryptography, pyyaml (extras) | none beyond the `mcp` extra |
 | Dev dependencies | + libsql, cryptography, pyyaml | + tiktoken (budget measurement) |
 
