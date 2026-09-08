@@ -353,7 +353,7 @@ def read(ref: StateRef, cache_dir: str | Path) -> ReadOutcome:
             _git(["clone", "--quiet", "--origin", "origin", ref.remote, str(tmp / "w")])
             work = tmp / "w"
             _git(["fetch", "--quiet", "origin", ref.branch], work)
-            _git(["checkout", "--quiet", f"origin/{ref.branch}"], work)
+            _git(["checkout", "--quiet", "FETCH_HEAD"], work)
             snapshot = load_snapshot(work)
             dest = cache / tip
             if not dest.exists():
