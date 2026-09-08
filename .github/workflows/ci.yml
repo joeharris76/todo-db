@@ -35,21 +35,19 @@ jobs:
         run: uv run python scripts/parity_conformance.py --check
 
       # Integrity gate: proves the committed skill mirrors under
-      # .claude/.codex/.gemini match skill-sync.lock. It reads no skill source,
+      # .claude/.codex/.gemini are exactly what skill-sync wrote, checked
+      # against each target's skill-sync.manifest. It reads no skill source,
       # so it cannot be broken by an upstream catalog moving; the tool itself
-      # is pinned by commit so CI does not execute a moving target.
-      # Clone + build rather than `npx github:…#<sha>`: that form hits
-      # npm/cli#6723 (`GitFetcher requires an Arborist constructor`) on the
-      # Ubuntu runner's bundled npm.
-      - name: Skill mirrors match the lock
+      # is pinned by commit so CI does not execute a moving target. The
+      # wrapper is a shell script, so there is no build step: check out the
+      # pinned revision and run it directly.
+      - name: Skill mirrors match the manifest
         env:
-          SKILL_SYNC_SHA: 6bca368c35ce0db26ffdb314e25094a70ae9dd43
+          SKILL_SYNC_SHA: 25e1e47693d8b0b2aba91d3ad3dbc0c14b8d3c4c
         run: |
           git clone --filter=blob:none https://github.com/joeharris76/skill-sync.git "$RUNNER_TEMP/skill-sync"
           git -C "$RUNNER_TEMP/skill-sync" checkout --detach "$SKILL_SYNC_SHA"
-          npm --prefix "$RUNNER_TEMP/skill-sync" install --ignore-scripts
-          npm --prefix "$RUNNER_TEMP/skill-sync" run build
-          node "$RUNNER_TEMP/skill-sync/dist/cli/index.js" verify
+          sh "$RUNNER_TEMP/skill-sync/bin/skill-sync" verify
 
       # The hosted run stays out of CI on purpose: CI injects credentials into
       # the environment, which is the condition that hid the v0.4.2 failure.
