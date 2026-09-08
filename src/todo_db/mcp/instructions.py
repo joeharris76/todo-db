@@ -1,12 +1,7 @@
 """Workflow instructions surface for the MCP server.
 
-MCP-shaped guidance: the agent drives the tracker through typed tool calls, not
-shell commands. Verification execution and rebaseline are deliberately **not**
-tools (ADR 0006 G6) -- a human runs those from the floor CLI.
-
-This text is the server's ``instructions``, the ``todo://instructions``
-resource, the ``get_instructions`` tool, and the ``todo/workflow`` prompt. Keep
-it compact: every client receives it.
+Short protocol guidance loaded once. It names the loop and the error
+codes; it does not inject guides, task bodies, or the index.
 """
 
 from __future__ import annotations
@@ -14,66 +9,51 @@ from __future__ import annotations
 INSTRUCTIONS = """\
 # todo-db agent workflow
 
-Drive the tracker through MCP tools. The loop tools -- `next`, `take`,
-`context`, `progress` -- return a `next_action` naming the tool and arguments
-to call next; follow it rather than guessing. Other tools return their result
-alone.
+Drive the tracker through MCP tools. Mutations return a compact
+acknowledgement; lists return brief rows (id/title/priority/status).
 
 ## The loop
 
-1. `next` -- inspect the ready queue, or the claim you already hold.
-2. `take` -- atomically claim a ready item, or re-adopt your active claim.
-   Omit `id` to take the top of the queue.
-3. `context` -- bounded context for the claimed item; also how you re-read
-   `claim_token` and `next_action` after a restart.
-4. `progress` -- mark each work unit done with evidence. Refreshes the lease.
-5. `finish` -- the close gate.
-6. `release` -- hand the claim back without finishing.
+1. `list_items` -- brief rows; filters: status, priority, text,
+   ready_only; paging: limit (default 5) + cursor.
+2. `show_item` -- one task with needs, readiness, and sections.
+   Large fields arrive as section reads: field/offset/budget.
+3. `create_item` -- id, title, priority (default medium),
+   description, needs, acceptance, links, context.
+4. `take` -- claim a task; returns the claim generation plus enough
+   context to begin work. One live claim per worker.
+5. `release` -- hand the claim back (needs the generation from take).
+6. `finish` -- close the task (needs the generation from take).
+7. `renew` -- extend a long-running claim (same generation, no
+   progress milestones required).
 
-## Planning
-
-`create_item` takes work units, scope rules, preserves, and verifications
-together. An item with no scope rules or verifications fails `lint` and then
-`finish`, so supply them when you create it. `update_item` amends an item
-without touching its lifecycle; `add_dependency` records that one item needs
-another.
+`update_item` edits title/priority/description/needs/sections/status
+(open/blocked moves only; closing goes through finish/drop).
 
 ## Responses
 
     {"ok": true,  "data": {...}}
     {"ok": false, "code": "E_...", "error": "...", "recovery": [...], "kind": "gate|error"}
 
-`kind: "gate"` is an expected result to act on; `kind: "error"` is an
-environment or protocol failure -- stop and report it. Read `recovery` before
-improvising. Responses are capped at 16 KiB; list tools page rather than
-truncate, so retry with a smaller `limit` plus `cursor`.
+`kind: "gate"` is an expected result to act on; `kind: "error"` is a
+failure -- stop and report it. Read `recovery` before improvising.
+Responses are capped at 16 KiB; lists page with cursors scoped to a
+state revision (a changed revision returns E_CURSOR_STALE: restart
+from the first page).
 
-## Gates
+## Codes
 
-- `E_NOTHING_READY` -- queue empty. Report it; do not invent work.
-- `E_MULTIPLE_CLAIMS` -- you already hold a claim. Use `claims`, then finish or
-  `release` it.
-- `E_CLAIM_STALE` -- lease expired or wrong token. `context` to re-read.
-- `E_SCOPE_GATE` -- a changed file is outside scope. Use `check_scope`; narrow
-  the change, or amend scope deliberately with `update_item`.
-- `E_LINT_GATE` -- planning quality insufficient. `lint` says why.
-- `E_VERIFY_GATE` -- no current workspace attestation. Stop: a human runs the
-  `todo-db verify-run` command given in `recovery`. Your `finish` still closes.
-- `E_BASE_DIVERGED` / `E_BASE_UNREACHABLE` -- the scope git baseline no longer
-  resolves. Stop; a human runs `todo-db rebaseline`.
-- `E_NO_PRINCIPAL` -- principal not resolved. Call `get_instructions`, retry.
-- `E_EXPORT_CONFIRMATION` -- `export` is an unbounded full item dump, not an
-  audit-history query. Do not retry it as a probe; pass
-  `confirm_full_snapshot=true` only for an explicitly requested snapshot.
-- `E_AUTH_MISSING` / `E_AUTH_REJECTED` -- hosted credential problem. Stop
-  writing and report; credentials are provisioned outside the agent.
+- `E_NOTHING_READY` -- nothing claimable. Report it; do not invent work.
+- `E_MULTIPLE_CLAIMS` -- you already hold a claim. Finish or release it.
+- `E_CLAIM_STALE` -- wrong generation or another holder. Show and retry.
+- `E_CONFLICT` -- someone changed the task first. Re-read, re-evaluate.
+- `E_CURSOR_STALE` -- state moved under your pages. Restart listing.
+- `E_OVERSIZED` -- one field exceeds the cap. Use its section read.
+- `E_OFFLINE` -- remote unreachable. Reads may be cached (marked
+  stale); mutations fail rather than succeeding locally.
+- `E_UNKNOWN` -- outcome undetermined; reconcile with the operation ID.
+- `E_NO_PRINCIPAL` -- call `get_instructions`, then retry.
 
-## Not tools, by design
-
-Verification execution (`todo-db verify-run`) and scope rebaseline
-(`todo-db rebaseline`) have no tool at any profile, because stored verification
-commands are arbitrary code written by other actors. A human runs them.
-
-One active claim is enforced per principal. Scope is re-checked on `progress`
-and `finish`.
+Concurrent workers must use different identities (--actor or distinct
+client names). Claims are cooperative, not access control.
 """

@@ -29,20 +29,13 @@ GATE_CODES = frozenset(
     {
         "E_CLAIM_STALE",
         "E_MULTIPLE_CLAIMS",
-        "E_LINT_GATE",
-        "E_SCOPE_GATE",
-        "E_VERIFY_GATE",
+        "E_CONFLICT",
         "E_NOTHING_READY",
-        "E_BASE_DIVERGED",
-        "E_BASE_UNREACHABLE",
         "E_SCHEMA",
-        "E_SCHEMA_BEHIND",
-        "E_SCHEMA_DIVERGED",
-        "E_IDENTITY",
-        "E_AUDIT",
-        "E_EXPORT_CONFIRMATION",
+        "E_STATE",
+        "E_CURSOR_STALE",
         "E_OUTPUT_TRUNCATED",
-        "E_HOSTED",
+        "E_OVERSIZED",
     }
 )
 

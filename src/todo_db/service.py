@@ -19,7 +19,6 @@ from typing import Any
 from . import git_backend
 from . import store as S
 from .errors import (
-    E_CONFLICT,
     E_CURSOR_STALE,
     E_MULTIPLE_CLAIMS,
     E_OFFLINE,

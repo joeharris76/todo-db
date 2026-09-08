@@ -48,6 +48,92 @@ DEFAULT_MAX_RETRIES = 5
 GIT_TIMEOUT_S = 60
 OP_ID_TRAILER = "Todo-Op-Id"
 
+CONFIG_DIRNAME = ".todo-db"
+CONFIG_FILENAME = "config.json"
+
+
+def load_state_config(path: str | Path) -> dict[str, Any]:
+    """Load a ``.todo-db/config.json`` carrying ``state_remote``/``state_branch``."""
+    import json as _json
+
+    path = Path(path)
+    try:
+        payload = _json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise TodoError(f"invalid repo config {path}: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise TodoError(f"invalid repo config {path}: expected a JSON object")
+    for key in ("state_remote", "state_branch"):
+        if key in payload and (not isinstance(payload[key], str) or not payload[key].strip()):
+            raise TodoError(f"invalid repo config {path}: {key!r} must be a non-empty string")
+    return payload
+
+
+def discover_config(start: str | Path | None = None) -> tuple[Path, dict[str, Any]] | None:
+    """Walk up from *start* (default cwd) to a git root or home for the config."""
+    current = Path(start).expanduser().resolve() if start else Path.cwd().resolve()
+    probe = current
+    git_root: Path | None = None
+    while True:
+        if (probe / ".git").exists():
+            git_root = probe
+            break
+        if probe.parent == probe:
+            break
+        probe = probe.parent
+    home = Path.home().resolve()
+    for candidate in (current, *current.parents):
+        path = candidate / CONFIG_DIRNAME / CONFIG_FILENAME
+        if path.is_file():
+            return path, load_state_config(path)
+        if git_root is not None and candidate == git_root:
+            break
+        if candidate == home:
+            break
+    return None
+
+
+def resolve_ref(
+    *,
+    remote: str | None = None,
+    branch: str | None = None,
+    config: str | None = None,
+    repo_root: str | None = None,
+) -> tuple[StateRef, Path | None]:
+    """Resolve the authoritative state branch: flag > env > config file.
+
+    Returns the ref plus the config path used, if any. Never touches the
+    network, so resolving is safe anywhere including offline.
+    """
+    import os as _os
+
+    remote = remote or _os.environ.get("TODO_DB_STATE_REMOTE")
+    branch = branch or _os.environ.get("TODO_DB_STATE_BRANCH")
+    config_ref = config or _os.environ.get("TODO_DB_CONFIG")
+    config_path: Path | None = None
+    if config_ref:
+        config_path = Path(config_ref).expanduser().resolve()
+        if not config_path.is_file():
+            raise TodoError(f"--config/TODO_DB_CONFIG points to a missing file: {config_path}")
+        payload = load_state_config(config_path)
+        remote = remote or payload.get("state_remote")
+        branch = branch or payload.get("state_branch")
+    elif not remote:
+        discovered = discover_config(repo_root)
+        if discovered is not None:
+            config_path, payload = discovered
+            remote = remote or payload.get("state_remote")
+            branch = branch or payload.get("state_branch")
+    if not remote:
+        hint = config_path or (
+            (Path(repo_root).expanduser() if repo_root else Path.cwd()) / CONFIG_DIRNAME / CONFIG_FILENAME
+        )
+        raise TodoError(
+            "no state remote: pass --state-remote, set TODO_DB_STATE_REMOTE, "
+            f"or add state_remote to {hint} (scaffold one with `todo-db bootstrap --write-config`)"
+        )
+    return StateRef(remote=remote, branch=branch or STATE_BRANCH_FALLBACK), config_path
+
 
 @dataclass(frozen=True)
 class StateRef:
@@ -377,6 +463,66 @@ def read(ref: StateRef, cache_dir: str | Path) -> ReadOutcome:
         )
     rev = cached[-1]
     return ReadOutcome(snapshot=load_snapshot(cache / rev), rev=rev, stale=True)
+
+
+def read_rev(ref: StateRef, rev: str) -> Snapshot:
+    """Load the snapshot at a historical commit (recovery/restore reads)."""
+    import json as _json
+
+    tmp = Path(tempfile.mkdtemp(prefix="todo-read-rev-"))
+    try:
+        clone = _git(["clone", "--quiet", "--origin", "origin", ref.remote, str(tmp / "w")])
+        if clone.returncode != 0:
+            raise TodoError(f"remote {ref.remote!r} unreachable", code=E_OFFLINE)
+        work = tmp / "w"
+        exists = _git(["cat-file", "-e", f"{rev}^{{commit}}"], work)
+        if exists.returncode != 0:
+            raise TodoError(f"revision {rev!r} not found on {ref.remote!r}", code=E_STATE)
+        raw_index = _git(["show", f"{rev}:{INDEX_NAME}"], work)
+        if raw_index.returncode != 0:
+            raise TodoError(f"revision {rev!r} has no {INDEX_NAME}", code=E_STATE)
+        try:
+            index = _json.loads(raw_index.stdout)
+        except ValueError as exc:
+            raise TodoError(f"revision {rev!r} has an invalid {INDEX_NAME}: {exc}", code=E_STATE) from exc
+        details: dict[str, dict[str, Any]] = {}
+        if isinstance(index.get("items"), dict):
+            tree = _git(["ls-tree", "-r", "--name-only", rev, "--", ITEMS_NAME], work)
+            if tree.returncode == 0:
+                for line in tree.stdout.splitlines():
+                    name = line.strip().rsplit("/", 1)[-1]
+                    if not name.endswith(".json"):
+                        continue
+                    item_id = name[:-5]
+                    if item_id not in index["items"]:
+                        continue
+                    raw = _git(["show", f"{rev}:{ITEMS_NAME}/{name}"], work)
+                    if raw.returncode != 0:
+                        raise TodoError(f"revision {rev!r} is missing detail for {item_id!r}", code=E_STATE)
+                    try:
+                        details[item_id] = _json.loads(raw.stdout)
+                    except ValueError as exc:
+                        raise TodoError(f"revision {rev!r} detail for {item_id!r} is invalid: {exc}", code=E_STATE) from exc
+        validate_snapshot(index, details)
+        return Snapshot(index=index, details=details)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def restore_rev(ref: StateRef, rev: str, worker: str) -> MutationOutcome:
+    """Append-only restore: a new commit returning state to *rev*'s content."""
+    import json as _json
+
+    wanted = read_rev(ref, rev)
+    payload = _json.loads(_json.dumps({"index": wanted.index, "details": wanted.details}))
+
+    def apply(snap: Snapshot) -> dict[str, Any]:
+        snap.index = payload["index"]
+        snap.details.clear()
+        snap.details.update(payload["details"])
+        return {"id": "restore", "rev": rev}
+
+    return mutate(ref, op="restore", summary=f"restore state to {rev[:12]}", worker=worker, apply=apply)
 
 
 def ls_branch_missing(ref: StateRef) -> bool:
