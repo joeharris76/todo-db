@@ -1,17 +1,17 @@
-name: Audit Chain Operational Monitor
+name: State Branch Operational Monitor
 
-# Operational audit monitor. Run on demand or configure schedule in private ops runner.
+# Operational state monitor. Run on demand or configure schedule in private ops runner.
 on:
   workflow_dispatch:
     inputs:
-      database_target:
-        description: "Database URL or path to verify"
+      state_remote:
+        description: "State remote URL to validate"
         required: false
         default: ""
 
 jobs:
-  verify-audit:
-    name: Full Audit Verification
+  verify-state:
+    name: State Validation
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -31,50 +31,31 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras
 
-      - name: Run Full Audit Chain Verification
+      - name: Run State Validation
         env:
-          TODO_DB_URL: ${{ secrets.TODO_DB_PROD_URL }}
-          TODO_DB_RO_AUTH_TOKEN: ${{ secrets.TODO_DB_PROD_RO_TOKEN }}
-          TODO_DB_AUTH_CONTRACT: v2
-          TODO_DB_AUDIT_OPEN_POLICY: full
-          TARGET_INPUT: ${{ github.event.inputs.database_target }}
+          TODO_DB_STATE_REMOTE: ${{ secrets.TODO_DB_STATE_REMOTE }}
+          TODO_DB_STATE_BRANCH: ${{ secrets.TODO_DB_STATE_BRANCH }}
+          TARGET_INPUT: ${{ github.event.inputs.state_remote }}
         run: |
-          TARGET="${TARGET_INPUT:-${TODO_DB_URL}}"
+          TARGET="${TARGET_INPUT:-${TODO_DB_STATE_REMOTE}}"
           if [ -z "$TARGET" ]; then
-            if [ -f ".todo-db/standalone.sqlite" ]; then
-              TARGET=".todo-db/standalone.sqlite"
-            else
-              echo "::warning::No target specified and TODO_DB_PROD_URL secret is not configured; skipping audit monitor."
-              exit 0
-            fi
+            echo "::warning::No state remote specified and TODO_DB_STATE_REMOTE secret is not configured; skipping state monitor."
+            exit 0
           fi
-          echo "Verifying audit chain for target: $TARGET"
-          case "$TARGET" in
-            libsql://*|https://*)
-              uv run todo-db --db "$TARGET" doctor --json > /tmp/todo-db-doctor.json
-              uv run python - <<'PY'
-          import json
+          echo "Validating state branch: $TARGET"
+          uv run todo-db validate --state-remote "$TARGET" > /tmp/state-validation.json
+          cat /tmp/state-validation.json
+          uv run todo-db recover --state-remote "$TARGET" --limit 5
 
-          with open("/tmp/todo-db-doctor.json", encoding="utf-8") as handle:
-              report = json.load(handle)
-          database = next(check for check in report["checks"] if check["name"] == "database")
-          if database.get("source") != "TODO_DB_RO_AUTH_TOKEN" or database.get("capability") != "read-only":
-              raise SystemExit("hosted audit requires TODO_DB_RO_AUTH_TOKEN with read-only provenance")
-          PY
-              ;;
-          esac
-          uv run todo-db --db "$TARGET" audit verify > /tmp/audit-integrity.txt
-          cat /tmp/audit-integrity.txt
-
-      - name: Upload Audit Verification Summary
-        if: success() && hashFiles('/tmp/audit-integrity.txt') != ''
+      - name: Upload State Validation Summary
+        if: success() && hashFiles('/tmp/state-validation.json') != ''
         uses: actions/upload-artifact@v4
         with:
-          name: audit-integrity-summary
-          path: /tmp/audit-integrity.txt
+          name: state-validation-summary
+          path: /tmp/state-validation.json
           retention-days: 14
 
       - name: Notify on Failure
         if: failure()
         run: |
-          echo "::error::Audit chain verification failed! Check target configuration or inspect database for potential tampering."
+          echo "::error::State validation failed! Check the state remote and branch for corruption or invalid snapshots."

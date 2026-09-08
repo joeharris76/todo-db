@@ -6,7 +6,7 @@ import json
 import subprocess
 from pathlib import Path
 
-from todo_db import git_backend, service as Svc
+from todo_db import git_backend
 from todo_db.service import MAX_BYTES, TrackerService, count_tokens
 
 

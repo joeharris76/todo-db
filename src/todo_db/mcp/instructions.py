@@ -54,6 +54,8 @@ from the first page).
 - `E_UNKNOWN` -- outcome undetermined; reconcile with the operation ID.
 - `E_NO_PRINCIPAL` -- call `get_instructions`, then retry.
 
-Concurrent workers must use different identities (--actor or distinct
-client names). Claims are cooperative, not access control.
+One server instance is one worker identity: concurrent workers run
+separate servers with different --actor values (or distinct client
+names when no --actor is set). Claims are cooperative, not access
+control.
 """

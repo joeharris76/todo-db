@@ -328,6 +328,11 @@ class TrackerService:
                     code=E_MULTIPLE_CLAIMS,
                 )
             took = S.op_take(snap, item_id, worker, ttl_hours=self.ttl_hours)
+            if took.get("adopted"):
+                # Restart/re-adoption refreshes the lease under the same
+                # generation instead of failing as a no-op.
+                S.op_renew(snap, item_id, worker, took["claim"]["generation"], ttl_hours=self.ttl_hours)
+                took = {"id": item_id, "claim": snap.index["items"][item_id]["claim"], "adopted": True}
             entry = snap.index["items"][item_id]
             detail = snap.details[item_id]
             needs = list(entry.get("needs", []))

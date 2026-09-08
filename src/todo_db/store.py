@@ -15,7 +15,10 @@ Lifecycle: ``open``, ``active``, ``blocked``, ``done``, ``dropped``.
 Priorities preserve the historical bands: ``critical``, ``high``,
 ``medium-high``, ``medium``, ``low``.
 
-A claim is ``{"worker": str, "expires_at": UTC ISO Z, "generation": uuid4hex}``.
+A claim is ``{"worker": str, "expires_at": UTC ISO Z, "generation": uuid4hex,
+"renewals": int}``. The counter starts at 0 on take and increments on every
+renewal or restart re-adoption, so a renewal is always a state change and
+the renewal path stays observable.
 Ownership plus generation checks protect renew, release, and finish from
 stale writers. Claims are cooperative concurrency controls, not
 authentication against a malicious repository writer: every writer must run
@@ -166,6 +169,9 @@ def _check_entry_shape(item_id: str, entry: Any) -> dict[str, Any]:
         generation = str(claim["generation"])
         if not re.fullmatch(r"[0-9a-f]{32}", generation):
             raise TodoError(f"index entry {item_id!r} claim has an invalid generation", code=E_STATE)
+        renewals = claim.get("renewals", 0)
+        if not isinstance(renewals, int) or isinstance(renewals, bool) or renewals < 0:
+            raise TodoError(f"index entry {item_id!r} claim has an invalid renewals counter", code=E_STATE)
     return entry
 
 
@@ -545,6 +551,7 @@ def op_take(
         "worker": worker,
         "expires_at": (moment + timedelta(hours=ttl_hours)).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "generation": new_generation(),
+        "renewals": 0,
     }
     entry["claim"] = fresh
     entry["status"] = "active"
@@ -574,6 +581,10 @@ def op_renew(
     if not 0 < ttl_hours <= MAX_TTL_HOURS:
         raise TodoError(f"ttl must be within (0, {MAX_TTL_HOURS}] hours", code=E_STATE)
     claim["expires_at"] = (moment + timedelta(hours=ttl_hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # The counter guarantees a renewal is always a state change, even when
+    # the second-resolution expiry string is unchanged, and it makes the
+    # bounded renewal path observable.
+    claim["renewals"] = int(claim.get("renewals", 0)) + 1
     validate_snapshot(snapshot.index, snapshot.details)
     return {"id": item_id, "claim": dict(claim)}
 

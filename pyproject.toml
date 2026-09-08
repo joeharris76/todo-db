@@ -4,15 +4,15 @@ build-backend = "hatchling.build"
 
 [project]
 name = "todo-db"
-version = "0.6.1"
-description = "A project-isolated database-backed TODO tracker"
+version = "0.7.0"
+description = "A JSON/Git TODO tracker for coding agents"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [
     { name = "Joe Harris" },
 ]
-keywords = ["todo", "tracker", "database", "sqlite", "turso"]
+keywords = ["todo", "tracker", "git", "json", "mcp"]
 dependencies = [
     "tomli>=2; python_version < '3.11'",
 ]
@@ -38,18 +38,6 @@ todo-db-mcp = "todo_db.mcp.server:main"
 #   ln -s "$(which todo-db)" ~/.local/bin/todo   # or: alias todo=todo-db
 
 [project.optional-dependencies]
-hosted = [
-    "libsql>=0.1.11",
-]
-audit = [
-    "cryptography>=42",
-]
-legacy = [
-    "pyyaml>=6",
-]
-findings = [
-    "pyyaml>=6",
-]
 mcp = [
     "mcp>=1.10.0,<2",
 ]
@@ -78,10 +66,8 @@ line-length = 120
 
 [dependency-groups]
 dev = [
-    "cryptography>=49.0.0",
-    "libsql>=0.1.11",
     "pytest>=9.1.1",
-    "pyyaml>=6",
     "ruff>=0.15.22",
+    "tiktoken>=0.14.0",
     "tomli>=2; python_version < '3.11'",
 ]

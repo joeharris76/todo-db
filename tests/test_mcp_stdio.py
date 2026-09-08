@@ -1,4 +1,4 @@
-"""Subprocess stdio conformance, stdout purity, and tool-schema freeze (mcp-stdio-conformance)."""
+"""Subprocess stdio conformance, stdout purity, and tool-schema freeze."""
 
 from __future__ import annotations
 
@@ -7,30 +7,40 @@ import subprocess
 import sys
 from pathlib import Path
 
-from todo_db import DatabaseConfig, ProjectIdentity, TodoDatabase
+EXPECTED_TOOLS = {
+    "create_item",
+    "finish",
+    "get_instructions",
+    "list_items",
+    "release",
+    "renew",
+    "show_item",
+    "take",
+    "update_item",
+}
 
 
-def _make_project(root: Path) -> Path:
-    (root / ".git").mkdir(exist_ok=True)
-    # Make it a real git repo for the stdio test (GitScopeEngine needs it).
-    subprocess.run(["git", "init", "--quiet"], cwd=root, check=True)
-    subprocess.run(["git", "config", "user.name", "Test"], cwd=root, check=True)
-    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=root, check=True)
-    cfgdir = root / ".todo-db"
-    cfgdir.mkdir(exist_ok=True)
-    ident = ProjectIdentity(project_id="p", repository="https://example.com/p")
-    payload = {"project_id": ident.project_id, "repository": ident.repository}
-    (cfgdir / "config.json").write_text(json.dumps(payload))
-    db_path = cfgdir / "standalone.sqlite"
-    TodoDatabase.open(DatabaseConfig(path=str(db_path), identity=ident)).close()
-    return db_path
+def _make_state(root: Path) -> str:
+    remote = root / "state.git"
+    subprocess.run(["git", "init", "--quiet", "--bare", str(remote)], check=True)
+    subprocess.run(
+        [sys.executable, "-m", "todo_db.cli", "bootstrap",
+         "--state-remote", str(remote), "--state-branch", "todo-state"],
+        capture_output=True, text=True, check=True,
+        cwd=Path(__file__).resolve().parents[1],
+    )
+    return str(remote)
 
 
-def _spawn_server(repo_root: Path) -> subprocess.Popen:
-    env = dict(subprocess.os.environ)
+def _spawn_server(remote: str, cache: Path) -> subprocess.Popen:
+    import os
+
+    env = dict(os.environ)
     env["PYTHONUNBUFFERED"] = "1"
+    env["TODO_DB_CACHE_DIR"] = str(cache)
     return subprocess.Popen(
-        [sys.executable, "-m", "todo_db.mcp", "--repo-root", str(repo_root), "--actor", "tester"],
+        [sys.executable, "-m", "todo_db.mcp",
+         "--state-remote", remote, "--actor", "tester"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -46,20 +56,17 @@ def _rpc(proc: subprocess.Popen, method: str, params: dict | None = None, req_id
         msg["params"] = params
     proc.stdin.write(json.dumps(msg) + "\n")
     proc.stdin.flush()
-    # Read one line of stdout
     line = proc.stdout.readline()
     if not line:
-        # Check stderr for error
         err = proc.stderr.read()
         raise RuntimeError(f"no response for {method}: stderr={err!r}")
     return json.loads(line)
 
 
 def test_stdio_smoke_initialize_and_tools_list(tmp_path: Path):
-    _make_project(tmp_path)
-    proc = _spawn_server(tmp_path)
+    remote = _make_state(tmp_path)
+    proc = _spawn_server(remote, tmp_path / "cache")
     try:
-        # initialize
         resp = _rpc(
             proc,
             "initialize",
@@ -67,43 +74,29 @@ def test_stdio_smoke_initialize_and_tools_list(tmp_path: Path):
             req_id=1,
         )
         assert "result" in resp, f"initialize failed: {resp}"
-        # FastMCP does not forward a version to the lowlevel server, so this
-        # reported the MCP SDK's version to every client instead of ours.
-        from todo_db.database import TOOL_VERSION
+        from todo_db import TOOL_VERSION
 
         assert resp["result"]["serverInfo"] == {"name": "todo-db", "version": TOOL_VERSION}
-        # initialized notification
         proc.stdin.write(json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}) + "\n")
         proc.stdin.flush()
-        # tools/list
         resp2 = _rpc(proc, "tools/list", {}, req_id=2)
         assert "result" in resp2, f"tools/list failed: {resp2}"
-        tools = resp2["result"].get("tools") or resp2["result"].get("tools", [])
-        # Also handle result.tools
-        if isinstance(tools, dict):
-            tools = tools.get("tools", [])
-        names = {t["name"] for t in tools}
-        assert "get_instructions" in names
-        assert "next" in names
-        assert "take" in names
-        # call next
-        resp3 = _rpc(proc, "tools/call", {"name": "next", "arguments": {}}, req_id=3)
+        names = {t["name"] for t in resp2["result"]["tools"]}
+        assert names == EXPECTED_TOOLS, f"tool surface drift: {sorted(names)}"
+        resp3 = _rpc(proc, "tools/call", {"name": "list_items", "arguments": {}}, req_id=3)
         assert "result" in resp3
-        # Ensure every stdout line was JSON-RPC
-        # (we already parsed 3 lines; ensure no extra non-JSON)
     finally:
         try:
             proc.terminate()
-            proc.wait(timeout=2)
+            proc.wait(timeout=5)
         except Exception:
             proc.kill()
 
 
 def test_stdout_purity_no_non_json(tmp_path: Path):
-    _make_project(tmp_path)
-    proc = _spawn_server(tmp_path)
+    remote = _make_state(tmp_path)
+    proc = _spawn_server(remote, tmp_path / "cache")
     try:
-        # Do a full interaction and collect all stdout lines
         _rpc(
             proc,
             "initialize",
@@ -117,13 +110,10 @@ def test_stdout_purity_no_non_json(tmp_path: Path):
         proc.stdin.write(json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}) + "\n")
         proc.stdin.flush()
         _rpc(proc, "tools/list", {}, req_id=2)
-        _rpc(proc, "tools/call", {"name": "next", "arguments": {}}, req_id=3)
+        _rpc(proc, "tools/call", {"name": "list_items", "arguments": {}}, req_id=3)
         _rpc(proc, "tools/call", {"name": "get_instructions", "arguments": {}}, req_id=4)
-        # Give server a moment to flush
         proc.stdin.close()
-        # Read remaining stdout lines
         remaining = proc.stdout.read()
-        # All lines should be JSON or empty
         for line in remaining.splitlines():
             if not line.strip():
                 continue
@@ -132,13 +122,12 @@ def test_stdout_purity_no_non_json(tmp_path: Path):
             except json.JSONDecodeError:
                 raise AssertionError(f"non-JSON stdout line: {line!r}")
             assert "jsonrpc" in obj
-        # Stderr should contain logs, not stdout
         stderr = proc.stderr.read()
         assert "session id" in stderr or "principal" in stderr or "target" in stderr
     finally:
         try:
             proc.terminate()
-            proc.wait(timeout=2)
+            proc.wait(timeout=5)
         except Exception:
             proc.kill()
 
@@ -148,7 +137,6 @@ def test_tool_schema_freeze():
     assert snap_path.is_file(), f"snapshot missing: {snap_path}"
     snapshot = json.loads(snap_path.read_text())
 
-    # Build current snapshot via in-memory server (agent profile)
     import tempfile
 
     import anyio
@@ -157,19 +145,11 @@ def test_tool_schema_freeze():
     from todo_db.mcp.server import build_parser, build_server, resolve_launch_config
 
     tmp = Path(tempfile.mkdtemp())
-    subprocess.run(["git", "init", "--quiet"], cwd=tmp, check=True)
-    subprocess.run(["git", "config", "user.name", "Test"], cwd=tmp, check=True)
-    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp, check=True)
-    cfgdir = tmp / ".todo-db"
-    cfgdir.mkdir()
-    ident = ProjectIdentity(project_id="p", repository="https://example.com/p")
-    payload = {"project_id": ident.project_id, "repository": ident.repository}
-    (cfgdir / "config.json").write_text(json.dumps(payload))
-    db_path = cfgdir / "standalone.sqlite"
-    TodoDatabase.open(DatabaseConfig(path=str(db_path), identity=ident)).close()
-
+    remote = tmp / "state.git"
+    subprocess.run(["git", "init", "--quiet", "--bare", str(remote)], check=True)
+    cache = tmp / "cache"
     parser = build_parser()
-    args = parser.parse_args(["--repo-root", str(tmp), "--actor", "tester"])
+    args = parser.parse_args(["--state-remote", str(remote), "--actor", "tester", "--cache-dir", str(cache)])
     launch = resolve_launch_config(args)
     server = build_server(launch)
 
@@ -183,7 +163,6 @@ def test_tool_schema_freeze():
                     entry["outputSchema"] = t.outputSchema
                 current.append(entry)
             current = sorted(current, key=lambda x: x["name"])
-            # Compare names and descriptions and schemas
             assert len(current) == len(snapshot), f"tool count drift: {len(current)} vs {len(snapshot)}"
             for cur, snap in zip(current, snapshot):
                 assert cur["name"] == snap["name"], f"name drift: {cur['name']} vs {snap['name']}"
