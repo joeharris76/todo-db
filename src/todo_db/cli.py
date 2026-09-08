@@ -65,7 +65,12 @@ def _preflight_write_config(args: argparse.Namespace, ref: git_backend.StateRef)
     if not args.write_config:
         return None
     root = Path(args.repo_root).expanduser().resolve() if args.repo_root else Path.cwd().resolve()
-    path = root / git_backend.CONFIG_DIRNAME / git_backend.CONFIG_FILENAME
+    parent = root / git_backend.CONFIG_DIRNAME
+    # A non-directory at the config location (or an unwritable tree) must
+    # refuse here, before the branch is created — never strand state.
+    if parent.exists() and not parent.is_dir():
+        raise TodoDBError(f"cannot write config: {parent} exists and is not a directory")
+    path = parent / git_backend.CONFIG_FILENAME
     payload = {"state_remote": ref.remote, "state_branch": ref.branch}
     if path.is_file():
         try:

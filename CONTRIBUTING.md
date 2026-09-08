@@ -26,8 +26,7 @@ uv run ruff check .
 # 2. Run test suite
 uv run pytest -q
 
-# 3. Verify CLI and schema parity conformance
-uv run python scripts/parity_conformance.py --check
+# 3. Verify the tool-schema snapshot is current (regenerate scripts/mcp_snapshots/tools.json with any tool change)
 
 # 4. Verify distribution build
 uv build

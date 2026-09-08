@@ -87,9 +87,21 @@
     }
   },
   {
-    "description": "Abandon a task as dropped. Refused while another worker holds a live claim on it.",
+    "description": "Abandon a task as dropped. Unclaimed tasks drop freely; a live claim needs its generation.",
     "inputSchema": {
       "properties": {
+        "generation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Generation"
+        },
         "id": {
           "title": "Id",
           "type": "string"

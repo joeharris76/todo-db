@@ -130,6 +130,20 @@ def test_migration_rejects_dangling_dependencies() -> None:
         migrate_export(export)
 
 
+def test_migration_archives_dependency_row_extras() -> None:
+    export = _export()
+    export["tables"]["item_deps"][0]["source_note"] = "why beta waits"
+    snapshot, _ = migrate_export(export)
+    assert snapshot.details["beta"]["legacy"]["item_deps"][0]["source_note"] == "why beta waits"
+
+
+def test_migration_refuses_non_object_rows() -> None:
+    export = _export()
+    export["tables"]["items"].append(["not", "an", "object"])
+    with pytest.raises(TodoError):
+        migrate_export(export)
+
+
 def test_migrate_file_dry_run_and_apply(tmp_path: Path) -> None:
     source = tmp_path / "legacy-export.json"
     source.write_text(json.dumps(_export()), encoding="utf-8")

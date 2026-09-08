@@ -24,7 +24,7 @@ acknowledgement; lists return brief rows (id/title/priority/status).
    context to begin work. One live claim per worker.
 5. `release` -- hand the claim back (needs the generation from take).
 6. `finish` -- close the task (needs the generation from take).
-   `drop` abandons a task; it is refused while another worker holds it.
+   `drop` abandons a task; a live claim needs its generation.
 7. `renew` -- extend a long-running claim (same generation, no
    progress milestones required).
 

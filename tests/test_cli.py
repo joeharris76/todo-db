@@ -36,6 +36,18 @@ def test_bootstrap_validate_and_collision(tmp_path: Path, capsys) -> None:
     assert main(["bootstrap", *_args(remote)]) == 2
 
 
+def test_bootstrap_config_blocked_before_branch(tmp_path: Path, capsys) -> None:
+    remote = _remote(tmp_path)
+    root = tmp_path / "proj"
+    root.mkdir()
+    (root / ".todo-db").write_text("a regular file, not a directory")
+    before = git_backend.ls_remote_tip(StateRef(remote=remote, branch="todo-state"))
+    assert main(["bootstrap", *_args(remote), "--write-config", "--repo-root", str(root)]) == 2
+    capsys.readouterr()
+    # The refusal landed before any remote mutation: no branch was created.
+    assert git_backend.ls_remote_tip(StateRef(remote=remote, branch="todo-state")) == before
+
+
 def test_list_show_recover_round_trip(tmp_path: Path, capsys) -> None:
     remote = _remote(tmp_path)
     assert main(["bootstrap", *_args(remote)]) == 0

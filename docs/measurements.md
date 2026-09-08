@@ -63,4 +63,4 @@ Test lines fell because the removed suite tested the removed product
 (hosted backends, audit chain, findings, workflow gates, SQL budgets).
 Retained behaviors — readiness, priority ordering, cycle rejection,
 one-winner claims, bounded output, migration mapping — are ported into
-the new suite, not deleted. 46 tests pass: `uv run pytest -q`.
+the new suite, not deleted. 64 tests pass: `uv run pytest -q`.

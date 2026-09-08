@@ -126,6 +126,10 @@ def validate_worker(worker: str) -> str:
     cleaned = worker.strip()
     if len(cleaned) > MAX_WORKER_LEN:
         raise TodoError(f"worker identity exceeds {MAX_WORKER_LEN} chars", code=E_STATE)
+    # Worker identities land in commit trailers, where a newline would forge
+    # protocol lines. Single line, no control characters.
+    if any(ord(char) < 32 for char in cleaned):
+        raise TodoError("worker identity must be a single line without control characters", code=E_STATE)
     return cleaned
 
 
@@ -227,6 +231,12 @@ def validate_snapshot(index: Any, details: dict[str, Any]) -> dict[str, Any]:
                 raise TodoError(f"task {item_id!r} needs unknown task {dep!r}", code=E_STATE)
         if entry["status"] in TERMINAL_STATUSES and entry.get("claim") is not None:
             raise TodoError(f"task {item_id!r} is {entry['status']} but still carries a claim", code=E_STATE)
+        if entry["status"] in ("open", "blocked") and entry.get("claim") is not None:
+            raise TodoError(
+                f"task {item_id!r} is {entry['status']} but carries a claim; "
+                "only active tasks hold claims",
+                code=E_STATE,
+            )
     _check_cycles(items)
     if not isinstance(details, dict):
         raise TodoError("details must be a mapping of ID to detail object", code=E_STATE)
@@ -279,6 +289,9 @@ def load_snapshot(state_dir: str | Path) -> Snapshot:
     """Load and validate one local state directory."""
     root = Path(state_dir)
     index = _read_state_file(root / INDEX_FILENAME, INDEX_FILENAME)
+    items_dir = root / ITEMS_DIRNAME
+    if items_dir.is_symlink():
+        raise TodoError("refusing to follow symlinked items directory", code=E_STATE)
     items_dir = root / ITEMS_DIRNAME
     details: dict[str, dict[str, Any]] = {}
     if isinstance(index, dict) and isinstance(index.get("items"), dict):
@@ -646,14 +659,31 @@ def op_finish(
     return {"id": item_id, "status": "done"}
 
 
-def op_drop(snapshot: Snapshot, item_id: str, worker: str | None = None) -> dict[str, Any]:
+def op_drop(
+    snapshot: Snapshot,
+    item_id: str,
+    worker: str | None = None,
+    generation: str | None = None,
+) -> dict[str, Any]:
+    """Abandon a task. A live claim needs its holder's generation, exactly
+    like release/finish: a stale process image must not terminally drop work
+    another process re-adopted. Unclaimed tasks drop without credentials."""
     entry = _require_entry(snapshot, item_id)
     if entry["status"] in TERMINAL_STATUSES:
         raise TodoError(f"task {item_id!r} is already {entry['status']}", code=E_STATE)
     claim = entry.get("claim")
-    if claim_is_live(claim) and (worker is None or claim.get("worker") != validate_worker(worker)):
-        holder = claim["worker"] if claim else "?"
-        raise TodoError(f"task {item_id!r} is claimed by {holder!r}", code=E_CONFLICT)
+    if claim_is_live(claim):
+        if (
+            worker is None
+            or generation is None
+            or claim.get("worker") != validate_worker(worker)
+            or claim.get("generation") != generation
+        ):
+            holder = claim["worker"] if claim else "?"
+            raise TodoError(
+                f"stale claim for {item_id!r}: held by {holder!r}; only the holder can drop",
+                code=E_CLAIM_STALE,
+            )
     entry["claim"] = None
     entry["status"] = "dropped"
     validate_snapshot(snapshot.index, snapshot.details)

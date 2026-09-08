@@ -241,15 +241,24 @@ def ls_remote_tip(ref: StateRef) -> str | None:
 def _find_op_commit(clone: Path, rev: str, op_id: str) -> str | None:
     # NOTE: callers fetch with an explicit refspec, which updates FETCH_HEAD
     # but not necessarily the tracking ref, so search from the given rev.
-    # Fixed-strings: operation IDs are data, never a pattern.
+    # --grep is substring matching, so candidates are verified against the
+    # exact trailer line: a worker-controlled message containing
+    # "Todo-Op-Id: <id>" anywhere else must never reconcile as that operation.
     _check_op_id(op_id)
+    wanted = f"{OP_ID_TRAILER}: {op_id}"
     proc = _git(
-        ["log", rev, "--fixed-strings", f"--grep={OP_ID_TRAILER}: {op_id}", "--format=%H"],
+        ["log", rev, "--fixed-strings", f"--grep={wanted}", "--format=%H"],
         clone,
     )
     if proc.returncode != 0:
         return None
-    return proc.stdout.strip().splitlines()[0] if proc.stdout.strip() else None
+    for sha in proc.stdout.strip().splitlines():
+        body = _git(["show", "-s", "--format=%B", sha], clone)
+        if body.returncode != 0:
+            continue
+        if any(line.strip() == wanted for line in body.stdout.splitlines()):
+            return sha
+    return None
 
 
 def namespace(ref: StateRef) -> str:
@@ -263,8 +272,12 @@ def _ns_dir(cache_dir: str | Path, ref: StateRef) -> Path:
 
 
 def _remember_rev(ns: Path, rev: str) -> None:
+    import os as _os
+
     ns.mkdir(parents=True, exist_ok=True)
-    tmp = ns / ".last.tmp"
+    # Unique sibling per writer: two processes sharing one cache namespace
+    # must never unlink each other's pointer source.
+    tmp = ns / f".last.{_os.getpid()}.{uuid4().hex}.tmp"
     tmp.write_text(rev + "\n", encoding="utf-8")
     tmp.replace(ns / "last")
 

@@ -311,6 +311,14 @@ class TrackerService:
     ) -> dict[str, Any]:
         # Section continuations bind the revision they were issued for: state
         # may have moved since, and splicing versions must be explicit.
+        # Offset pages always continue a sequence, so they always require
+        # the revision; only a first page (offset 0) may read current.
+        if offset > 0 and want_rev is None:
+            return err(
+                E_CURSOR_STALE,
+                "section continuation requires its revision; re-read show_item first",
+                recovery=["call show_item without field/offset"],
+            )
         if want_rev is not None and want_rev != current_rev:
             return err(
                 E_CURSOR_STALE,
@@ -380,10 +388,19 @@ class TrackerService:
             return err(exc.code or E_STATE, str(exc))
         if result.ok:
             ack = {"id": result.ack.get("id"), "rev": result.sha, **{k: v for k, v in result.ack.items() if k != "id"}}
-            # Section continuations minted pre-commit learn their revision here.
-            for value in ack.values():
-                if isinstance(value, dict) and set(value) >= {"field", "offset"}:
-                    value.setdefault("rev", result.sha)
+            # Section continuations minted pre-commit learn their revision
+            # here, at any nesting depth (take nests needs continuations).
+            def stamp(node: Any) -> None:
+                if isinstance(node, dict):
+                    if {"field", "offset"} <= set(node):
+                        node.setdefault("rev", result.sha)
+                    for child in node.values():
+                        stamp(child)
+                elif isinstance(node, list):
+                    for child in node:
+                        stamp(child)
+
+            stamp(ack)
             env = ok(ack)
             if not _fits(env):
                 return err(E_OUTPUT_TRUNCATED, "acknowledgement exceeded the byte cap")
@@ -506,15 +523,21 @@ class TrackerService:
                     "offset": len(excerpt),
                     "budget": SECTION_BUDGET,
                 }
+            # Size against the post-commit envelope: _mutate injects the
+            # 40-char revision afterwards, so a boundary fit here must not
+            # become an overflow there.
+            def fits_published(candidate: dict[str, Any]) -> bool:
+                return _fits(ok({"rev": "0" * 40, **candidate}))
+
             candidate = {**ack, **context}
-            if _fits(ok(candidate)):
+            if fits_published(candidate):
                 return candidate
             # Degenerate fallback: context that still overflows is dropped
             # rather than stranding the worker without its generation.
             del context["description_excerpt"]
             context["description_continuation"] = {"field": "description", "offset": 0, "budget": SECTION_BUDGET}
             candidate = {**ack, **context}
-            if _fits(ok(candidate)):
+            if fits_published(candidate):
                 return candidate
             return ack
 
@@ -545,10 +568,10 @@ class TrackerService:
 
         return self._mutate("renew", f"{worker} renews {item_id}", apply)
 
-    def drop(self, item_id: str) -> dict[str, Any]:
+    def drop(self, item_id: str, generation: str | None = None) -> dict[str, Any]:
         worker = self.worker
 
         def apply(snap: S.Snapshot) -> dict[str, Any]:
-            return S.op_drop(snap, item_id, worker)
+            return S.op_drop(snap, item_id, worker, generation)
 
         return self._mutate("drop", f"{worker} drops {item_id}", apply)

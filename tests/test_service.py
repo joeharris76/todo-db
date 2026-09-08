@@ -138,6 +138,30 @@ def test_take_with_huge_needs_keeps_generation(tmp_path: Path) -> None:
     assert not stale_section["ok"] and stale_section["code"] == "E_CURSOR_STALE"
 
 
+def test_boundary_take_never_strands_generation(tmp_path: Path, monkeypatch) -> None:
+    import todo_db.service as svcmod
+
+    svc = _svc(tmp_path)
+    assert svc.create_item("edge", "Edge task", description="D" * 5000)["ok"]
+    # Shrink the cap so the ack lands exactly on the boundary: the claim
+    # must still come back with its generation.
+    monkeypatch.setattr(svcmod, "MAX_BYTES", 3000)
+    took = svc.take("edge")
+    assert took["ok"], took
+    assert took["data"]["claim"]["generation"]
+
+
+def test_section_offset_requires_revision(tmp_path: Path) -> None:
+    svc = _svc(tmp_path)
+    assert svc.create_item("s1", "Sectioned", description="E" * 20000)["ok"]
+    first = svc.show_item("s1", field="description", offset=0, budget=6000)
+    assert first["ok"]
+    cont = first["data"]["continuation"]
+    assert cont["rev"]
+    # Omitting the revision on a continuation page fails closed.
+    assert not svc.show_item("s1", field="description", offset=cont["offset"])["ok"]
+
+
 def test_error_envelopes_stay_bounded(tmp_path: Path) -> None:
     svc = _svc(tmp_path)
     huge = "z" * 100000
@@ -159,7 +183,8 @@ def test_oversized_item_reports_alternate_read(tmp_path: Path) -> None:
     assert first["ok"] and first["data"]["window"]
     assert "continuation" in first["data"]
     cont = first["data"]["continuation"]
-    second = svc.show_item("big", field="description", offset=cont["offset"], budget=cont["budget"])
+    second = svc.show_item(
+        "big", field="description", offset=cont["offset"], budget=cont["budget"], rev=cont["rev"])
     assert second["ok"]
     past_end = svc.show_item("big", field="description", offset=10**9)
     assert not past_end["ok"]

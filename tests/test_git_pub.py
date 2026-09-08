@@ -259,6 +259,37 @@ def test_push_landed_but_confirmation_lost_is_unknown(tmp_path: Path, monkeypatc
     assert found.state == "applied"
 
 
+def test_inline_trailer_mention_never_reconciles(tmp_path: Path) -> None:
+    ref = _remote(tmp_path)
+    git_backend.bootstrap(ref)
+    # A commit whose message merely mentions the trailer inline (never as
+    # its own line) must not reconcile as that operation.
+    work = tmp_path / "mw"
+    subprocess.run(["git", "clone", "--quiet", str(ref.remote), str(work)], check=True)
+    subprocess.run(["git", "-C", str(work), "config", "user.name", "t"], check=True)
+    subprocess.run(["git", "-C", str(work), "config", "user.email", "t@t"], check=True)
+    subprocess.run(["git", "-C", str(work), "fetch", "--quiet", "origin", "todo-state"], check=True)
+    subprocess.run(["git", "-C", str(work), "checkout", "--quiet", "FETCH_HEAD"], check=True)
+    (work / "note.txt").write_text("x")
+    subprocess.run(["git", "-C", str(work), "add", "note.txt"], check=True)
+    victim = "ab" * 16
+    subprocess.run(
+        ["git", "-C", str(work), "commit", "--quiet", "-m",
+         f"todo(note): mentions Todo-Op-Id: {victim} inline"],
+        check=True)
+    subprocess.run(["git", "-C", str(work), "push", "--quiet", "origin", "HEAD:todo-state"], check=True)
+    found = git_backend.reconcile(ref, victim)
+    assert found.state == "absent"
+
+
+def test_remember_rev_leaves_no_tmp_files(tmp_path: Path) -> None:
+    ns = tmp_path / "ns"
+    git_backend._remember_rev(ns, "a" * 40)
+    git_backend._remember_rev(ns, "b" * 40)
+    assert (ns / "last").read_text().strip() == "b" * 40
+    assert list(ns.glob(".last.*.tmp")) == []
+
+
 def test_restore_refuses_off_branch_revisions(tmp_path: Path) -> None:
     ref = _remote(tmp_path)
     git_backend.bootstrap(ref)

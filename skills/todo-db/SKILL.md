@@ -41,7 +41,7 @@ change goes through a tool so publication stays atomic.
 | 4 | `renew` | Extend a long-running claim. Same generation; no progress milestones required. |
 | 5 | `finish` | Close the task with the `generation` from `take`. No work breakdown or attestation required. |
 | — | `release` | Hand the claim back without finishing (needs the `generation`). |
-| — | `drop` | Abandon a task as dropped. Refused while another worker holds a live claim. |
+| — | `drop` | Abandon a task as dropped. Unclaimed tasks drop freely; a live claim needs its `generation`. |
 
 ## Reading the response envelope
 

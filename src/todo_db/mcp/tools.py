@@ -211,14 +211,15 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
 
     @server.tool(
         name="drop",
-        description="Abandon a task as dropped. Refused while another worker holds a live claim on it.",
+        description="Abandon a task as dropped. Unclaimed tasks drop freely; a live claim needs its generation.",
     )
     async def drop_tool(
         id: str,
+        generation: str | None = None,
         ctx: Context = None,  # type: ignore[assignment]
     ) -> dict[str, Any]:
         worker = _need_principal(holder, ctx)
         if not isinstance(worker, str):
             return worker
         svc = _service(target, worker)
-        return await asyncio.to_thread(svc.drop, id)
+        return await asyncio.to_thread(svc.drop, id, generation)

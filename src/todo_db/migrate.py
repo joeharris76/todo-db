@@ -77,7 +77,14 @@ def _rows(export: dict[str, Any], table: str) -> list[dict[str, Any]]:
     rows = tables.get(table, [])
     if not isinstance(rows, list):
         raise TodoError(f"export table {table!r} must be a list", code=E_STATE)
-    return [dict(row) for row in rows]
+    clean: list[dict[str, Any]] = []
+    for row in rows:
+        # dict() on a non-dict would silently accept sequences of pairs or
+        # raise an uncaught TypeError; refuse anything but objects up front.
+        if not isinstance(row, dict):
+            raise TodoError(f"export table {table!r} holds a non-object row", code=E_STATE)
+        clean.append(dict(row))
+    return clean
 
 
 def migrate_export(export: dict[str, Any], *, now: datetime | None = None) -> tuple[S.Snapshot, dict[str, Any]]:
@@ -102,6 +109,7 @@ def migrate_export(export: dict[str, Any], *, now: datetime | None = None) -> tu
             raise TodoError("export items rows must be objects", code=E_STATE)
         item_ids.add(str(row.get("id", "")))
     deps: dict[str, list[str]] = {}
+    dep_rows: dict[str, list[dict[str, Any]]] = {}
     for row in _rows(export, "item_deps"):
         source, target = str(row.get("item_id", "")), str(row.get("needs_item", ""))
         if source not in item_ids:
@@ -109,6 +117,9 @@ def migrate_export(export: dict[str, Any], *, now: datetime | None = None) -> tu
         if target not in item_ids:
             raise TodoError(f"export dependency on unknown item {target!r}", code=E_STATE)
         deps.setdefault(source, []).append(target)
+        # Dependency rows are consumed into needs lists; archive the raw
+        # rows too so extra columns on them are not silently discarded.
+        dep_rows.setdefault(source, []).append(row)
     by_item: dict[str, dict[str, list[dict[str, Any]]]] = {}
     scoped = (
         ("work_units", "item_id"), ("work_needs", "item_id"), ("scope_rules", "item_id"),
@@ -158,6 +169,8 @@ def migrate_export(export: dict[str, Any], *, now: datetime | None = None) -> tu
                 legacy[table] = extra[table]
         if extra.get("deferrals"):
             legacy["deferrals"] = extra["deferrals"]
+        if dep_rows.get(item_id):
+            legacy["item_deps"] = dep_rows[item_id]
         # Archive every source column that has no canonical home. The mapped
         # set below is exhaustive by construction: anything not mapped here
         # lands in item_meta, so no column is silently discarded.

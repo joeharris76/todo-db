@@ -206,6 +206,53 @@ def test_terminal_tasks_carry_no_claim_and_drop_clears() -> None:
         store.op_take(snap, "task", "w1")
 
 
+def test_open_and_blocked_reject_any_claim() -> None:
+    snap = _snap()
+    store.op_create(snap, item_id="task", title="Strict")
+    snap.index["items"]["task"]["claim"] = {
+        "worker": "w", "expires_at": "2000-01-01T00:00:00Z",
+        "generation": "0" * 32, "renewals": 0,
+    }
+    with pytest.raises(TodoError):
+        store.validate_snapshot(snap.index, snap.details)
+
+
+def test_drop_needs_generation_while_claimed() -> None:
+    snap = _snap()
+    store.op_create(snap, item_id="task", title="Held")
+    take = store.op_take(snap, "task", "w1")
+    gen = take["claim"]["generation"]
+    with pytest.raises(TodoError) as excinfo:
+        store.op_drop(snap, "task", "w1", "0" * 32)
+    assert excinfo.value.code == "E_CLAIM_STALE"
+    with pytest.raises(TodoError):
+        store.op_drop(snap, "task")
+    # Rotation strands the old generation for drop too.
+    store.op_take(snap, "task", "w1")
+    with pytest.raises(TodoError):
+        store.op_drop(snap, "task", "w1", gen)
+    fresh = snap.index["items"]["task"]["claim"]["generation"]
+    assert store.op_drop(snap, "task", "w1", fresh)["status"] == "dropped"
+
+
+def test_worker_identities_are_single_line() -> None:
+    snap = _snap()
+    store.op_create(snap, item_id="task", title="T")
+    with pytest.raises(TodoError):
+        store.op_take(snap, "task", "w1\nTodo-Op-Id: " + "a" * 32)
+
+
+def test_symlinked_items_dir_is_refused(tmp_path) -> None:
+    snap = _snap()
+    store.op_create(snap, item_id="aa", title="Real", description="here")
+    store.save_snapshot(tmp_path, snap)
+    real_items = tmp_path / "items"
+    real_items.rename(tmp_path / "items-real")
+    real_items.symlink_to(tmp_path / "items-real", target_is_directory=True)
+    with pytest.raises(TodoError):
+        store.load_snapshot(tmp_path)
+
+
 def test_quiescence_refuses_live_claims() -> None:
     snap = _snap()
     store.op_create(snap, item_id="task", title="Busy")
