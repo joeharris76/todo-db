@@ -6,6 +6,23 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Removed
+
+- **The SQLite/Turso runtime is replaced by JSON/Git state (breaking).**
+  Version 0.7.0 removes the database layer, hosted backends and credential
+  machinery, the audit chain, findings, workflow gates (work units, scope
+  rules, verification ladders, lint, attestation), the seven SQL
+  migrations, the 26-tool MCP surface, and the hosted/parity CI harnesses.
+  The normal runtime is `index.json` plus `items/<id>.json` on a dedicated
+  state branch, published one commit per operation with fast-forward
+  pushes, operation IDs, and bounded semantic retries. The MCP surface is
+  nine tools (`list/show/create/update/take/release/finish/renew/drop`) plus
+  `get_instructions`; the CLI keeps bootstrap, validation, migration,
+  recovery, and read-only list/show. Migration from a 0.6.x lossless
+  export is non-destructive (dry run, legacy archive, live-claim refusal,
+  documented rollback); production migration is out of scope. See ADR 0007
+  and `docs/measurements.md` for the design and the measured budgets.
+
 ### Fixed
 
 - **Full MCP exports require explicit confirmation.** The `export` query now

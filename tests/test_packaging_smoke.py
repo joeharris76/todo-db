@@ -41,4 +41,4 @@ def test_wheel_and_sdist_build_and_wheel_cli_smoke(tmp_path: Path) -> None:
             check=False,
         )
         assert smoke.returncode == 0, smoke.stderr
-        assert "database-backed TODO tracker" in smoke.stdout
+        assert "JSON/Git TODO tracker" in smoke.stdout

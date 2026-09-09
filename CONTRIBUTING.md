@@ -26,19 +26,18 @@ uv run ruff check .
 # 2. Run test suite
 uv run pytest -q
 
-# 3. Verify CLI and schema parity conformance
-uv run python scripts/parity_conformance.py --check
+# 3. Verify the tool-schema snapshot is current (regenerate scripts/mcp_snapshots/tools.json with any tool change)
 
 # 4. Verify distribution build
 uv build
 ```
 
-If you modify MCP tools or arguments in `src/todo_db/mcp/`, update the frozen snapshots under `scripts/mcp_snapshots/` and run `tests/test_mcp_server.py` to ensure schema stability.
+If you modify MCP tools or arguments in `src/todo_db/mcp/`, regenerate the frozen snapshots under `scripts/mcp_snapshots/` and run `tests/test_mcp_stdio.py` to ensure schema stability.
 
 ## Contribution Guidelines
 
 1. **Focused Pull Requests**: Keep pull requests scoped to a single fix or feature.
-2. **Deterministic Schemas & Exit Codes**: Exit codes (0, 1, 2, 4) and error code strings (`E_*` in `src/todo_db/errors.py`) are formal contracts. Do not alter existing codes without reviewing `docs/adr/` records.
-3. **Redaction & Credential Safety**: Never log, print, or leak database tokens or connection strings. Use `HostedAuthError` and ensure any new output paths redact sensitive information.
+2. **Deterministic Schemas & Exit Codes**: Exit codes (0, 2) and error code strings (`E_*` in `src/todo_db/errors.py`) are formal contracts. Do not alter existing codes without reviewing `docs/adr/` records.
+3. **Redaction & State Safety**: Never log, print, or publish tokens, connection strings, or credentials — especially not to the state branch. Bound remote stderr before it reaches user-facing messages.
 4. **Tests**: Add test coverage for all new functionality or bug fixes under `tests/`.
 5. **Changelog**: Document user-visible additions, changes, or deprecations in `CHANGELOG.md` following [Keep a Changelog](https://keepachangelog.com/).

@@ -14,54 +14,43 @@ silently.
 
 Both gates below are mandatory for a release whose diff touches any of:
 
-- credential resolution in `src/todo_db/backends.py`, including
-  `resolve_credential`, the provider, and `auth_remediation`;
-- the `TODO_DB_AUTH_CONTRACT` handshake or the credential/connection path in
-  `src/todo_db/cli.py`;
-- the per-tool credential scoping or connection-per-call path in
-  `src/todo_db/mcp/` — specifically `server.py` (database_config +
-  HostedAuthError), `identity.py` (clientInfo + TODO_DB_ACTOR), `target.py`
-  (TODO_DB_PATH/URL/CONFIG), `dbpool.py` (CredentialMode + E_AUTH_REJECTED
-  retry);
-- `docs/adr/0004-hosted-credential-lifecycle.md`,
-  `docs/adr/0005-hosted-credential-provider.md`,
-  `docs/adr/0006-mcp-sole-agent-interface.md`, or
-  `docs/operations/hosted-credentials.md`;
-- the environment allowlist the MCP server passes to the tracker.
+- the publication protocol in `src/todo_db/git_backend.py`, including tip
+  resolution, conflict classification, retries, and reconciliation;
+- the state schema, validation, or claim rules in `src/todo_db/store.py`;
+- the agent surface in `src/todo_db/service.py` or `src/todo_db/mcp/`;
+- the floor CLI in `src/todo_db/cli.py` or migration in
+  `src/todo_db/migrate.py`.
 
 Releases that touch none of these are not subject to the downstream consumer
 gate. When in doubt, run both; they cost minutes.
 
-## Gate 1: hosted authentication acceptance
+## Gate 1: scratch state-branch lifecycle
 
-Run the harness with the release candidate installed:
+With the release candidate installed, run a full lifecycle against a scratch
+bare remote — bootstrap, create, take, renew, finish, plus a conflicting
+write and an offline read:
 
 ```sh
-TODO_DB_ACCEPTANCE_URL=libsql://<host> scripts/hosted_auth_acceptance.sh --require
+git init --bare /tmp/gate-state.git
+todo-db bootstrap --state-remote /tmp/gate-state.git
+todo-db validate --state-remote /tmp/gate-state.git
 ```
 
-`--require` is not optional here. Without it an unconfigured machine exits 77
-and the gate would pass without testing anything, which is the failure mode this
-page is about.
+then drive one `take` → `finish` round through the MCP server. A gate that
+passes without touching the publication path the release changed is the
+v0.4.2 failure mode; `--help` output is not evidence.
 
 ## Gate 2: real downstream consumer
 
 Upgrade one real downstream consumer to the release candidate and run one real
-floor-CLI command against its database, in a session that was not specially
+floor-CLI command against its state branch, in a session that was not specially
 prepared for the test.
 
-"One real command" means a surviving `todo-db` floor verb that opens the
-database and does real work — `todo-db audit verify`, `todo-db export --output
-<path>`, or `todo-db doctor` — not `--help` and not `--version`. The `agent`
-CLI group and the per-verb planning commands (`todo list` / `ready` / `show`,
-etc.) were removed in 0.6.0; those consumers now drive the tracker through the
-MCP server (`todo-db-mcp`), which is not a release gate — the gate exercises the
-floor CLI a bootstrap or CI step actually runs.
-
-Run the gate against a **local-SQLite** consumer. It must not depend on the
-hosted (Turso/libSQL) path, which stays experimental and uncertified
-(ADR 0006 Consequences; ADR 0003 §2.9). A hosted run may be recorded as
-additional evidence but never as the only evidence.
+"One real command" means a surviving `todo-db` floor verb that does real work
+— `todo-db validate`, `todo-db list`, or `todo-db recover --limit 5` — not
+`--help` and not `--version`. Agent verbs live only on the MCP server
+(`todo-db-mcp`), which is not a release gate — the gate exercises the floor
+CLI a bootstrap or CI step actually runs.
 
 ## Ordering
 
@@ -78,11 +67,12 @@ the release.
 Record in the release PR body:
 
 - the command line used for gate 1 and its final line;
-- the consumer, the floor-CLI command run for gate 2, whether the consumer's
-  database was local SQLite, and whether it succeeded;
+- the consumer, the floor-CLI command run for gate 2, the state branch it
+  addressed, and whether it succeeded;
 - the date and the operator.
 
-Record no credential value, no hosted URL, and no consumer secret.
+Record no consumer secret and no private remote URL beyond what the release
+already names.
 
 ## What does not satisfy these gates
 
@@ -99,7 +89,8 @@ All five held for v0.4.2.
 
 ## Automation boundary
 
-Gate 1's full run and gate 2 stay local operator steps. CI validates the
-harness's syntax and its skip contract only. Giving CI a hosted read-write
-credential to automate gate 1 would contradict ADR 0004 and would defeat the
-harness, whose entire premise is running without an injected credential.
+Gate 1's full run and gate 2 stay local operator steps. CI runs a scratch
+state-branch smoke (bootstrap/validate/list against a disposable bare
+remote) plus `uv sync --locked`, which fails the build when the committed
+lockfile drifts from the manifest. CI never touches a real state branch:
+routine automation must not write to authoritative task state.

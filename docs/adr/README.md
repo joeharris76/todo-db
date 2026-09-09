@@ -11,6 +11,7 @@ tracker items, and source comments, so records are moved rather than renumbered.
 | [0004](0004-hosted-credential-lifecycle.md) | Hosted credential lifecycle |
 | [0005](0005-hosted-credential-provider.md) | Hosted credential provider |
 | [0006](0006-mcp-sole-agent-interface.md) | MCP as the sole agent interface |
+| [0007](0007-json-git-tracker.md) | JSON/Git tracker replacing the database runtime |
 
 0001 through 0003 previously lived in `_project/decisions/`. That directory held
 a superseded copy of 0003 alongside the current one in this directory; the

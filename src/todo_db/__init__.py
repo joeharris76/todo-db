@@ -1,36 +1,54 @@
-"""Public API for the standalone todo-db tracker."""
+"""Public API for the JSON/Git TODO tracker."""
 
-from .audit import sign_export, verify_signed_export
-from .database import TodoDatabase
+from . import store
 from .errors import (
-    E_AUTH_MISSING,
-    E_AUTH_REJECTED,
-    AuditIntegrityError,
-    HostedAuthError,
-    ProjectIdentityMismatchError,
-    SchemaMismatchError,
+    E_ACTIVE_CLAIMS,
+    E_CLAIM_STALE,
+    E_CONFLICT,
+    E_CURSOR_STALE,
+    E_MULTIPLE_CLAIMS,
+    E_NOTHING_READY,
+    E_NO_PRINCIPAL,
+    E_OFFLINE,
+    E_OUTPUT_TRUNCATED,
+    E_OVERSIZED,
+    E_SCHEMA,
+    E_STATE,
+    E_UNKNOWN,
     TodoDBError,
     TodoError,
 )
-from .findings import FindingsTracker
-from .models import CredentialMode, DatabaseConfig, ProjectIdentity
-from .tracker import TodoTracker
+from .git_backend import ReconcileResult, StateRef, bootstrap, history, mutate, new_op_id, read, reconcile
+from .service import TrackerService, count_tokens
+
+TOOL_VERSION = "0.7.0"
 
 __all__ = [
-    "AuditIntegrityError",
-    "CredentialMode",
-    "DatabaseConfig",
-    "E_AUTH_MISSING",
-    "E_AUTH_REJECTED",
-    "FindingsTracker",
-    "HostedAuthError",
-    "ProjectIdentity",
-    "ProjectIdentityMismatchError",
-    "SchemaMismatchError",
+    "E_ACTIVE_CLAIMS",
+    "E_CLAIM_STALE",
+    "E_CONFLICT",
+    "E_CURSOR_STALE",
+    "E_MULTIPLE_CLAIMS",
+    "E_NOTHING_READY",
+    "E_NO_PRINCIPAL",
+    "E_OFFLINE",
+    "E_OUTPUT_TRUNCATED",
+    "E_OVERSIZED",
+    "E_SCHEMA",
+    "E_STATE",
+    "E_UNKNOWN",
+    "TOOL_VERSION",
+    "ReconcileResult",
+    "StateRef",
     "TodoDBError",
     "TodoError",
-    "TodoDatabase",
-    "TodoTracker",
-    "sign_export",
-    "verify_signed_export",
+    "TrackerService",
+    "bootstrap",
+    "count_tokens",
+    "history",
+    "mutate",
+    "new_op_id",
+    "read",
+    "reconcile",
+    "store",
 ]

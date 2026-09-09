@@ -1,9 +1,8 @@
 # `todo_db.mcp` — the MCP stdio server
 
-This package is the agent interface for the tracker (ADR 0006). It builds the
-server, resolves the project and database target, pins the audit principal, and
-registers the tools over `AgentWorkflow` with connection-per-call credentials
-and one dedicated worker thread.
+This package is the agent interface for the tracker (ADR 0007). It builds the
+server, resolves the state branch target, pins the worker identity, and
+registers nine tools over shared service operations.
 
 ## Layout
 
@@ -12,25 +11,17 @@ and one dedicated worker thread.
 | `__init__.py` | Package doc and a `main` shim. |
 | `__main__.py` | `python -m todo_db.mcp` → `server.main()`. |
 | `server.py` | Launch args, stderr logging, `LaunchConfig`, `build_server`, lifespan, `startup_check`, `main`. |
-| `target.py` | Project/database target resolution (flag > env > upward discovery), pinned for the process lifetime. |
-| `identity.py` | Principal (`--actor` → `TODO_DB_ACTOR` → `mcp:<clientInfo.name>:<user>@<host>`; never `default_actor()`) and the per-process session id. |
-| `worker.py` | The single dedicated worker thread. All database and git work goes through it (ADR 0006 G4). |
-| `dbpool.py` | Per-tool credential capability and connection lifecycle. |
-| `envelope.py` | The `{ok, data}` / `{ok, code, error, recovery, kind}` response envelope and the 16 KiB cap. |
+| `target.py` | State target resolution (flag > env > upward discovery), pinned for the process lifetime. |
+| `identity.py` | Worker identity (`--actor` → `TODO_DB_ACTOR` → `mcp:<clientInfo.name>:<user>@<host>`) and the per-process session id. |
+| `tools.py` | The nine task tools: `list_items`, `show_item`, `create_item`, `update_item`, `take`, `release`, `finish`, `renew`, `drop`. |
 | `resources.py` | `todo://instructions` resource, `get_instructions` tool, and `todo/workflow` prompt — all the same text. |
 | `instructions.py` | The workflow protocol text. |
-| `tools_work.py` | Hot-path lifecycle tools: `next`, `take`, `context`, `progress`, `finish`, `release`, `claims`. |
-| `tools_query.py` | Read-only queries, loaded in every profile. |
-| `tools_full.py` | `register_planning_tools` (every profile) plus findings and admin (`--profile full`). |
 
-## Profiles
+## Tools
 
-`--profile agent` (default) registers the work tools, the query tools, and the
-planning tools. `--profile full` adds findings, `block`/`unblock`/`drop`,
-`init_project`, and `config_get`.
-
-Verification execution and `rebaseline` have **no tool at any profile**. A
-human runs them from the floor CLI (ADR 0006 G6).
+One server instance is one worker identity: concurrent workers run separate
+servers with different `--actor` values. Blocking Git work runs via
+`asyncio.to_thread`; there is no shared mutable connection to guard.
 
 ## SDK pin
 
@@ -46,7 +37,6 @@ version to every client instead of the tracker's.
 
 ## Snapshots
 
-`scripts/mcp_snapshots/tools.json` and `tools_full.json` freeze the registered
-tool names, descriptions, and input schemas. `tests/test_mcp_stdio.py`
-compares the live server against them, so any tool change must land with a
-regenerated snapshot.
+`scripts/mcp_snapshots/tools.json` freezes the registered tool names,
+descriptions, and input schemas. `tests/test_mcp_stdio.py` compares the live
+server against it, so any tool change must land with a regenerated snapshot.

@@ -16,7 +16,7 @@ body:
       label: Reproduction Steps
       description: Minimal reproduction steps or command sequence.
       placeholder: |
-        1. Run `todo-db init --project-id test --repository ...`
+        1. Run `todo-db bootstrap --state-remote <scratch-bare-repo>`
         2. Execute ...
         3. Observe error ...
     validations:
@@ -31,17 +31,14 @@ body:
     id: version
     attributes:
       label: todo-db version
-      placeholder: 0.6.1
+      placeholder: 0.7.0
     validations:
       required: true
-  - type: dropdown
-    id: backend
+  - type: input
+    id: state
     attributes:
-      label: Database Backend
-      options:
-        - Local SQLite (.todo-db/standalone.sqlite)
-        - Hosted Turso / libSQL
-        - Other
+      label: State branch
+      description: State remote and branch the defect involves, if any.
     validations:
       required: true
   - type: input

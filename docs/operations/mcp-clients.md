@@ -1,32 +1,27 @@
 # MCP client registration for `todo-db`
 
 `todo-db` ships one MCP server, `todo-db-mcp`, installed with the `mcp` extra.
-One server instance serves one project, which is one worktree. It speaks
+One server instance is one worker identity against one state branch. It speaks
 **stdio**; there is no HTTP transport.
 
 ```
-todo-db-mcp [--repo-root <path>] [--profile {agent,full}] [--actor <principal>]
-            [--log-level {debug,info,warning,error}] [--allow-hosted]
+todo-db-mcp [--repo-root <path>] [--config <path>]
+            [--state-remote <url-or-path>] [--state-branch <name>]
+            [--cache-dir <path>] [--actor <worker>]
+            [--session <id>] [--log-level {debug,info,warning,error}]
 ```
 
 Common flags:
 
-- `--repo-root` — project root for config discovery and git scope. Omit it when
-  the client launches the server from the project root; the server defaults to
-  its working directory.
-- `--profile` — `agent` (default) exposes the workflow tools, the read-only
-  queries, and the three planning tools (`create_item`, `update_item`,
-  `add_dependency`). `full` adds findings, `block`/`unblock`/`drop`,
-  `init_project`, and `config_get`.
-- `--actor` — audit principal. **Prefer omitting it.** With no `--actor` the
-  server derives `mcp:<clientInfo.name>:<user>@<host>` from the `initialize`
-  handshake, resolving the host itself. A hand-written value such as
-  `claude:${USER}@${HOSTNAME}` is worse than nothing in most clients, because
-  `HOSTNAME` is a shell variable rather than an exported environment variable
-  and expands to empty — writing a truncated principal like `claude:joe@` into
-  `claimed_by` and every audit row.
-- `--allow-hosted` — required to open a hosted (Turso/libSQL) target. The
-  server is local-SQLite-first.
+- `--repo-root` — project root for `.todo-db/config.json` discovery. Omit it
+  when the client launches the server from the project root.
+- `--state-remote` / `--state-branch` — the authoritative state branch.
+  Flags beat `TODO_DB_STATE_REMOTE` / `TODO_DB_STATE_BRANCH`, which beat the
+  discovered config.
+- `--actor` — worker identity. Concurrent workers must run separate servers
+  with different `--actor` values. With no `--actor` the server derives
+  `mcp:<clientInfo.name>:<user>@<host>` from the `initialize` handshake.
+- `--cache-dir` — local snapshot cache (default `~/.cache/todo-db-state`).
 
 Logging goes to **stderr only**; stdout carries JSON-RPC framing.
 
@@ -49,19 +44,6 @@ Code — only `${VAR}` and `${VAR:-default}` for environment variables.
 }
 ```
 
-For the full profile:
-
-```json
-{
-  "mcpServers": {
-    "todo-db": {
-      "command": "todo-db-mcp",
-      "args": ["--profile", "full"]
-    }
-  }
-}
-```
-
 Claude Code surfaces MCP **prompts** as slash commands (`/todo/workflow`). The
 `todo://instructions` resource and the `get_instructions` tool are the portable
 fallbacks for clients that do not.
@@ -77,14 +59,6 @@ upward `.todo-db/config.json` discovery the CLI uses.
 [mcp_servers.todo-db]
 command = "todo-db-mcp"
 args = []
-```
-
-Full profile:
-
-```toml
-[mcp_servers.todo-db]
-command = "todo-db-mcp"
-args = ["--profile", "full"]
 ```
 
 ## Cursor
@@ -159,28 +133,24 @@ key names. Any client that launches a stdio MCP server works: point it at the
 `todo-db-mcp` command with no arguments, from the project root.
 
 A client that does not speak MCP cannot drive the tracker. The floor CLI covers
-bootstrap, CI, audit, export, and human recovery, but it deliberately has no
-planning or lifecycle verbs — those live only on the MCP surface (ADR 0006).
+bootstrap, validation, migration, and human recovery, but it deliberately has no
+planning or lifecycle verbs — those live only on the MCP surface (ADR 0007).
 
 ## Verifying a registration
 
-Confirm the database and identity resolve, using the floor CLI:
+Confirm the state branch resolves, using the floor CLI:
 
 ```sh
-todo-db doctor
+todo-db validate
 ```
 
 Then drive the workflow through the client:
 
-1. `next` — inspect the ready queue, or the claim you already hold.
-2. `take` — claim an item, or re-adopt your active claim.
-3. `context` — re-read `claim_token` and `next_action` (also the recovery path
-   after a restart).
-4. `progress` — record each work unit with evidence; this refreshes the lease.
-5. `finish` — the close gate.
-
-Every `next_action` returned by `next`, `take`, `progress`, and `context` is
-machine-readable: `{"tool": "...", "arguments": {...}}`.
+1. `list_items(ready_only=true)` — find claimable work.
+2. `take` — claim a task; keep the returned `generation`.
+3. `show_item` — read needs, readiness, and sections.
+4. `renew` — extend a long-running claim.
+5. `finish` — close the task.
 
 ## The bundled `todo-db` skill
 
@@ -190,15 +160,10 @@ is available to anyone who clones the repository without installing anything
 else. See [`skill-deployment.md`](skill-deployment.md) for how those mirrors
 are generated and verified.
 
-## Hosted backends
+## State remotes
 
-Hosted (Turso/libSQL) targets are gated behind `--allow-hosted` plus a
-credential from `TODO_DB_AUTH_TOKEN` or `TODO_DB_CREDENTIAL_COMMAND`. The
-server is local-SQLite-first.
-
-A long-lived stdio server against a hosted primary has no reconnect or
-keepalive, so a credential that expires mid-session surfaces as
-`E_AUTH_REJECTED` and needs a fresh process. Agent mutations against hosted
-Turso remain experimental: real commit-outcome fault behaviour is still
-unmeasured (ADR 0003 §2.9). See
-[`hosted-credentials.md`](hosted-credentials.md) for provisioning and rotation.
+The state branch shares its repository's access and visibility. Never publish
+credentials to it and never assume a separate branch is private. A long-lived
+stdio server holds no connection: every operation fetches the accepted tip, so
+an unreachable remote surfaces as `E_OFFLINE` and mutations fail rather than
+succeeding locally.

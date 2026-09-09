@@ -1,5 +1,4 @@
 {
-  "db": ".todo-db/standalone.sqlite",
-  "project_id": "todo-db",
-  "repository": "https://github.com/joeharris76/todo-db"
+  "state_branch": "todo-state",
+  "state_remote": "https://github.com/joeharris76/todo-db.git"
 }
