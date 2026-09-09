@@ -274,3 +274,21 @@ an agent on the default profile had no sanctioned path to create work.
 These three planning tools are promoted to load in every profile. Findings,
 admin, `block`, `unblock`, and `drop` remain behind `--profile full`.
 
+## Amendment: agents may run the verification ladder on local databases
+
+G6 reserved all verification execution for the human floor CLI on the grounds
+that stored commands are arbitrary code written by other actors. That rationale
+holds for a hosted shared database but not for a local single-author one, and
+the "human pressed enter" distinction was never a capability boundary anyway:
+every MCP client also has a shell tool, and `--actor` is self-asserted.
+
+The `finish` tool therefore gains `run_verifications=false` (default). Passing
+`true` runs the stored ladder and attests exactly as `verify-run` does — same
+previewable commands, same scope re-checks, same workspace-fingerprint binding
+— but only when the database is local. On a hosted database the tool refuses
+with `E_VERIFY_GATE` and the human `verify-run` recovery command, and
+`run_verification` itself still refuses hosted execution without
+`TODO_DB_ALLOW_HOSTED_VERIFY_RUN=1`, which stays out of the server's
+environment. `rebaseline` and human `complete` are unchanged: they remain floor
+verbs with no tool at any profile.
+

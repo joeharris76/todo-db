@@ -25,3 +25,9 @@ Include these sections in order:
    - Unresolved issues, waiting CI gates, or flaky tests with remediation steps.
 7. **Next concrete step**:
    - The single tool call the next session should run first.
+
+## Writing rules
+
+- Verify facts before writing. Do not mark work completed, merged, or verified
+  unless proven during handoff generation.
+- Keep the handoff concise. Omit raw diffs, verbose test output, and conversational history.

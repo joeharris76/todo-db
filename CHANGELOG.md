@@ -76,6 +76,13 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **`finish` runs the verification ladder on local databases.** The tool gains
+  `run_verifications=false` (default). Passing `true` runs the stored commands
+  and binds the workspace-fingerprint attestation exactly as `verify-run` does,
+  but only for local databases. Hosted ladders stay human-run: the tool refuses
+  with `E_VERIFY_GATE` and the `todo-db verify-run` recovery command, because
+  stored commands in a shared database are arbitrary code written by other
+  actors. The skill, server instructions, and ADR 0006 record the split.
 - The README is a front door: requirements, one quickstart, a glossary, the
   response envelope, and a complete `TODO_DB_*` table. Credential-provider
   reference prose moved to `docs/operations/hosted-credentials.md`.
