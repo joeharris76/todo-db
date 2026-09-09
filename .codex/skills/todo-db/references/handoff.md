@@ -26,7 +26,7 @@ Include these sections in order:
    - Unresolved issues, waiting CI gates, or flaky tests with remediation steps.
 7. **Verification checklist**:
    - Exact test commands required before completion.
-   - Human verification status (`todo-db verify-run`).
+   - Verification status (local `finish` with `run_verifications=true`, or human `todo-db verify-run` on hosted).
 8. **Next concrete step**:
    - The exact MCP tool call or command the incoming agent should execute first.
 

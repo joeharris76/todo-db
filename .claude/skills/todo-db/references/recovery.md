@@ -33,15 +33,18 @@ the failure mode this gate exists to catch.
 
 ## The verification gate
 
-`finish` requires a current workspace-fingerprint attestation. Agents cannot
-produce one: `verify-run` is a human step, deliberately, because the stored
+`finish` requires a current workspace-fingerprint attestation. On a hosted
+database the attestation is a human step, deliberately, because the stored
 commands are arbitrary code and on a shared tracker they were written by
-another actor.
+another actor. On a local database the ladder is yours to run.
 
-When `finish` returns `E_VERIFY_GATE`, the `recovery` list contains the exact
-invocation. Surface it verbatim and stop. After the human runs it, call
-`finish` again — the attestation binds to the workspace state, so any further
-edit invalidates it and the ladder must run again.
+When `finish` returns `E_VERIFY_GATE`, read the `recovery` list. On a hosted
+database it contains the exact `verify-run` invocation: surface it verbatim
+and stop. After the human runs it, call `finish` again. On a local database it
+tells you to retry `finish` with `run_verifications=true`: review the stored
+commands with `verify_list` first, then retry. Either way the attestation binds
+to the workspace state, so any further edit invalidates it and the ladder must
+run again.
 
 ## Hosted credential failures
 

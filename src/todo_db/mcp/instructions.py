@@ -57,7 +57,9 @@ truncate, so retry with a smaller `limit` plus `cursor`.
 - `E_SCOPE_GATE` -- a changed file is outside scope. Use `check_scope`; narrow
   the change, or amend scope deliberately with `update_item`.
 - `E_LINT_GATE` -- planning quality insufficient. `lint` says why.
-- `E_VERIFY_GATE` -- no current workspace attestation. Stop: a human runs the
+- `E_VERIFY_GATE` -- no current workspace attestation. On a local database,
+  review the stored commands with `verify_list`, then call `finish` again with
+  `run_verifications=true`. On a hosted database, stop: a human runs the
   `todo-db verify-run` command given in `recovery`. Your `finish` still closes.
 - `E_BASE_DIVERGED` / `E_BASE_UNREACHABLE` -- the scope git baseline no longer
   resolves. Stop; a human runs `todo-db rebaseline`.
@@ -70,9 +72,11 @@ truncate, so retry with a smaller `limit` plus `cursor`.
 
 ## Not tools, by design
 
-Verification execution (`todo-db verify-run`) and scope rebaseline
+Hosted verification execution (`todo-db verify-run`) and scope rebaseline
 (`todo-db rebaseline`) have no tool at any profile, because stored verification
-commands are arbitrary code written by other actors. A human runs them.
+commands in a shared database are arbitrary code written by other actors. A
+human runs them. On a local database the ladder is yours to run: pass
+`run_verifications=true` to `finish` after reviewing the stored commands.
 
 One active claim is enforced per principal. Scope is re-checked on `progress`
 and `finish`.

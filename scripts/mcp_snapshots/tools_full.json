@@ -827,7 +827,7 @@
   },
   {
     "name": "finish",
-    "description": "The no-shell close gate. Model-assert only: requires a current workspace-fingerprint attestation and rejects a stale pass.",
+    "description": "The no-shell close gate. Model-assert only: requires a current workspace-fingerprint attestation and rejects a stale pass. Pass run_verifications=true to run the stored ladder on a local database; hosted ladders stay human-run via todo-db verify-run.",
     "inputSchema": {
       "properties": {
         "id": {
@@ -837,6 +837,11 @@
         "claim_token": {
           "title": "Claim Token",
           "type": "string"
+        },
+        "run_verifications": {
+          "default": false,
+          "title": "Run Verifications",
+          "type": "boolean"
         }
       },
       "required": [

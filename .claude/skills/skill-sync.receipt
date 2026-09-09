@@ -20,7 +20,7 @@ dir = skills
 skill = skill-sync
 
 source = https://github.com/joeharris76/todo-db.git
-rev = 5e491e3bb68505e35446b50ece37203bebb31f26
+rev = 7a8ab31bc51f8672d081123d669e9aed914f112d
 dir = skills
 skill = todo-db
 

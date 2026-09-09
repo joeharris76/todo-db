@@ -444,6 +444,12 @@ def test_work_tools_next_take_progress_context_finish_flow(tmp_path):
     subprocess.run(["git", "init", "--quiet"], cwd=tmp_path, check=True)
     subprocess.run(["git", "config", "user.name", "Test"], cwd=tmp_path, check=True)
     subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True)
+    # The live database is not workspace content: ignore and commit that before
+    # the item exists, so the ladder's own bookkeeping neither invalidates the
+    # workspace fingerprint nor trips the scope gate.
+    (tmp_path / ".gitignore").write_text(".todo-db/*.sqlite*\n", encoding="utf-8")
+    subprocess.run(["git", "add", ".gitignore"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "--quiet", "-m", "init"], cwd=tmp_path, check=True)
     _make_item(db_path, IDENT, item_id="item-flow", title="Flow item for work tools")
     server = build_server(resolve_launch_config(_args("--repo-root", str(tmp_path), "--actor", "tester")))
 
@@ -485,20 +491,98 @@ def test_work_tools_next_take_progress_context_finish_flow(tmp_path):
             # after progress, next_action should be finish (tool)
             assert prog_data["data"]["next_action"]["tool"] == "finish"
 
-            # finish without attest -> E_VERIFY_GATE gate
+            # finish without attest -> E_VERIFY_GATE gate with local retry recovery
             fin = await session.call_tool("finish", {"id": "item-flow", "claim_token": token})
             fin_data = _json.loads(fin.content[0].text)
             assert fin_data["ok"] is False
             assert fin_data["code"] == "E_VERIFY_GATE"
             assert fin_data["kind"] == "gate"
-            assert fin_data["recovery"] == [f"todo-db --actor tester verify-run item-flow --claim-token {token}"]
+            assert fin_data["recovery"] == [
+                "review the stored commands with verify_list(id='item-flow'), then "
+                "call finish(id='item-flow', claim_token='<token>', run_verifications=True)"
+            ]
 
-            # release
-            rel = await session.call_tool("release", {"id": "item-flow", "claim_token": token})
-            rel_data = _json.loads(rel.content[0].text)
-            assert rel_data["ok"] is True
+            # finish with run_verifications=true runs the local ladder and closes
+            fin2 = await session.call_tool(
+                "finish", {"id": "item-flow", "claim_token": token, "run_verifications": True}
+            )
+            fin2_data = _json.loads(fin2.content[0].text)
+            assert fin2_data["ok"] is True
+            assert fin2_data["data"]["status"] == "completed"
 
     anyio.run(go)
+
+
+def test_finish_run_verifications_refused_on_hosted(monkeypatch, tmp_path):
+    import sqlite3
+    import subprocess
+    import sys
+
+    from test_hosted_backend import FakeLibsql
+
+    subprocess.run(["git", "init", "--quiet"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True)
+    url = "libsql://finish-hosted.example.test"
+    cfgdir = tmp_path / ".todo-db"
+    cfgdir.mkdir(exist_ok=True)
+    (cfgdir / "config.json").write_text(
+        json.dumps({"project_id": IDENT.project_id, "repository": IDENT.repository, "db": url})
+    )
+    fake = FakeLibsql(tmp_path / "primary.sqlite")
+    monkeypatch.setitem(sys.modules, "libsql", fake)
+    monkeypatch.setenv("TODO_DB_AUTH_TOKEN", "rw-token")
+
+    from todo_db import DatabaseConfig, TodoDatabase, TodoTracker
+
+    db = TodoDatabase.open(DatabaseConfig(path=url, identity=IDENT, auth_token="rw-token"))
+    tracker = TodoTracker(db, actor="tester")
+    tracker.create_item(
+        item_id="item-hosted",
+        title="Hosted item keeps human verification",
+        worktree="todo-db",
+        priority="high",
+        description="desc for hosted item with enough length to pass validation",
+        work=[{"id": "w0", "summary": "step for w0"}],
+        scope={"only_modify": ["src/**"]},
+        verifications=[{"description": "pass", "command": "true", "expected": ""}],
+    )
+    db.close()
+    server = build_server(
+        resolve_launch_config(_args("--repo-root", str(tmp_path), "--actor", "tester", "--allow-hosted"))
+    )
+
+    import mcp.types as types
+    from mcp.shared.memory import create_connected_server_and_client_session as connect
+
+    async def go():
+        async with connect(server, client_info=types.Implementation(name="test-hosted", version="0")) as session:
+            took = await session.call_tool("take", {"id": "item-hosted"})
+            took_data = json.loads(took.content[0].text)
+            assert took_data["ok"] is True
+            token = took_data["data"]["claim_token"]
+
+            prog = await session.call_tool(
+                "progress", {"id": "item-hosted", "wid": "w0", "evidence": "did w0", "claim_token": token}
+            )
+            assert json.loads(prog.content[0].text)["ok"] is True
+
+            fin = await session.call_tool(
+                "finish", {"id": "item-hosted", "claim_token": token, "run_verifications": True}
+            )
+            fin_data = json.loads(fin.content[0].text)
+            assert fin_data["ok"] is False
+            assert fin_data["code"] == "E_VERIFY_GATE"
+            assert fin_data["kind"] == "gate"
+            assert fin_data["recovery"] == [f"todo-db --actor tester verify-run item-hosted --claim-token {token}"]
+
+    anyio.run(go)
+
+    # The ladder must not have executed: no verification run is recorded.
+    raw = sqlite3.connect(tmp_path / "primary.sqlite")
+    rows = raw.execute("SELECT last_run, last_result FROM verifications WHERE item_id = 'item-hosted'").fetchall()
+    raw.close()
+    assert rows and all(last_run is None and last_result is None for last_run, last_result in rows)
 
 
 def test_work_tools_envelope_and_claims_recovery(tmp_path):
