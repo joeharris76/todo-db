@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.7.0] - 2026-09-10
 
 ### Removed
 
@@ -23,77 +23,15 @@ adheres to [Semantic Versioning](https://semver.org/).
   documented rollback); production migration is out of scope. See ADR 0007
   and `docs/measurements.md` for the design and the measured budgets.
 
-### Fixed
-
-- **Full MCP exports require explicit confirmation.** The `export` query now
-  returns `E_EXPORT_CONFIRMATION` without opening the database unless the
-  caller passes `confirm_full_snapshot=true`. The skill and server
-  instructions identify it as an expensive full item dump, not an
-  audit-history query, so normal item inspection uses targeted reads.
-- **The default agent profile can create work.** `create_item`, `update_item`,
-  and `add_dependency` moved from `--profile full` into every profile. With the
-  per-verb CLI removed in 0.6.0, an agent on the default profile previously had
-  no way to add an item through any sanctioned path. Findings, `block`,
-  `unblock`, `drop`, `init_project`, and `config_get` remain behind `full`. The
-  agent-profile tool count rises from 23 to 26.
-- **Encrypted-transport enforcement is an allowlist.** `DatabaseConfig.is_hosted`
-  recognised only `libsql`, `https`, and `http`, so a `ws://` or `wss://` URL
-  never reached the hosted backend and was opened as a local filename instead.
-  Hosted routing now covers every network scheme libsql accepts, and the
-  transport check accepts only `https://` and `libsql://`. `ws://` is cleartext
-  and `wss://` is unsupported by the driver, so both are refused with a message
-  rather than being opened as a filename. Both lists live on `DatabaseConfig`,
-  with a test pinning the secure set as a strict subset so they cannot drift.
-- **A hosted backend that cannot enforce foreign keys says so.** The
-  `PRAGMA foreign_keys = ON` failure was swallowed on the hosted path only, and
-  the schema relies on `ON DELETE CASCADE`, so a silent downgrade orphaned rows.
-  The pragma is now read back to confirm it took effect, and a connection that
-  cannot enforce it logs a warning naming the consequence. It warns rather than
-  refusing to connect, because not every hosted endpoint honours a session
-  pragma and a hard failure would take working deployments offline.
-- **Auth classification covers common phrasings.** "invalid credentials",
-  "token expired", "authentication error", and their variants are now
-  auth-shaped. Quota, suspension, network, TLS, and timeout failures stay
-  generic, so a caller still cannot mistake ambiguity for an auth failure.
-- **`serverInfo` reports the tracker's version**, not the MCP SDK's.
-- **Client registration snippets no longer pass `${HOSTNAME}`.** It is a shell
-  variable rather than an exported one, so it expanded to empty and wrote a
-  truncated principal into `claimed_by` and every audit row. Omitting `--actor`
-  lets the server resolve the host from the `initialize` handshake.
-
 ### Added
 
-- **A repo-owned `todo-db` agent skill**, sourced from `skills/todo-db/` and
-  mirrored into `.claude/skills/`, `.codex/skills/`, and `.gemini/skills/` so a
-  clone is self-contained. It replaces the external-catalog `todo` skill, which
-  targeted the `_project/scripts/todo` wrapper removed in 0.6.0.
-- **`init-project` scaffolds `.mcp.json`**, merging into an existing file so a
-  project's other MCP servers survive, and leaving a hand-edited `todo-db`
-  entry alone unless `--force` is passed. Planning lives only on the MCP
-  surface, so adoption without a registration left a project unable to create
-  work.
-- **CI verifies the committed skill mirrors** against `skill-sync.lock`.
+- **The repo-owned `todo-db` agent skill documents the JSON/Git workflow**,
+  sourced from `skills/todo-db/` and mirrored into `.claude/skills/`,
+  `.codex/skills/`, and `.gemini/skills/` so a clone is self-contained.
 
 ### Changed
 
-- **`finish` runs the verification ladder on local databases.** The tool gains
-  `run_verifications=false` (default). Passing `true` runs the stored commands
-  and binds the workspace-fingerprint attestation exactly as `verify-run` does,
-  but only for local databases. Hosted ladders stay human-run: the tool refuses
-  with `E_VERIFY_GATE` and the `todo-db verify-run` recovery command, because
-  stored commands in a shared database are arbitrary code written by other
-  actors. The skill, server instructions, and ADR 0006 record the split.
-- The README is a front door: requirements, one quickstart, a glossary, the
-  response envelope, and a complete `TODO_DB_*` table. Credential-provider
-  reference prose moved to `docs/operations/hosted-credentials.md`.
-- The MCP `INSTRUCTIONS` text covers planning, the response envelope, and gate
-  recovery rather than only the six hot-path tools.
 - The sdist ships `docs/` and `skills/`.
-
-### Removed
-
-- `docs/operations/benchbox-parity-coordination.md`, which coordinated with a
-  private sibling repository.
 
 ## [0.6.1] - 2026-09-03
 
