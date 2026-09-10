@@ -95,6 +95,15 @@ def test_migration_preserves_mapping_and_archive() -> None:
     assert all(e.get("claim") is None for e in snapshot.index["items"].values())
 
 
+def test_migration_wires_forward_referenced_dependencies() -> None:
+    # Export rows are not topologically ordered: a dependent may appear
+    # before the task it needs. Migration must still wire the edge.
+    export = _export()
+    export["tables"]["items"].reverse()  # beta (needs alpha) now comes first
+    snapshot, _ = migrate_export(export)
+    assert snapshot.index["items"]["beta"]["needs"] == ["alpha"]
+
+
 def test_migration_refuses_live_claim_cutover() -> None:
     export = _export()
     export["tables"]["items"][0]["claimed_by"] = "someone"

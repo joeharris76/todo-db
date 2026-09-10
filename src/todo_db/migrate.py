@@ -151,14 +151,12 @@ def migrate_export(export: dict[str, Any], *, now: datetime | None = None) -> tu
             status = "blocked"
         if row.get("claimed_by") and _lease_live(str(row.get("claimed_at") or ""), moment):
             live_holders.append(f"{item_id} (held by {row.get('claimed_by')})")
-        needs = sorted(set(deps.get(item_id, [])))
         S.op_create(
             snapshot,
             item_id=item_id,
             title=title,
             priority=priority,
             description=str(row.get("description") or ""),
-            needs=needs,
             context=str(row.get("approach") or ""),
         )
         snapshot.index["items"][item_id]["status"] = status
@@ -185,6 +183,10 @@ def migrate_export(export: dict[str, Any], *, now: datetime | None = None) -> tu
             warnings.append(f"{item_id}: dropped an expired claim by {row.get('claimed_by')}")
         if legacy:
             snapshot.details[item_id]["legacy"] = legacy
+    # Wire dependencies in a second pass: op_create rejects a needs target
+    # that does not exist yet, and export rows are not topologically ordered.
+    for source, targets in deps.items():
+        snapshot.index["items"][source]["needs"] = sorted(set(targets))
     if live_holders:
         raise TodoError(
             "refusing cutover with live claims: " + "; ".join(sorted(live_holders)) + ". "
