@@ -4,6 +4,24 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.7.1] - 2026-09-10
+
+### Fixed
+
+- **Migration no longer aborts on a forward-referenced dependency.**
+  `migrate --from-export` created items in export order and rejected any
+  item whose `needs` named an item listed later, failing the whole
+  migration with `task '<a>' needs unknown task '<b>'`. Items are now
+  created first and dependencies wired afterward; `validate` still rejects
+  dangling dependencies and cycles.
+
+### Changed
+
+- The `todo-db` agent skill documents the export-to-state-branch
+  migration: bootstrap first, dry run and read the mapping report, real
+  run with the required `--backup-dir`, then validate. Records that
+  migration refuses a non-empty branch or a live claim.
+
 ## [0.7.0] - 2026-09-10
 
 ### Removed
