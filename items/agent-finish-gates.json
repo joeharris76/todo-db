@@ -1,0 +1,220 @@
+{
+  "description": "Compose lint, fresh verification assertion, post-verification scope, claim-token recheck, and completion into the streamlined finish service. The model path executes no stored shell command; a separate human-explicit run path previews and runs the ladder. Structural planning failures have exact remediation and release policy, while verification/scope failures retain the claim.",
+  "legacy": {
+    "anti_patterns": [
+      {
+        "dont": "Auto-release on code, scope, or verification failure",
+        "instead": "release only on ADR-approved non-remediable structural planning gates",
+        "item_id": "agent-finish-gates",
+        "why": "the agent must retain coordination while correcting its work"
+      },
+      {
+        "dont": "Execute shell commands from a model-callable finish",
+        "instead": "require fresh prior verification or a human-explicit run path",
+        "item_id": "agent-finish-gates",
+        "why": "database-authored commands are an execution boundary"
+      },
+      {
+        "dont": "Flatten every nonzero result into an opaque tool error",
+        "instead": "preserve structured gate payload and exact remediation",
+        "item_id": "agent-finish-gates",
+        "why": "exit 1 carries recoverable gate evidence"
+      }
+    ],
+    "item_deps": [
+      {
+        "item_id": "agent-finish-gates",
+        "needs_item": "agent-atomic-lifecycle"
+      },
+      {
+        "item_id": "agent-finish-gates",
+        "needs_item": "agent-git-scope-engine"
+      },
+      {
+        "item_id": "agent-finish-gates",
+        "needs_item": "agent-verification-boundary"
+      }
+    ],
+    "item_meta": {
+      "category": "agent-workflow",
+      "completed_at": "2026-08-18T21:38:10Z",
+      "created_at": "2026-08-18T21:15:34Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "A failed gate never completes the item",
+        "item_id": "agent-finish-gates"
+      },
+      {
+        "behavior": "Gate findings use exit 1 and structured payloads; auth remains exit 4",
+        "item_id": "agent-finish-gates"
+      },
+      {
+        "behavior": "Pi/model finish never runs a stored verification command",
+        "item_id": "agent-finish-gates"
+      },
+      {
+        "behavior": "Verification commands that modify files are included by human run-finish post-check",
+        "item_id": "agent-finish-gates"
+      }
+    ],
+    "prior_art": [
+      {
+        "concept": "atomic audit event envelope",
+        "decision": "reuse",
+        "item_id": "agent-finish-gates",
+        "path": "src/todo_db/database.py"
+      },
+      {
+        "concept": "transactional lifecycle and claims",
+        "decision": "extend",
+        "item_id": "agent-finish-gates",
+        "path": "src/todo_db/tracker.py"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "agent-finish-gates",
+        "kind": "do_not_modify",
+        "path_glob": ".todo-db/**"
+      },
+      {
+        "item_id": "agent-finish-gates",
+        "kind": "do_not_modify",
+        "path_glob": "dist/**"
+      },
+      {
+        "item_id": "agent-finish-gates",
+        "kind": "only_modify",
+        "path_glob": "README.md"
+      },
+      {
+        "item_id": "agent-finish-gates",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/agent.py"
+      },
+      {
+        "item_id": "agent-finish-gates",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/cli.py"
+      },
+      {
+        "item_id": "agent-finish-gates",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/tracker.py"
+      },
+      {
+        "item_id": "agent-finish-gates",
+        "kind": "only_modify",
+        "path_glob": "tests/test_agent_git.py"
+      },
+      {
+        "item_id": "agent-finish-gates",
+        "kind": "only_modify",
+        "path_glob": "tests/test_agent_service.py"
+      },
+      {
+        "item_id": "agent-finish-gates",
+        "kind": "only_modify",
+        "path_glob": "tests/test_cli_tracker.py"
+      },
+      {
+        "item_id": "agent-finish-gates",
+        "kind": "only_modify",
+        "path_glob": "tests/test_hosted_backend.py"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest -q tests/test_agent_service.py tests/test_agent_git.py tests/test_cli_tracker.py tests/test_hosted_backend.py",
+        "description": "Finish gate tests",
+        "expected": "all selected tests pass",
+        "item_id": "agent-finish-gates",
+        "last_result": "pass",
+        "last_run": "2026-08-18T21:38:10Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "agent-finish-gates",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "agent-finish-gates",
+        "needs_wid": "w1",
+        "wid": "w2"
+      },
+      {
+        "item_id": "agent-finish-gates",
+        "needs_wid": "w2",
+        "wid": "w3"
+      },
+      {
+        "item_id": "agent-finish-gates",
+        "needs_wid": "w3",
+        "wid": "w4"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "Finish preflight and gate result model implemented in agent.py",
+        "item_id": "agent-finish-gates",
+        "notes": null,
+        "started_at": "2026-08-18T21:38:05Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Implement plain finish preflight and exit/gate result model",
+        "wid": "w0"
+      },
+      {
+        "evidence": "Require-verified freshness assertion with zero subprocess execution implemented",
+        "item_id": "agent-finish-gates",
+        "notes": null,
+        "started_at": "2026-08-18T21:38:05Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Implement require-verified freshness assertion with zero subprocess execution",
+        "wid": "w1"
+      },
+      {
+        "evidence": "Explicit human run_verifications and post-run changed file recomputation implemented",
+        "item_id": "agent-finish-gates",
+        "notes": null,
+        "started_at": "2026-08-18T21:38:05Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Implement explicit human run-verifications then post-run changed-file recomputation",
+        "wid": "w2"
+      },
+      {
+        "evidence": "Claim token recheck, audit verification, and atomic complete transaction implemented",
+        "item_id": "agent-finish-gates",
+        "notes": null,
+        "started_at": "2026-08-18T21:38:05Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Recheck claim token, definitions, baseline, and pass state in final transaction",
+        "wid": "w3"
+      },
+      {
+        "evidence": "Full test coverage in test_agent_service.py",
+        "item_id": "agent-finish-gates",
+        "notes": null,
+        "started_at": "2026-08-18T21:38:05Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Record compact complete evidence and test every failure/claim-release policy",
+        "wid": "w4"
+      }
+    ]
+  }
+}

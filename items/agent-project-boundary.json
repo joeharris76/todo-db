@@ -1,0 +1,195 @@
+{
+  "description": "Prevent the agent namespace and Pi adapter from falling back to and auto-creating an empty .todo-db database when cwd/config discovery is wrong. Reuse bounded config discovery, pin TODO_DB_CONFIG or the generated wrapper, and return E_NO_PROJECT before opening a writable database.",
+  "legacy": {
+    "anti_patterns": [
+      {
+        "dont": "Parse an arbitrary shell command from project config",
+        "instead": "spawn a fixed wrapper or canonical executable with argv",
+        "item_id": "agent-project-boundary",
+        "why": "trusted project data would become command execution"
+      },
+      {
+        "dont": "Rely on ctx.cwd fallback",
+        "instead": "require discovered config, wrapper, or explicit database plus identity",
+        "item_id": "agent-project-boundary",
+        "why": "a wrong cwd silently targets a new database"
+      }
+    ],
+    "item_deps": [
+      {
+        "item_id": "agent-project-boundary",
+        "needs_item": "agent-workflow-decisions"
+      },
+      {
+        "item_id": "agent-project-boundary",
+        "needs_item": "bound-config-discovery"
+      },
+      {
+        "item_id": "agent-project-boundary",
+        "needs_item": "fix-cli-parser-wrapper-constant"
+      }
+    ],
+    "item_meta": {
+      "category": "agent-workflow",
+      "completed_at": "2026-08-18T21:36:54Z",
+      "created_at": "2026-08-18T21:15:34Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "Explicit --db plus complete identity remains available to controlled automation",
+        "item_id": "agent-project-boundary"
+      },
+      {
+        "behavior": "No mutating agent command can report an empty queue from a newly-created wrong database",
+        "item_id": "agent-project-boundary"
+      },
+      {
+        "behavior": "init and init-project remain the only commands allowed to create a fresh tracker implicitly",
+        "item_id": "agent-project-boundary"
+      }
+    ],
+    "prior_art": [
+      {
+        "concept": "project-root and TODO_DB_CONFIG pinning",
+        "decision": "reuse",
+        "item_id": "agent-project-boundary",
+        "path": "_project/scripts/todo"
+      },
+      {
+        "concept": "atomic audit event envelope",
+        "decision": "reuse",
+        "item_id": "agent-project-boundary",
+        "path": "src/todo_db/database.py"
+      },
+      {
+        "concept": "transactional lifecycle and claims",
+        "decision": "extend",
+        "item_id": "agent-project-boundary",
+        "path": "src/todo_db/tracker.py"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "agent-project-boundary",
+        "kind": "do_not_modify",
+        "path_glob": ".todo-db/**"
+      },
+      {
+        "item_id": "agent-project-boundary",
+        "kind": "do_not_modify",
+        "path_glob": "dist/**"
+      },
+      {
+        "item_id": "agent-project-boundary",
+        "kind": "only_modify",
+        "path_glob": "README.md"
+      },
+      {
+        "item_id": "agent-project-boundary",
+        "kind": "only_modify",
+        "path_glob": "integrations/pi/**"
+      },
+      {
+        "item_id": "agent-project-boundary",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/cli.py"
+      },
+      {
+        "item_id": "agent-project-boundary",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/errors.py"
+      },
+      {
+        "item_id": "agent-project-boundary",
+        "kind": "only_modify",
+        "path_glob": "tests/test_bootstrap.py"
+      },
+      {
+        "item_id": "agent-project-boundary",
+        "kind": "only_modify",
+        "path_glob": "tests/test_cli_tracker.py"
+      },
+      {
+        "item_id": "agent-project-boundary",
+        "kind": "only_modify",
+        "path_glob": "tests/test_contracts.py"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest -q tests/test_bootstrap.py tests/test_cli_tracker.py tests/test_contracts.py",
+        "description": "Project-boundary tests",
+        "expected": "all selected tests pass",
+        "item_id": "agent-project-boundary",
+        "last_result": "pass",
+        "last_run": "2026-08-18T21:36:54Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "agent-project-boundary",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "agent-project-boundary",
+        "needs_wid": "w1",
+        "wid": "w2"
+      },
+      {
+        "item_id": "agent-project-boundary",
+        "needs_wid": "w2",
+        "wid": "w3"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "Agent-mode project discovery and DB/identity rules specified",
+        "item_id": "agent-project-boundary",
+        "notes": null,
+        "started_at": "2026-08-18T21:36:49Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Specify agent-mode project discovery and explicit DB/identity acceptance rules",
+        "wid": "w0"
+      },
+      {
+        "evidence": "Pre-open E_NO_PROJECT guard implemented in cli.py",
+        "item_id": "agent-project-boundary",
+        "notes": null,
+        "started_at": "2026-08-18T21:36:49Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Add the pre-open E_NO_PROJECT guard without changing init behavior",
+        "wid": "w1"
+      },
+      {
+        "evidence": "Trusted project config discovery requirement enforced",
+        "item_id": "agent-project-boundary",
+        "notes": null,
+        "started_at": "2026-08-18T21:36:50Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Make the Pi adapter discover a trusted project config before registering its tool",
+        "wid": "w2"
+      },
+      {
+        "evidence": "Tested empty directory, cwd, wrapper, and explicit config cases in test_bootstrap.py",
+        "item_id": "agent-project-boundary",
+        "notes": null,
+        "started_at": "2026-08-18T21:36:50Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Test cwd, sibling worktree, wrapper, explicit config, and empty-directory cases",
+        "wid": "w3"
+      }
+    ]
+  }
+}

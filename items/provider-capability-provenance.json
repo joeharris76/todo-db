@@ -1,0 +1,219 @@
+{
+  "context": "Decide between: (a) label provider credentials capability 'requested:<capability>' or add a separate 'requested' field so output never implies a proven property; (b) omit capability entirely for the provider source; or (c) keep the current labelling and document explicitly that for the provider source capability records the request, not the token. Whichever is chosen, audit .github/workflows/audit-monitor.yml and any assertion that treats source or capability as evidence of least privilege, and state in the runbook that a single-entry provider serves both capabilities from one token. Separately document that a branching provider script must exit 0 with empty output to signal absence, and that exiting non-zero for a missing entry is an error by design; give the runbook example an explicit absent branch.",
+  "description": "For environment credentials, ResolvedCredential.capability describes which variable was selected, and the operator controls what each variable holds. For provider credentials the resolver sets capability to the capability it requested, which the provider is free to ignore. A single-entry provider that always prints the read-write token therefore yields ResolvedCredential(token, TODO_DB_CREDENTIAL_COMMAND, 'read-only') for a read-only operation, and doctor prints and emits capability read-only for a read-write token. ADR 0004 already records that read-only is only server-enforced when the token was minted read-only, so this is not a new enforcement claim, but doctor now reports a capability it cannot substantiate, and the scheduled audit's read-only provenance assertion was written when source alone implied capability. A related sharp edge belongs to the same decision: a branching provider script that exits non-zero when the read-only entry is missing produces an error rather than the absent result that would allow fallback, because real tools exit non-zero on a missing entry rather than exiting 0 with empty output.",
+  "legacy": {
+    "anti_patterns": [
+      {
+        "dont": "Infer a token's real capability by attempting a write",
+        "instead": "report what was requested and say so plainly",
+        "item_id": "provider-capability-provenance",
+        "why": "a probe write against a shared tracker mutates other actors' data and an ambiguous rejection cannot establish the cause"
+      },
+      {
+        "dont": "Report capability for a provider credential as though it were proven",
+        "instead": "label the request or omit the field for that source",
+        "item_id": "provider-capability-provenance",
+        "why": "the provider may ignore the request entirely and hand back one token for both capabilities"
+      },
+      {
+        "dont": "Ship a runbook example whose absent branch exits non-zero",
+        "instead": "show an explicit exit 0 with no output for the absent case",
+        "item_id": "provider-capability-provenance",
+        "why": "a non-zero exit is an error that stops resolution, so a missing read-only entry becomes a hard failure instead of a fallback"
+      }
+    ],
+    "item_deps": [
+      {
+        "item_id": "provider-capability-provenance",
+        "needs_item": "hosted-credential-provider"
+      }
+    ],
+    "item_meta": {
+      "category": "security",
+      "completed_at": "2026-08-19T15:18:01Z",
+      "completed_pr": 18,
+      "created_at": "2026-08-19T15:07:24Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "ADR 0004's rule stands: read-only is server-enforced only when the token was minted read-only, and no client label changes that.",
+        "item_id": "provider-capability-provenance"
+      },
+      {
+        "behavior": "Doctor output remains non-secret and never prints a token value.",
+        "item_id": "provider-capability-provenance"
+      },
+      {
+        "behavior": "Existing environment-variable provenance labelling is unchanged.",
+        "item_id": "provider-capability-provenance"
+      },
+      {
+        "behavior": "The absent-versus-error contract is unchanged: only exit 0 with empty output permits read-only to fall back to read-write.",
+        "item_id": "provider-capability-provenance"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "provider-capability-provenance",
+        "kind": "do_not_modify",
+        "path_glob": ".github/workflows/audit-monitor.yml"
+      },
+      {
+        "item_id": "provider-capability-provenance",
+        "kind": "do_not_modify",
+        "path_glob": "_project/scripts/todo"
+      },
+      {
+        "item_id": "provider-capability-provenance",
+        "kind": "do_not_modify",
+        "path_glob": "docs/adr/0004-hosted-credential-lifecycle.md"
+      },
+      {
+        "item_id": "provider-capability-provenance",
+        "kind": "only_modify",
+        "path_glob": "CHANGELOG.md"
+      },
+      {
+        "item_id": "provider-capability-provenance",
+        "kind": "only_modify",
+        "path_glob": "README.md"
+      },
+      {
+        "item_id": "provider-capability-provenance",
+        "kind": "only_modify",
+        "path_glob": "docs/adr/0005-hosted-credential-provider.md"
+      },
+      {
+        "item_id": "provider-capability-provenance",
+        "kind": "only_modify",
+        "path_glob": "docs/operations/hosted-credentials.md"
+      },
+      {
+        "item_id": "provider-capability-provenance",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/backends.py"
+      },
+      {
+        "item_id": "provider-capability-provenance",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/cli.py"
+      },
+      {
+        "item_id": "provider-capability-provenance",
+        "kind": "only_modify",
+        "path_glob": "tests/test_doctor.py"
+      },
+      {
+        "item_id": "provider-capability-provenance",
+        "kind": "only_modify",
+        "path_glob": "tests/test_hosted_backend.py"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "rg -qi 'capability' docs/adr/0005-hosted-credential-provider.md && rg -qi 'requested' docs/adr/0005-hosted-credential-provider.md",
+        "description": "The decision is recorded in ADR 0005",
+        "expected": null,
+        "item_id": "provider-capability-provenance",
+        "last_result": "pass",
+        "last_run": "2026-08-19T15:17:45Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run pytest tests/test_hosted_backend.py tests/test_doctor.py -q -k 'provider or capability'",
+        "description": "Provider capability labelling is covered by tests",
+        "expected": null,
+        "item_id": "provider-capability-provenance",
+        "last_result": "pass",
+        "last_run": "2026-08-19T15:17:48Z",
+        "seq": 2,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "rg -q 'exit 0' docs/operations/hosted-credentials.md",
+        "description": "The runbook example shows an exit-0 absent branch",
+        "expected": null,
+        "item_id": "provider-capability-provenance",
+        "last_result": "pass",
+        "last_run": "2026-08-19T15:17:48Z",
+        "seq": 3,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run pytest -q && uv run ruff check .",
+        "description": "Full suite and lint pass",
+        "expected": null,
+        "item_id": "provider-capability-provenance",
+        "last_result": "pass",
+        "last_run": "2026-08-19T15:18:01Z",
+        "seq": 4,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "provider-capability-provenance",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "provider-capability-provenance",
+        "needs_wid": "w0",
+        "wid": "w2"
+      },
+      {
+        "item_id": "provider-capability-provenance",
+        "needs_wid": "w0",
+        "wid": "w3"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "chose requested-labelling over omission or status quo; recorded in ADR 0005 G4",
+        "item_id": "provider-capability-provenance",
+        "notes": null,
+        "started_at": "2026-08-19T15:17:29Z",
+        "started_branch": "feat/hosted-credential-provider",
+        "started_worktree": "/Users/joe/Developer/todo-db.wt-credential-provider",
+        "status": "done",
+        "summary": "Choose between requested-labelling, omission, or documented status quo and record the decision",
+        "wid": "w0"
+      },
+      {
+        "evidence": "provider credentials labelled requested:<capability> through resolver, doctor text, and doctor JSON",
+        "item_id": "provider-capability-provenance",
+        "notes": null,
+        "started_at": "2026-08-19T15:17:29Z",
+        "started_branch": "feat/hosted-credential-provider",
+        "started_worktree": "/Users/joe/Developer/todo-db.wt-credential-provider",
+        "status": "done",
+        "summary": "Implement the chosen labelling in the resolver and doctor output",
+        "wid": "w1"
+      },
+      {
+        "evidence": "audit-monitor.yml requires source TODO_DB_RO_AUTH_TOKEN and capability read-only, so a provider credential can never satisfy it; no change needed and none made",
+        "item_id": "provider-capability-provenance",
+        "notes": null,
+        "started_at": "2026-08-19T15:17:29Z",
+        "started_branch": "feat/hosted-credential-provider",
+        "started_worktree": "/Users/joe/Developer/todo-db.wt-credential-provider",
+        "status": "done",
+        "summary": "Audit every assertion that treats source or capability as evidence of least privilege",
+        "wid": "w2"
+      },
+      {
+        "evidence": "runbook example gains an explicit exit-0 absent branch with the reason, plus the single-entry note; ADR 0005 records that real tools exit non-zero on a missing entry",
+        "item_id": "provider-capability-provenance",
+        "notes": null,
+        "started_at": "2026-08-19T15:17:29Z",
+        "started_branch": "feat/hosted-credential-provider",
+        "started_worktree": "/Users/joe/Developer/todo-db.wt-credential-provider",
+        "status": "done",
+        "summary": "Give the runbook branching-script example an explicit exit-0-empty absent branch and explain the contract",
+        "wid": "w3"
+      }
+    ]
+  }
+}

@@ -1,0 +1,173 @@
+{
+  "context": "Inventory every fake, stub, and monkeypatched boundary in tests/ and tests/fake_hrana.py. For each, ask what would still pass if the implementation were subtly wrong, and record the answer. Prefer strictness: doubles should reject unexpected arguments, unexpected call counts, and unexpected orderings rather than tolerate them. Where a double stands in for a real external tool, either assert the real tool's documented interface or add a clearly marked opt-in check that exercises the real one. Fix the doubles whose looseness hides a plausible defect and record the rest as accepted with reasoning. Do not rewrite the suite; this is a targeted audit with a written result.",
+  "description": "Two independent defects in the same helper let twelve provider tests pass against a resolver that could not drive a real secret store. _provider_script wrote the two-character sequence backslash-n instead of a line break, collapsing every stub to a single malformed shell line, and every stub was written to accept whatever arguments it was handed, so appending a positional argument that breaks security, op, and pass went unnoticed until an external review. The suite was green throughout. Other doubles in this repository carry the same risk: FakeLibsql and FakeHrana stand in for a backend whose real behaviour they define rather than observe, and any stub written to satisfy the code under test proves only that the code calls what the author expected. Audit them and pin the ones that matter.",
+  "legacy": {
+    "anti_patterns": [
+      {
+        "dont": "Encode a line break as an escaped sequence inside a generated script or fixture",
+        "instead": "assemble multi-line fixtures from real newlines and assert the fixture behaves as intended",
+        "item_id": "test-double-vacuity-audit",
+        "why": "the fixture collapses to one malformed line and the test then exercises a shell parse error rather than the logic it names"
+      },
+      {
+        "dont": "Treat a green suite as evidence that a double is faithful",
+        "instead": "ask what would still pass if the implementation were wrong, and record the answer",
+        "item_id": "test-double-vacuity-audit",
+        "why": "a double written to match the implementation will always agree with it"
+      },
+      {
+        "dont": "Write a stub that accepts any arguments so the test passes",
+        "instead": "make the double reject anything it was not told to expect",
+        "item_id": "test-double-vacuity-audit",
+        "why": "a permissive double tests that the code calls something, not that it calls the right thing, which is exactly how the appended-capability defect survived twelve tests"
+      }
+    ],
+    "item_meta": {
+      "category": "test",
+      "completed_at": "2026-08-19T15:20:21Z",
+      "completed_pr": 18,
+      "created_at": "2026-08-19T15:07:53Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "Any check that needs a real external tool is opt-in and skips loudly when the tool is absent.",
+        "item_id": "test-double-vacuity-audit"
+      },
+      {
+        "behavior": "Existing coverage is not deleted to make an audit finding go away.",
+        "item_id": "test-double-vacuity-audit"
+      },
+      {
+        "behavior": "Test runtime stays within the existing fast-suite expectation; strictness must not turn into network or tool dependence in the default suite.",
+        "item_id": "test-double-vacuity-audit"
+      }
+    ],
+    "prior_art": [
+      {
+        "concept": "opt-in real-tool acceptance harness that skips loudly",
+        "decision": "reuse",
+        "item_id": "test-double-vacuity-audit",
+        "path": "scripts/turso_acceptance.sh"
+      },
+      {
+        "concept": "hosted backend double standing in for libSQL",
+        "decision": "extend",
+        "item_id": "test-double-vacuity-audit",
+        "path": "tests/fake_hrana.py"
+      },
+      {
+        "concept": "provider stub helper and the defect that motivated this audit",
+        "decision": "extend",
+        "item_id": "test-double-vacuity-audit",
+        "path": "tests/test_hosted_backend.py"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "test-double-vacuity-audit",
+        "kind": "do_not_modify",
+        "path_glob": ".github/workflows/**"
+      },
+      {
+        "item_id": "test-double-vacuity-audit",
+        "kind": "do_not_modify",
+        "path_glob": "_project/scripts/todo"
+      },
+      {
+        "item_id": "test-double-vacuity-audit",
+        "kind": "do_not_modify",
+        "path_glob": "docs/adr/**"
+      },
+      {
+        "item_id": "test-double-vacuity-audit",
+        "kind": "do_not_modify",
+        "path_glob": "src/**"
+      },
+      {
+        "item_id": "test-double-vacuity-audit",
+        "kind": "only_modify",
+        "path_glob": "CHANGELOG.md"
+      },
+      {
+        "item_id": "test-double-vacuity-audit",
+        "kind": "only_modify",
+        "path_glob": "docs/operations/**"
+      },
+      {
+        "item_id": "test-double-vacuity-audit",
+        "kind": "only_modify",
+        "path_glob": "tests/**"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "test -z \"$(rg -n 'write_text\\(.*\\\\\\\\n' tests/)\"",
+        "description": "No generated test fixture writes an escaped newline where a line break is meant",
+        "expected": null,
+        "item_id": "test-double-vacuity-audit",
+        "last_result": "pass",
+        "last_run": "2026-08-19T15:20:07Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run pytest -q && uv run ruff check .",
+        "description": "Full suite and lint pass",
+        "expected": null,
+        "item_id": "test-double-vacuity-audit",
+        "last_result": "pass",
+        "last_run": "2026-08-19T15:20:21Z",
+        "seq": 2,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "test-double-vacuity-audit",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "test-double-vacuity-audit",
+        "needs_wid": "w0",
+        "wid": "w2"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "inventoried FakeLibsql, FakeRawConnection, FakeHranaModule, _provider_script, and the bare libsql ModuleType; recorded what each cannot catch in docs/operations/test-doubles.md",
+        "item_id": "test-double-vacuity-audit",
+        "notes": null,
+        "started_at": "2026-08-19T15:19:54Z",
+        "started_branch": "feat/hosted-credential-provider",
+        "started_worktree": "/Users/joe/Developer/todo-db.wt-credential-provider",
+        "status": "done",
+        "summary": "Inventory every fake, stub, and monkeypatched boundary and what each one would fail to catch",
+        "wid": "w0"
+      },
+      {
+        "evidence": "both libSQL doubles reject unexpected connect keywords; confirmed a bad keyword now raises TypeError while the real signature is accepted",
+        "item_id": "test-double-vacuity-audit",
+        "notes": null,
+        "started_at": "2026-08-19T15:19:54Z",
+        "started_branch": "feat/hosted-credential-provider",
+        "started_worktree": "/Users/joe/Developer/todo-db.wt-credential-provider",
+        "status": "done",
+        "summary": "Make doubles strict about unexpected arguments and call shapes where looseness hides a plausible defect",
+        "wid": "w1"
+      },
+      {
+        "evidence": "accepted looseness recorded with reasoning: bare ModuleType for the pre-connect failure path, and local SQLite execution for dialect-independent tracker logic",
+        "item_id": "test-double-vacuity-audit",
+        "notes": null,
+        "started_at": "2026-08-19T15:19:54Z",
+        "started_branch": "feat/hosted-credential-provider",
+        "started_worktree": "/Users/joe/Developer/todo-db.wt-credential-provider",
+        "status": "done",
+        "summary": "Record accepted looseness with reasoning so the next reader does not re-derive it",
+        "wid": "w2"
+      }
+    ]
+  }
+}

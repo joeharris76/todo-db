@@ -1,0 +1,217 @@
+{
+  "description": "Close the project with deterministic byte budgets, local and approved hosted lifecycle evidence, audit/restore parity, security tests, package smoke, and concise offline onboarding. Publish only after every support label and decision record matches measured behavior.",
+  "legacy": {
+    "anti_patterns": [
+      {
+        "dont": "Auto-edit AGENTS.md",
+        "instead": "print agent instructions for explicit piping",
+        "item_id": "agent-workflow-release-gate",
+        "why": "marker maintenance is unrelated scope"
+      },
+      {
+        "dont": "Mark complete on unit tests alone",
+        "instead": "map every release claim to an artifact",
+        "item_id": "agent-workflow-release-gate",
+        "why": "security, TUI, package, restore, and hosted contracts need separate evidence"
+      },
+      {
+        "dont": "Publish protocol-incompatible Python and Pi versions",
+        "instead": "pin minimum protocol and fail with upgrade guidance",
+        "item_id": "agent-workflow-release-gate",
+        "why": "adapter cannot safely guess unknown output"
+      }
+    ],
+    "item_deps": [
+      {
+        "item_id": "agent-workflow-release-gate",
+        "needs_item": "pi-todo-db-ui"
+      }
+    ],
+    "item_meta": {
+      "category": "agent-workflow",
+      "completed_at": "2026-08-18T21:43:26Z",
+      "created_at": "2026-08-18T21:15:34Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "Claims are called claim-coordinated/advisory everywhere",
+        "item_id": "agent-workflow-release-gate"
+      },
+      {
+        "behavior": "Instructions and default receipts have deterministic byte caps with explicit truncation semantics",
+        "item_id": "agent-workflow-release-gate"
+      },
+      {
+        "behavior": "No release claims real hosted concurrency without real-primary evidence",
+        "item_id": "agent-workflow-release-gate"
+      },
+      {
+        "behavior": "Schema budget is measured as serialized JSON UTF-8 bytes, not an undefined token estimate",
+        "item_id": "agent-workflow-release-gate"
+      }
+    ],
+    "prior_art": [
+      {
+        "concept": "atomic audit event envelope",
+        "decision": "reuse",
+        "item_id": "agent-workflow-release-gate",
+        "path": "src/todo_db/database.py"
+      },
+      {
+        "concept": "transactional lifecycle and claims",
+        "decision": "extend",
+        "item_id": "agent-workflow-release-gate",
+        "path": "src/todo_db/tracker.py"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "agent-workflow-release-gate",
+        "kind": "do_not_modify",
+        "path_glob": ".todo-db/**"
+      },
+      {
+        "item_id": "agent-workflow-release-gate",
+        "kind": "do_not_modify",
+        "path_glob": "dist/**"
+      },
+      {
+        "item_id": "agent-workflow-release-gate",
+        "kind": "only_modify",
+        "path_glob": ".github/workflows/**"
+      },
+      {
+        "item_id": "agent-workflow-release-gate",
+        "kind": "only_modify",
+        "path_glob": "README.md"
+      },
+      {
+        "item_id": "agent-workflow-release-gate",
+        "kind": "only_modify",
+        "path_glob": "docs/**"
+      },
+      {
+        "item_id": "agent-workflow-release-gate",
+        "kind": "only_modify",
+        "path_glob": "integrations/pi/**"
+      },
+      {
+        "item_id": "agent-workflow-release-gate",
+        "kind": "only_modify",
+        "path_glob": "tests/**"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest -q",
+        "description": "Full Python verification",
+        "expected": "all tests pass",
+        "item_id": "agent-workflow-release-gate",
+        "last_result": "pass",
+        "last_run": "2026-08-18T21:43:24Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run ruff check .",
+        "description": "Python lint",
+        "expected": "no findings",
+        "item_id": "agent-workflow-release-gate",
+        "last_result": "pass",
+        "last_run": "2026-08-18T21:43:24Z",
+        "seq": 2,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "cd integrations/pi && npm test && npm run typecheck && npm pack --dry-run",
+        "description": "Pi package verification",
+        "expected": "all commands pass",
+        "item_id": "agent-workflow-release-gate",
+        "last_result": "pass",
+        "last_run": "2026-08-18T21:43:26Z",
+        "seq": 3,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "agent-workflow-release-gate",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "agent-workflow-release-gate",
+        "needs_wid": "w1",
+        "wid": "w2"
+      },
+      {
+        "item_id": "agent-workflow-release-gate",
+        "needs_wid": "w2",
+        "wid": "w3"
+      },
+      {
+        "item_id": "agent-workflow-release-gate",
+        "needs_wid": "w3",
+        "wid": "w4"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "Deterministic UTF-8 byte budgets verified",
+        "item_id": "agent-workflow-release-gate",
+        "notes": null,
+        "started_at": "2026-08-18T21:43:04Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Define deterministic UTF-8 byte budgets for schemas, instructions, and results",
+        "wid": "w0"
+      },
+      {
+        "evidence": "Local lifecycle and session restart/adoption end-to-end verified",
+        "item_id": "agent-workflow-release-gate",
+        "notes": null,
+        "started_at": "2026-08-18T21:43:04Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Run local take-progress-finish and restart/adoption end-to-end scenarios",
+        "wid": "w1"
+      },
+      {
+        "evidence": "Verification secrets, no-shell model finish, scope, and restore verified",
+        "item_id": "agent-workflow-release-gate",
+        "notes": null,
+        "started_at": "2026-08-18T21:43:04Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Run verification secret, no-shell model finish, scope path, and restore regressions",
+        "wid": "w2"
+      },
+      {
+        "evidence": "Isolated Pi smoke and custom TUI rendering verified",
+        "item_id": "agent-workflow-release-gate",
+        "notes": null,
+        "started_at": "2026-08-18T21:43:04Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Run isolated Pi print and TUI smoke with no context injection",
+        "wid": "w3"
+      },
+      {
+        "evidence": "Support matrix, ADR 0003, and completion audits verified",
+        "item_id": "agent-workflow-release-gate",
+        "notes": null,
+        "started_at": "2026-08-18T21:43:04Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Write the support matrix, upgrade instructions, and final completion audit",
+        "wid": "w4"
+      }
+    ]
+  }
+}

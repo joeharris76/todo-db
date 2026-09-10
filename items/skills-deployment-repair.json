@@ -1,0 +1,42 @@
+{
+  "description": "All sessions machine-wide are served skills from unpushed branch feat/minimize-wrapper-skills (sole copies of 3 commits local); skill-sync.lock is stale by 2 commits with hash mismatches, so lock-trusting repair would resurrect pre-halt-rule files; merged BenchBox PR 1309 depends on this unpushed state. Push, decide merge, regenerate lock, then define how skills propagate to scoped in-repo copies (BenchBox fork is stale at todo-db 0.2.0).",
+  "legacy": {
+    "item_meta": {
+      "completed_at": "2026-09-02T01:34:39Z",
+      "created_at": "2026-07-26T13:01:45Z",
+      "worktree": "skill-sync"
+    },
+    "scope_rules": [
+      {
+        "item_id": "skills-deployment-repair",
+        "kind": "only_modify",
+        "path_glob": "skill-sync.*"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "test $(git -C ~/.skill-sync log origin/HEAD..HEAD --oneline | wc -l | tr -d \" \") -eq 0",
+        "description": "Pushed",
+        "expected": null,
+        "item_id": "skills-deployment-repair",
+        "last_result": "pass",
+        "last_run": "2026-09-02T01:34:39Z",
+        "seq": 1,
+        "workspace_fingerprint": "bd9b30ce1ce19b58f7f0a4e8d804202d5d28291480086b574295010fd6503ac5"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "test evidence",
+        "item_id": "skills-deployment-repair",
+        "notes": null,
+        "started_at": "2026-07-26T13:09:52Z",
+        "started_branch": "feat/todo-db-standalone-parity",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Push+merge branch, regenerate lock, document propagation/consistency model",
+        "wid": "w0"
+      }
+    ]
+  }
+}

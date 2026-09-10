@@ -1,0 +1,182 @@
+{
+  "context": "Change _wrapper_script and _project/scripts/todo together. Add a stable template comment marker and export TODO_DB_AUTH_CONTRACT=v2 before invoking todo-db. The marker is a caller-controlled compatibility handshake, not authentication or authorization. Implement a targeted wrapper refresh/config-recorded path or exact bounded replacement procedure; never use broad init-project --force or transparent self-update. Remove the hosted doctor turso-cli/whoami check and automatic-remint wording. Tests prove one invocation, no turso call, no token file, marker propagation, and unchanged non-auth behavior. Completion alone does not activate exit 4: hosted-auth-resolver-v2 must map auth failures to exit 2 with migration warning whenever the v2 marker is absent.",
+  "description": "Remove control-plane credential minting from generated and checked-in wrappers before the v2 auth exit contract ships. V2 wrappers execute todo-db once, never call turso, never retry auth failures, create no token cache, export a non-secret TODO_DB_AUTH_CONTRACT=v2 compatibility marker, print concise remediation, and propagate the binary's result. Existing committed wrappers are a migration hazard: provide a targeted refresh/detection path and pair the marker with the dependent resolver's legacy-safe exit mapping. Remove doctor's turso auth whoami network/account-identity check. This item supersedes its former 0600-cache proposal.",
+  "legacy": {
+    "anti_patterns": [
+      {
+        "dont": "Cache a reminted token in a 0600 file",
+        "instead": "INSTEAD remove implicit minting and inject a provisioned token externally",
+        "item_id": "wrapper-token-hygiene",
+        "why": "core would become a secret store without fixing parent-shell ownership or full lifecycle hazards"
+      },
+      {
+        "dont": "Treat the wrapper marker as a security credential",
+        "instead": "INSTEAD use it only to negotiate safe exit-code behavior",
+        "item_id": "wrapper-token-hygiene",
+        "why": "any caller can set it and it carries no identity or capability"
+      },
+      {
+        "dont": "Use init-project --force as generic wrapper migration",
+        "instead": "INSTEAD implement a targeted refresh path or exact bounded replacement procedure",
+        "item_id": "wrapper-token-hygiene",
+        "why": "it can overwrite config and other scaffolding"
+      }
+    ],
+    "item_deps": [
+      {
+        "item_id": "wrapper-token-hygiene",
+        "needs_item": "headless-credential-model"
+      }
+    ],
+    "item_meta": {
+      "category": "security",
+      "completed_at": "2026-08-18T23:38:09Z",
+      "completed_pr": 13,
+      "created_at": "2026-07-26T13:01:29Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "Already-generated wrappers receive a detectable and documented migration path before missing-token exit 4 ships.",
+        "item_id": "wrapper-token-hygiene"
+      },
+      {
+        "behavior": "Legacy wrappers cannot receive the v2 exit-4 contract until the dependent resolver implements absent-marker suppression.",
+        "item_id": "wrapper-token-hygiene"
+      },
+      {
+        "behavior": "TODO_DB_AUTH_CONTRACT is only a compatibility handshake; it never proves identity, token validity, or capability.",
+        "item_id": "wrapper-token-hygiene"
+      },
+      {
+        "behavior": "Wrapper tool-resolution order, config discovery, arguments, stdout/stderr, and every non-auth exit code remain unchanged.",
+        "item_id": "wrapper-token-hygiene"
+      }
+    ],
+    "prior_art": [
+      {
+        "concept": "_wrapper_script and doctor control-plane probe",
+        "decision": "supersede",
+        "item_id": "wrapper-token-hygiene",
+        "path": "src/todo_db/cli.py"
+      },
+      {
+        "concept": "wrapper remint behavior tests",
+        "decision": "supersede",
+        "item_id": "wrapper-token-hygiene",
+        "path": "tests/test_bootstrap.py"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "wrapper-token-hygiene",
+        "kind": "only_modify",
+        "path_glob": "CHANGELOG.md"
+      },
+      {
+        "item_id": "wrapper-token-hygiene",
+        "kind": "only_modify",
+        "path_glob": "README.md"
+      },
+      {
+        "item_id": "wrapper-token-hygiene",
+        "kind": "only_modify",
+        "path_glob": "_project/scripts/todo"
+      },
+      {
+        "item_id": "wrapper-token-hygiene",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/cli.py"
+      },
+      {
+        "item_id": "wrapper-token-hygiene",
+        "kind": "only_modify",
+        "path_glob": "tests/test_bootstrap.py"
+      },
+      {
+        "item_id": "wrapper-token-hygiene",
+        "kind": "only_modify",
+        "path_glob": "tests/test_doctor.py"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest tests/test_bootstrap.py tests/test_doctor.py -q",
+        "description": "Wrapper and doctor tests",
+        "expected": null,
+        "item_id": "wrapper-token-hygiene",
+        "last_result": "pass",
+        "last_run": "2026-08-18T23:38:09Z",
+        "seq": 2,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "! rg -n 'turso (auth whoami|db list|db tokens create)' src/todo_db/cli.py _project/scripts/todo",
+        "description": "No runtime control-plane calls",
+        "expected": null,
+        "item_id": "wrapper-token-hygiene",
+        "last_result": "pass",
+        "last_run": "2026-08-18T23:38:09Z",
+        "seq": 3,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "rg -n 'TODO_DB_AUTH_CONTRACT.*v2' src/todo_db/cli.py _project/scripts/todo && ! rg -n 'turso (auth whoami|db list|db tokens create)' src/todo_db/cli.py _project/scripts/todo",
+        "description": "V2 marker exists and runtime minting does not",
+        "expected": null,
+        "item_id": "wrapper-token-hygiene",
+        "last_result": "pass",
+        "last_run": "2026-08-18T23:38:09Z",
+        "seq": 4,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "wrapper-token-hygiene",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "wrapper-token-hygiene",
+        "needs_wid": "w1",
+        "wid": "w2"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "V2 template and checked-in wrapper invoke once, export TODO_DB_AUTH_CONTRACT=v2, contain no Turso call; doctor account probe removed",
+        "item_id": "wrapper-token-hygiene",
+        "notes": null,
+        "started_at": "2026-08-18T23:35:51Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Delete wrapper auto-mint and doctor control-plane probes; export v2 compatibility marker",
+        "wid": "w0"
+      },
+      {
+        "evidence": "Added config-recorded wrapper path, safe refresh-wrapper command, and doctor legacy-wrapper detection with traversal/symlink/custom-file refusal",
+        "item_id": "wrapper-token-hygiene",
+        "notes": null,
+        "started_at": "2026-08-18T23:35:51Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Implement targeted stale-wrapper detection or refresh without broad force overwrite",
+        "wid": "w1"
+      },
+      {
+        "evidence": "Updated README/CHANGELOG and tests prove marker, one execution, no Turso invocation, exact exit propagation, safe refresh, and targeted doctor remediation",
+        "item_id": "wrapper-token-hygiene",
+        "notes": null,
+        "started_at": "2026-08-18T23:35:51Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Update checked-in wrapper, migration docs, and marker/single-execution security tests",
+        "wid": "w2"
+      }
+    ]
+  }
+}

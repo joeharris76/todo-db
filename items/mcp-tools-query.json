@@ -1,0 +1,134 @@
+{
+  "description": "Implement list_items, show_item, ready, stats, deps, deferrals, export, check_scope, verify_list (list stored verifications, never run them), lint, and start_unit (no-shell state change) as read-only or no-shell tools in the default profile. list_items, ready, and show_item carry fields and limit. Oversized list output uses the drop-trailing-items paging fallback before E_OUTPUT_TRUNCATED. stats returns a coded error when project identity is unresolved.",
+  "legacy": {
+    "item_deps": [
+      {
+        "item_id": "mcp-tools-query",
+        "needs_item": "mcp-tools-work"
+      }
+    ],
+    "item_meta": {
+      "category": "mcp-migration",
+      "completed_at": "2026-09-02T17:21:12Z",
+      "created_at": "2026-09-02T13:31:11Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "Query tools open a read-only connection and never resolve a read-write credential",
+        "item_id": "mcp-tools-query"
+      },
+      {
+        "behavior": "verify_list never executes a stored verification command",
+        "item_id": "mcp-tools-query"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "mcp-tools-query",
+        "kind": "do_not_modify",
+        "path_glob": ".todo-db/**"
+      },
+      {
+        "item_id": "mcp-tools-query",
+        "kind": "do_not_modify",
+        "path_glob": "dist/**"
+      },
+      {
+        "item_id": "mcp-tools-query",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/mcp/**"
+      },
+      {
+        "item_id": "mcp-tools-query",
+        "kind": "only_modify",
+        "path_glob": "tests/test_mcp_server.py"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest -q",
+        "description": "Tests",
+        "expected": "pass",
+        "item_id": "mcp-tools-query",
+        "last_result": "pass",
+        "last_run": "2026-09-02T17:21:12Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run ruff check .",
+        "description": "Lint",
+        "expected": "clean",
+        "item_id": "mcp-tools-query",
+        "last_result": "pass",
+        "last_run": "2026-09-02T17:21:12Z",
+        "seq": 2,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "mcp-tools-query",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "mcp-tools-query",
+        "needs_wid": "w1",
+        "wid": "w2"
+      },
+      {
+        "item_id": "mcp-tools-query",
+        "needs_wid": "w1",
+        "wid": "w3"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "Confirmed read-only tracker methods: list_items, ready_items, stats, check_scope, lint, start_unit, export_all, etc.",
+        "item_id": "mcp-tools-query",
+        "notes": null,
+        "started_at": "2026-09-02T17:19:53Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Confirm the read-only and no-shell tracker methods behind each tool",
+        "wid": "w0"
+      },
+      {
+        "evidence": "Implemented 11 query tools with fields/limit paging fallback via envelope.paged and MAX_BYTES guard",
+        "item_id": "mcp-tools-query",
+        "notes": null,
+        "started_at": "2026-09-02T17:19:53Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Implement the query tools with fields, limit, and the paging fallback",
+        "wid": "w1"
+      },
+      {
+        "evidence": "Stats tool surfaces E_IDENTITY when identity unresolved (via envelope err), verify_list never executes commands",
+        "item_id": "mcp-tools-query",
+        "notes": null,
+        "started_at": "2026-09-02T17:19:53Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Give stats a coded error for the unresolved-identity drafts-dir path",
+        "wid": "w2"
+      },
+      {
+        "evidence": "Verified via in-memory transport: list_items/stats/deferrals etc present, paging fallback works",
+        "item_id": "mcp-tools-query",
+        "notes": null,
+        "started_at": "2026-09-02T17:19:53Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Add query-tool tests",
+        "wid": "w3"
+      }
+    ]
+  }
+}

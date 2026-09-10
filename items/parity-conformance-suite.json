@@ -1,0 +1,52 @@
+{
+  "description": "Mechanical parity contract between BenchBox todo_db.py and standalone todo-db: diff --help surfaces, exit-code maps, and tracker+findings DDL; red in CI on any asymmetry not explicitly allowlisted. Enforce in-repo tracker feature freeze until cutover.",
+  "legacy": {
+    "item_meta": {
+      "completed_at": "2026-09-02T01:47:50Z",
+      "created_at": "2026-07-26T13:00:37Z",
+      "worktree": "todo-db"
+    },
+    "scope_rules": [
+      {
+        "item_id": "parity-conformance-suite",
+        "kind": "only_modify",
+        "path_glob": ".github/workflows/ci.yml"
+      },
+      {
+        "item_id": "parity-conformance-suite",
+        "kind": "only_modify",
+        "path_glob": "scripts/*"
+      },
+      {
+        "item_id": "parity-conformance-suite",
+        "kind": "only_modify",
+        "path_glob": "tests/test_conformance.py"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest tests/test_conformance.py -q",
+        "description": "Conformance",
+        "expected": null,
+        "item_id": "parity-conformance-suite",
+        "last_result": "pass",
+        "last_run": "2026-09-02T01:47:50Z",
+        "seq": 1,
+        "workspace_fingerprint": "368a61e0fed67b8d3ee7eb6ae880fe45831bccae8bb8436d375a3c00f511f1c7"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "Parity conformance suite: scripts/parity_conformance.py differ over help/exit-code/DDL with allowlist at scripts/parity_allowlist.json, frozen snapshots, CI wired, commit 0b2fac0; verification pass",
+        "item_id": "parity-conformance-suite",
+        "notes": null,
+        "started_at": null,
+        "started_branch": null,
+        "started_worktree": null,
+        "status": "done",
+        "summary": "Build conformance differ over help surfaces, exit-code maps, and DDL for both implementations",
+        "wid": "w0"
+      }
+    ]
+  }
+}

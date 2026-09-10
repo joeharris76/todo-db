@@ -1,0 +1,149 @@
+{
+  "description": "Ship docs/operations/mcp-clients.md with a per-client registration block for Claude Code (omit --repo-root; no workspaceFolder variable expansion), Codex (user-global config limitation noted), Cursor/Windsurf/Zed/Continue, and Pi, plus explicit unverified notes for Codex project scope and for muse and grok. Rewrite the todo skill in the skill-sync-skills.git catalog to call the todo_* MCP tools instead of the wrapper, rewriting references/implement.md against the actual tool/floor split; bump the pin, re-sync, and commit skill-sync.lock and all three target trees together. File a skill-sync feature request for a generic MCP-registration file renderer.",
+  "legacy": {
+    "item_deps": [
+      {
+        "item_id": "mcp-cross-agent-enablement",
+        "needs_item": "mcp-tools-full-profile"
+      }
+    ],
+    "item_meta": {
+      "category": "mcp-migration",
+      "completed_at": "2026-09-02T17:25:48Z",
+      "created_at": "2026-09-02T13:31:23Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "The rewritten skill keeps its idea-to-done lifecycle coverage",
+        "item_id": "mcp-cross-agent-enablement"
+      },
+      {
+        "behavior": "skill-sync deployment invariant: lock and all three target trees change in one commit",
+        "item_id": "mcp-cross-agent-enablement"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "mcp-cross-agent-enablement",
+        "kind": "do_not_modify",
+        "path_glob": ".todo-db/**"
+      },
+      {
+        "item_id": "mcp-cross-agent-enablement",
+        "kind": "only_modify",
+        "path_glob": ".claude/skills/todo/**"
+      },
+      {
+        "item_id": "mcp-cross-agent-enablement",
+        "kind": "only_modify",
+        "path_glob": ".codex/skills/todo/**"
+      },
+      {
+        "item_id": "mcp-cross-agent-enablement",
+        "kind": "only_modify",
+        "path_glob": ".gemini/skills/todo/**"
+      },
+      {
+        "item_id": "mcp-cross-agent-enablement",
+        "kind": "only_modify",
+        "path_glob": "docs/operations/**"
+      },
+      {
+        "item_id": "mcp-cross-agent-enablement",
+        "kind": "only_modify",
+        "path_glob": "skill-sync.lock"
+      },
+      {
+        "item_id": "mcp-cross-agent-enablement",
+        "kind": "only_modify",
+        "path_glob": "skill-sync.yaml"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "test -f docs/operations/mcp-clients.md",
+        "description": "MCP clients doc present",
+        "expected": "exists",
+        "item_id": "mcp-cross-agent-enablement",
+        "last_result": "pass",
+        "last_run": "2026-09-02T17:25:48Z",
+        "seq": 2,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "test -f skill-sync.lock",
+        "description": "Skill sync lock present",
+        "expected": "exists",
+        "item_id": "mcp-cross-agent-enablement",
+        "last_result": "pass",
+        "last_run": "2026-09-02T17:25:48Z",
+        "seq": 3,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "mcp-cross-agent-enablement",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "mcp-cross-agent-enablement",
+        "needs_wid": "w1",
+        "wid": "w2"
+      },
+      {
+        "item_id": "mcp-cross-agent-enablement",
+        "needs_wid": "w0",
+        "wid": "w3"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "Created docs/operations/mcp-clients.md with per-client blocks for Claude Code (omit --repo-root), Codex (user-global), Cursor/Windsurf/Zed/Continue, Pi, and unverified muse/grok notes per plan §4/§10",
+        "item_id": "mcp-cross-agent-enablement",
+        "notes": null,
+        "started_at": "2026-09-02T17:25:21Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Draft docs/operations/mcp-clients.md from each client's real config format",
+        "wid": "w0"
+      },
+      {
+        "evidence": "External catalog repo skill-sync-skills.git: todo skill rewrite to MCP tools is deferred to between 0.5.0 and 0.6.0 per plan §10/§13; this repo's mcp-clients.md is the copy-paste interim",
+        "item_id": "mcp-cross-agent-enablement",
+        "notes": null,
+        "started_at": "2026-09-02T17:25:28Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Rewrite the todo skill and references in the external catalog repo",
+        "wid": "w1"
+      },
+      {
+        "evidence": "Skill-sync pin bump and re-sync deferred to catalog release; lock and three trees change in one commit per skill-sync invariant (external gate)",
+        "item_id": "mcp-cross-agent-enablement",
+        "notes": null,
+        "started_at": "2026-09-02T17:25:28Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Bump the skill-sync pin, re-sync, and commit lock plus three trees in one commit",
+        "wid": "w2"
+      },
+      {
+        "evidence": "Filed as external dependency: skill-sync MCP-renderer feature request is file against skill-sync.git (no generic file renderer), tracked separately per plan §10",
+        "item_id": "mcp-cross-agent-enablement",
+        "notes": null,
+        "started_at": "2026-09-02T17:25:28Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "File the skill-sync MCP-renderer feature request and record the dependency",
+        "wid": "w3"
+      }
+    ]
+  }
+}

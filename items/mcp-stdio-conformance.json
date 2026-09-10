@@ -1,0 +1,148 @@
+{
+  "description": "The SDK in-memory transport bypasses stdio framing, subprocess launch, environment inheritance, and cwd. Add a test that spawns todo-db-mcp as a subprocess, performs a real initialize and tools/list, and calls next. Add a stdout-purity assertion that no tool path writes to stdout (audit every reachable print to stderr or remove it). Freeze every tool's name, description, and input schema (plus output schema where declared) to scripts/mcp_snapshots/tools.json with a drift test.",
+  "legacy": {
+    "item_deps": [
+      {
+        "item_id": "mcp-stdio-conformance",
+        "needs_item": "mcp-tools-full-profile"
+      },
+      {
+        "item_id": "mcp-stdio-conformance",
+        "needs_item": "mcp-tools-work"
+      }
+    ],
+    "item_meta": {
+      "category": "mcp-migration",
+      "completed_at": "2026-09-02T17:24:57Z",
+      "created_at": "2026-09-02T13:31:11Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "No tool writes to stdout on the stdio transport",
+        "item_id": "mcp-stdio-conformance"
+      },
+      {
+        "behavior": "The CLI help, exit-code, and DDL parity freezes stay intact for the floor",
+        "item_id": "mcp-stdio-conformance"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "mcp-stdio-conformance",
+        "kind": "do_not_modify",
+        "path_glob": ".todo-db/**"
+      },
+      {
+        "item_id": "mcp-stdio-conformance",
+        "kind": "do_not_modify",
+        "path_glob": "dist/**"
+      },
+      {
+        "item_id": "mcp-stdio-conformance",
+        "kind": "only_modify",
+        "path_glob": "scripts/mcp_snapshots/**"
+      },
+      {
+        "item_id": "mcp-stdio-conformance",
+        "kind": "only_modify",
+        "path_glob": "scripts/parity_conformance.py"
+      },
+      {
+        "item_id": "mcp-stdio-conformance",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/**"
+      },
+      {
+        "item_id": "mcp-stdio-conformance",
+        "kind": "only_modify",
+        "path_glob": "tests/**"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest -q",
+        "description": "Tests",
+        "expected": "pass",
+        "item_id": "mcp-stdio-conformance",
+        "last_result": "pass",
+        "last_run": "2026-09-02T17:24:57Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run ruff check .",
+        "description": "Lint",
+        "expected": "clean",
+        "item_id": "mcp-stdio-conformance",
+        "last_result": "pass",
+        "last_run": "2026-09-02T17:24:57Z",
+        "seq": 2,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "mcp-stdio-conformance",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "mcp-stdio-conformance",
+        "needs_wid": "w0",
+        "wid": "w2"
+      },
+      {
+        "item_id": "mcp-stdio-conformance",
+        "needs_wid": "w1",
+        "wid": "w3"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "Audited mcp package for print to stdout; all prints use file=sys.stderr (verified via test_no_print_to_stdout_in_mcp_package)",
+        "item_id": "mcp-stdio-conformance",
+        "notes": null,
+        "started_at": "2026-09-02T17:24:21Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Audit every print reachable from a tool path and route it to stderr or remove it",
+        "wid": "w0"
+      },
+      {
+        "evidence": "Added subprocess stdio smoke test that spawns python -m todo_db.mcp, does initialize and tools/list and next",
+        "item_id": "mcp-stdio-conformance",
+        "notes": null,
+        "started_at": "2026-09-02T17:24:21Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Add the subprocess stdio smoke test",
+        "wid": "w1"
+      },
+      {
+        "evidence": "Added stdout-purity assertion that every stdout line parses as JSON-RPC and stderr carries logs",
+        "item_id": "mcp-stdio-conformance",
+        "notes": null,
+        "started_at": "2026-09-02T17:24:21Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Add the stdout-purity assertion",
+        "wid": "w2"
+      },
+      {
+        "evidence": "Added scripts/mcp_snapshots/tools.json (19 tools, agent) and tools_full.json (37 tools) with drift test",
+        "item_id": "mcp-stdio-conformance",
+        "notes": null,
+        "started_at": "2026-09-02T17:24:21Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Add scripts/mcp_snapshots/tools.json and the drift test",
+        "wid": "w3"
+      }
+    ]
+  }
+}

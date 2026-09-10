@@ -1,0 +1,35 @@
+{
+  "description": "Opening the synced replica as a plain local file (--db .todo-db/replica.db) bypasses the hosted verify --run gate and executes shared-DB-authored commands ungated; hosted errors at execute/commit time bypass both redaction and auth classification (only connect/sync are wrapped). Gate on replica provenance (e.g. detect replica sidecar files) and wrap execute/commit.",
+  "legacy": {
+    "item_meta": {
+      "completed_at": "2026-08-18T21:30:30Z",
+      "created_at": "2026-07-26T13:01:31Z",
+      "worktree": "todo-db"
+    },
+    "verifications": [
+      {
+        "command": "uv run pytest tests/test_hosted_backend.py -q",
+        "description": "Suite",
+        "expected": null,
+        "item_id": "verify-run-side-doors",
+        "last_result": "pass",
+        "last_run": "2026-08-18T21:30:30Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "Replica provenance gate and execute/commit error wrapping tested",
+        "item_id": "verify-run-side-doors",
+        "notes": null,
+        "started_at": "2026-08-18T21:30:29Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Replica-provenance gate + execute/commit error wrapping + tests",
+        "wid": "w0"
+      }
+    ]
+  }
+}

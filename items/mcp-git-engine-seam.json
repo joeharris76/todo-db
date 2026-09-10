@@ -1,0 +1,118 @@
+{
+  "description": "AgentWorkflow.__init__ currently takes only repo_root and builds its own GitScopeEngine from cwd. Add a git_engine parameter so the server can inject GitScopeEngine(repo_root=<pinned>). progress and finish must compute changed_files and workspace_fingerprint against the pinned root, and a non-git repo root must return E_SCOPE_GATE on a mutation rather than silently scoping to cwd. workspace_fingerprint byte reads run only on the worker thread.",
+  "legacy": {
+    "item_deps": [
+      {
+        "item_id": "mcp-git-engine-seam",
+        "needs_item": "mcp-decision-record"
+      }
+    ],
+    "item_meta": {
+      "category": "mcp-migration",
+      "completed_at": "2026-09-02T17:06:28Z",
+      "created_at": "2026-09-02T13:31:11Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "Existing CLI agent behavior is unchanged while both interfaces coexist",
+        "item_id": "mcp-git-engine-seam"
+      },
+      {
+        "behavior": "Root-pinned NUL-delimited git commands (ADR 0003 2.6)",
+        "item_id": "mcp-git-engine-seam"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "mcp-git-engine-seam",
+        "kind": "do_not_modify",
+        "path_glob": ".todo-db/**"
+      },
+      {
+        "item_id": "mcp-git-engine-seam",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/agent.py"
+      },
+      {
+        "item_id": "mcp-git-engine-seam",
+        "kind": "only_modify",
+        "path_glob": "tests/test_agent_git.py"
+      },
+      {
+        "item_id": "mcp-git-engine-seam",
+        "kind": "only_modify",
+        "path_glob": "tests/test_agent_service.py"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest -q",
+        "description": "Tests",
+        "expected": "pass",
+        "item_id": "mcp-git-engine-seam",
+        "last_result": "pass",
+        "last_run": "2026-09-02T17:06:28Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run ruff check .",
+        "description": "Lint",
+        "expected": "clean",
+        "item_id": "mcp-git-engine-seam",
+        "last_result": "pass",
+        "last_run": "2026-09-02T17:06:28Z",
+        "seq": 2,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "mcp-git-engine-seam",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "mcp-git-engine-seam",
+        "needs_wid": "w1",
+        "wid": "w2"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "Verified GitScopeEngine construction only in AgentWorkflow.__init__ and GitScopeEngine._find_repo_root fallback to cwd; all git work goes through GitScopeEngine instance",
+        "item_id": "mcp-git-engine-seam",
+        "notes": null,
+        "started_at": "2026-09-02T17:05:53Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Confirm every GitScopeEngine construction site and AgentWorkflow's current cwd dependence",
+        "wid": "w0"
+      },
+      {
+        "evidence": "Added git_engine injection param to AgentWorkflow.__init__, mutually exclusive with repo_root, threaded through self.git_engine (commit pending)",
+        "item_id": "mcp-git-engine-seam",
+        "notes": null,
+        "started_at": "2026-09-02T17:05:53Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Add the git_engine injection seam to AgentWorkflow and thread it through",
+        "wid": "w1"
+      },
+      {
+        "evidence": "Non-git repo_root now raises E_SCOPE_GATE via GitScopeEngine.changed_files/workspace_fingerprint on progress/finish",
+        "item_id": "mcp-git-engine-seam",
+        "notes": null,
+        "started_at": "2026-09-02T17:05:53Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Return E_SCOPE_GATE when the pinned repo root is not a git repository on a mutation",
+        "wid": "w2"
+      }
+    ]
+  }
+}

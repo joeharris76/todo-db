@@ -1,0 +1,189 @@
+{
+  "description": "Implement the connection-per-tool-call model that preserves ADR 0005 G1 as amended by ADR 0006 G3: map each tool to a CredentialMode using the same table the CLI uses per command, resolve a capability-scoped credential for that call only, open a fresh connection, and close it on return so a read-only tool never holds a read-write credential. Add a TodoDatabase open path that does not run _migrate() so write tools do not silently migrate; migrate stays a floor CLI verb. Reset the credential-provider cache and re-resolve on E_AUTH_REJECTED. Gate a behind/ahead schema to E_SCHEMA.",
+  "legacy": {
+    "item_deps": [
+      {
+        "item_id": "mcp-connection-model",
+        "needs_item": "mcp-server-foundation"
+      }
+    ],
+    "item_meta": {
+      "category": "mcp-migration",
+      "completed_at": "2026-09-02T17:13:04Z",
+      "created_at": "2026-09-02T13:31:11Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "A long-lived server does not open a hosted primary by default",
+        "item_id": "mcp-connection-model"
+      },
+      {
+        "behavior": "A write tool call never triggers schema migration",
+        "item_id": "mcp-connection-model"
+      },
+      {
+        "behavior": "No agent holds ambient standing read-write authority (ADR 0005 G1 as amended)",
+        "item_id": "mcp-connection-model"
+      },
+      {
+        "behavior": "The audit-head consistency check still runs on the open path",
+        "item_id": "mcp-connection-model"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "mcp-connection-model",
+        "kind": "do_not_modify",
+        "path_glob": ".todo-db/**"
+      },
+      {
+        "item_id": "mcp-connection-model",
+        "kind": "do_not_modify",
+        "path_glob": "dist/**"
+      },
+      {
+        "item_id": "mcp-connection-model",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/backends.py"
+      },
+      {
+        "item_id": "mcp-connection-model",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/database.py"
+      },
+      {
+        "item_id": "mcp-connection-model",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/mcp/**"
+      },
+      {
+        "item_id": "mcp-connection-model",
+        "kind": "only_modify",
+        "path_glob": "tests/test_hosted_backend.py"
+      },
+      {
+        "item_id": "mcp-connection-model",
+        "kind": "only_modify",
+        "path_glob": "tests/test_mcp_server.py"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest -q",
+        "description": "Tests",
+        "expected": "pass",
+        "item_id": "mcp-connection-model",
+        "last_result": "pass",
+        "last_run": "2026-09-02T17:13:04Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run ruff check .",
+        "description": "Lint",
+        "expected": "clean",
+        "item_id": "mcp-connection-model",
+        "last_result": "pass",
+        "last_run": "2026-09-02T17:13:04Z",
+        "seq": 2,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "mcp-connection-model",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "mcp-connection-model",
+        "needs_wid": "w0",
+        "wid": "w2"
+      },
+      {
+        "item_id": "mcp-connection-model",
+        "needs_wid": "w2",
+        "wid": "w3"
+      },
+      {
+        "item_id": "mcp-connection-model",
+        "needs_wid": "w1",
+        "wid": "w4"
+      },
+      {
+        "item_id": "mcp-connection-model",
+        "needs_wid": "w0",
+        "wid": "w5"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "Confirmed _mode_for mapping (AGENT_MUTATING_SUBCOMMANDS) and TodoDatabase.open migrate-on-RW branch at database.py:315",
+        "item_id": "mcp-connection-model",
+        "notes": null,
+        "started_at": "2026-09-02T17:12:31Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Confirm _mode_for's tool-to-CredentialMode mapping and TodoDatabase.open's migrate-on-RW branch",
+        "wid": "w0"
+      },
+      {
+        "evidence": "Added TodoDatabase.open(migrate=False) that checks schema/identity without _migrate, binds identity and audit head",
+        "item_id": "mcp-connection-model",
+        "notes": null,
+        "started_at": "2026-09-02T17:12:31Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Add TodoDatabase no-migrate read-write open path",
+        "wid": "w1"
+      },
+      {
+        "evidence": "Implemented src/todo_db/mcp/dbpool.py with mode_for_tool, database_for_tool context manager, per-call credential resolve and fresh open/close, migrate=False",
+        "item_id": "mcp-connection-model",
+        "notes": null,
+        "started_at": "2026-09-02T17:12:31Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Implement per-call credential resolution and connection lifecycle in the mcp dbpool",
+        "wid": "w2"
+      },
+      {
+        "evidence": "dbpool resets _PROVIDER_CACHE and retries once on E_AUTH_REJECTED HostedAuthError during open",
+        "item_id": "mcp-connection-model",
+        "notes": null,
+        "started_at": "2026-09-02T17:12:31Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Reset the provider cache and re-resolve on E_AUTH_REJECTED",
+        "wid": "w3"
+      },
+      {
+        "evidence": "Schema behind/ahead databases gate to E_SCHEMA via _check_schema (migrate=False path) with recovery text",
+        "item_id": "mcp-connection-model",
+        "notes": null,
+        "started_at": "2026-09-02T17:12:31Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Schema-gate behind/ahead databases to E_SCHEMA with recovery text",
+        "wid": "w4"
+      },
+      {
+        "evidence": "Refuses hosted target unless allow_hosted true (resolve_launch_config and dbpool both gate, local-SQLite-first)",
+        "item_id": "mcp-connection-model",
+        "notes": null,
+        "started_at": "2026-09-02T17:12:31Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Refuse a hosted backend unless --allow-hosted is set; keep the server local-SQLite-first (plan M4/12)",
+        "wid": "w5"
+      }
+    ]
+  }
+}

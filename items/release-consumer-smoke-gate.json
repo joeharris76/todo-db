@@ -1,0 +1,235 @@
+{
+  "context": "Create docs/operations/release-gates.md following the structure of docs/operations/hosted-credentials.md. Define the trigger precisely: any release whose diff touches src/todo_db/backends.py credential resolution, the wrapper template, the auth contract, or the credential documentation. Define the two required gates, the evidence each must produce in the release PR body, and the explicit statement that green CI, passing unit tests, isolated package smoke tests, and checksum verification do not satisfy them. Record the ordering rule that the downstream consumer check happens before the tag, not after, and that a failed gate blocks the tag rather than opening a follow-up. Reference scripts/hosted_auth_acceptance.sh --require by name so the gate has a runnable command, and link the page from the README release section and the CHANGELOG process notes.",
+  "description": "v0.4.2 was tagged, released, and pushed into a downstream consumer before anyone executed the changed authentication path once. The readiness answer was a list of merged PRs, green CI, clean artifacts, and verified checksums, and every one of those was true while the release was unusable. This item writes docs/operations/release-gates.md, which states that artifact correctness is not evidence of usability and makes two checks mandatory before tagging any release that touches authentication, credential resolution, or the wrapper contract: the scrubbed-environment acceptance harness under --require, and one real downstream consumer running one real tracker command against the hosted database. It documents a human gate; it does not try to automate the downstream upgrade.",
+  "legacy": {
+    "anti_patterns": [
+      {
+        "dont": "Accept green CI, passing tests, or verified checksums as evidence that a release is usable",
+        "instead": "require an executed hosted acceptance run and one real downstream command",
+        "item_id": "release-consumer-smoke-gate",
+        "why": "all of those passed for v0.4.2 while the released behaviour was broken for every interactive caller"
+      },
+      {
+        "dont": "Automate the gate by giving CI a hosted read-write credential",
+        "instead": "keep it a local operator step with recorded evidence",
+        "item_id": "release-consumer-smoke-gate",
+        "why": "an ambient CI write credential contradicts ADR 0004 and would mask the scrubbed-environment condition the harness tests"
+      },
+      {
+        "dont": "Record a failed gate as a follow-up item and tag anyway",
+        "instead": "block the tag",
+        "item_id": "release-consumer-smoke-gate",
+        "why": "a gate that can be deferred at the moment it fires is not a gate"
+      },
+      {
+        "dont": "Run the downstream consumer check after tagging as a confirmation step",
+        "instead": "run it before the tag so a failure blocks the release",
+        "item_id": "release-consumer-smoke-gate",
+        "why": "v0.4.2 dispatched the downstream upgrade after publication, so the defect reached the consumer first"
+      }
+    ],
+    "item_deps": [
+      {
+        "item_id": "release-consumer-smoke-gate",
+        "needs_item": "hosted-auth-acceptance-gate"
+      }
+    ],
+    "item_meta": {
+      "category": "docs",
+      "completed_at": "2026-08-19T13:35:11Z",
+      "completed_pr": 18,
+      "created_at": "2026-08-19T13:13:02Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "No credential value, hosted URL, or consumer secret is recorded as gate evidence.",
+        "item_id": "release-consumer-smoke-gate"
+      },
+      {
+        "behavior": "Releases that do not touch authentication, credential resolution, or the wrapper contract are not subject to the downstream consumer gate.",
+        "item_id": "release-consumer-smoke-gate"
+      },
+      {
+        "behavior": "The existing release process, versioning scheme, and artifact publication remain unchanged; this item adds gates rather than replacing steps.",
+        "item_id": "release-consumer-smoke-gate"
+      },
+      {
+        "behavior": "The gate is a documented human check and does not add a CI job that would need hosted write credentials.",
+        "item_id": "release-consumer-smoke-gate"
+      }
+    ],
+    "prior_art": [
+      {
+        "concept": "release artifact and checksum verification steps that this gate explicitly does not replace",
+        "decision": "reuse",
+        "item_id": "release-consumer-smoke-gate",
+        "path": "README.md"
+      },
+      {
+        "concept": "operations runbook page structure, trigger definitions, and ownership statements",
+        "decision": "extend",
+        "item_id": "release-consumer-smoke-gate",
+        "path": "docs/operations/hosted-credentials.md"
+      },
+      {
+        "concept": "scrubbed-environment hosted acceptance harness invoked with --require",
+        "decision": "reuse",
+        "item_id": "release-consumer-smoke-gate",
+        "path": "scripts/hosted_auth_acceptance.sh"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "release-consumer-smoke-gate",
+        "kind": "do_not_modify",
+        "path_glob": ".github/workflows/**"
+      },
+      {
+        "item_id": "release-consumer-smoke-gate",
+        "kind": "do_not_modify",
+        "path_glob": "_project/scripts/todo"
+      },
+      {
+        "item_id": "release-consumer-smoke-gate",
+        "kind": "do_not_modify",
+        "path_glob": "docs/adr/**"
+      },
+      {
+        "item_id": "release-consumer-smoke-gate",
+        "kind": "do_not_modify",
+        "path_glob": "src/**"
+      },
+      {
+        "item_id": "release-consumer-smoke-gate",
+        "kind": "do_not_modify",
+        "path_glob": "tests/**"
+      },
+      {
+        "item_id": "release-consumer-smoke-gate",
+        "kind": "only_modify",
+        "path_glob": "CHANGELOG.md"
+      },
+      {
+        "item_id": "release-consumer-smoke-gate",
+        "kind": "only_modify",
+        "path_glob": "README.md"
+      },
+      {
+        "item_id": "release-consumer-smoke-gate",
+        "kind": "only_modify",
+        "path_glob": "docs/operations/release-gates.md"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "test -s docs/operations/release-gates.md",
+        "description": "The release gate page exists",
+        "expected": null,
+        "item_id": "release-consumer-smoke-gate",
+        "last_result": "pass",
+        "last_run": "2026-08-19T13:35:11Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "rg -q 'hosted_auth_acceptance.sh --require' docs/operations/release-gates.md && rg -qi 'downstream consumer' docs/operations/release-gates.md",
+        "description": "It names the runnable acceptance command and the downstream consumer check",
+        "expected": null,
+        "item_id": "release-consumer-smoke-gate",
+        "last_result": "pass",
+        "last_run": "2026-08-19T13:35:11Z",
+        "seq": 2,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "rg -qi 'not evidence' docs/operations/release-gates.md",
+        "description": "It states that CI and checksum evidence do not satisfy the gates",
+        "expected": null,
+        "item_id": "release-consumer-smoke-gate",
+        "last_result": "pass",
+        "last_run": "2026-08-19T13:35:11Z",
+        "seq": 3,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "rg -q 'release-gates' README.md",
+        "description": "README links the release gates page",
+        "expected": null,
+        "item_id": "release-consumer-smoke-gate",
+        "last_result": "pass",
+        "last_run": "2026-08-19T13:35:11Z",
+        "seq": 4,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "release-consumer-smoke-gate",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "release-consumer-smoke-gate",
+        "needs_wid": "w0",
+        "wid": "w2"
+      },
+      {
+        "item_id": "release-consumer-smoke-gate",
+        "needs_wid": "w1",
+        "wid": "w3"
+      },
+      {
+        "item_id": "release-consumer-smoke-gate",
+        "needs_wid": "w2",
+        "wid": "w3"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "docs/operations/release-gates.md defines the trigger by touched path and the two mandatory gates",
+        "item_id": "release-consumer-smoke-gate",
+        "notes": null,
+        "started_at": "2026-08-19T13:35:01Z",
+        "started_branch": "feat/hosted-credential-provider",
+        "started_worktree": "/Users/joe/Developer/todo-db.wt-credential-provider",
+        "status": "done",
+        "summary": "Write docs/operations/release-gates.md with the trigger definition and the two mandatory gates",
+        "wid": "w0"
+      },
+      {
+        "evidence": "Evidence section lists what the release PR must record; What does not satisfy these gates names the five checks that all held for v0.4.2",
+        "item_id": "release-consumer-smoke-gate",
+        "notes": null,
+        "started_at": "2026-08-19T13:35:01Z",
+        "started_branch": "feat/hosted-credential-provider",
+        "started_worktree": "/Users/joe/Developer/todo-db.wt-credential-provider",
+        "status": "done",
+        "summary": "Record the required release-PR evidence and the explicit non-evidence statement",
+        "wid": "w1"
+      },
+      {
+        "evidence": "Ordering section requires both gates before the tag and forbids deferring a failed gate to a follow-up",
+        "item_id": "release-consumer-smoke-gate",
+        "notes": null,
+        "started_at": "2026-08-19T13:35:01Z",
+        "started_branch": "feat/hosted-credential-provider",
+        "started_worktree": "/Users/joe/Developer/todo-db.wt-credential-provider",
+        "status": "done",
+        "summary": "Record the ordering rule that both gates precede the tag and a failure blocks it",
+        "wid": "w2"
+      },
+      {
+        "evidence": "README hosted-credential section and CHANGELOG Unreleased link the page",
+        "item_id": "release-consumer-smoke-gate",
+        "notes": null,
+        "started_at": "2026-08-19T13:35:01Z",
+        "started_branch": "feat/hosted-credential-provider",
+        "started_worktree": "/Users/joe/Developer/todo-db.wt-credential-provider",
+        "status": "done",
+        "summary": "Link the page from README and CHANGELOG",
+        "wid": "w3"
+      }
+    ]
+  }
+}

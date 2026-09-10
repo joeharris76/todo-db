@@ -1,0 +1,88 @@
+{
+  "context": "Derive the lists from one declaration instead of maintaining four. A single ordered table registry - name, columns, select/order-by, FK depth for insert/delete ordering - can generate all four uses; export(), restore() and restore_legacy() then read from it. If a full refactor is too invasive, the cheap version is a test that asserts the four sets agree (every table in table_columns appears in insert_order, delete_order and export's map, and vice versa), which converts silent drift into a red test. Do the cheap version first regardless - it is a few lines and would have caught PR #1's miss immediately.",
+  "description": "Adding one table to the tracker schema requires editing FOUR independent lists in src/todo_db/database.py, and nothing checks they agree: (1) restore_legacy's copy loop, (2) restore()'s table_columns column map, (3) restore()'s insert_order and delete_order, (4) export()'s per-table SELECT map. Proven the hard way while adding finding_sections in PR #1: two of the four were missed, and finding_sections restored 0 rows while the other four findings tables restored 1 - with the CLI printing 'restored legacy snapshot' and 'audit verify' returning a valid 4187-event chain. Both success signals were green and the data was absent. Only counting rows per table caught it. The export() omission was independently latent: sections would have vanished on any re-export, unrelated to the restore path. The failure mode is always silent, and it is the same shape as the bug PR #1 exists to fix - a migration that reports success and loses data.",
+  "legacy": {
+    "item_meta": {
+      "category": "correctness",
+      "completed_at": "2026-07-30T19:09:41Z",
+      "completed_pr": 2,
+      "created_at": "2026-07-30T18:55:50Z",
+      "worktree": "main"
+    },
+    "preserves": [
+      {
+        "behavior": "export/restore round-trip behaviour and the audit chain stay unchanged",
+        "item_id": "table-registries-must-be-hand-synced"
+      },
+      {
+        "behavior": "insert/delete ordering still respects the findings and items foreign keys",
+        "item_id": "table-registries-must-be-hand-synced"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "table-registries-must-be-hand-synced",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/database.py"
+      },
+      {
+        "item_id": "table-registries-must-be-hand-synced",
+        "kind": "only_modify",
+        "path_glob": "tests/**"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run -- pytest -q -k 'table_registr or registries_agree'",
+        "description": "The four registries agree",
+        "expected": "exit 0",
+        "item_id": "table-registries-must-be-hand-synced",
+        "last_result": null,
+        "last_run": null,
+        "seq": 1,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run -- pytest -q",
+        "description": "Full suite passes",
+        "expected": "exit 0",
+        "item_id": "table-registries-must-be-hand-synced",
+        "last_result": null,
+        "last_run": null,
+        "seq": 2,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "table-registries-must-be-hand-synced",
+        "needs_wid": "w1",
+        "wid": "w2"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "Hoisted the four method-local registries to module level (EXPORT_TABLE_QUERIES, RESTORE_TABLE_COLUMNS, RESTORE_INSERT_ORDER, RESTORE_DELETE_ORDER) - they were unreachable from a test while they lived inside export() and restore(), so 'assert they agree' was not expressible. Pure move; 102 tests still passed immediately after with no other change. Then four assertions: all four registries cover the same table set; the orderings are permutations with no duplicates; the registry set equals the tracker tables actually present in a freshly migrated schema (excluding the five infrastructure tables export/restore handle explicitly); and insert/delete order respects every foreign key, derived from PRAGMA foreign_key_list rather than restated so a new FK is covered without touching the test. Proven to fail, not just pass: deleting finding_sections from EXPORT_TABLE_QUERIES fails 1 test, from RESTORE_INSERT_ORDER fails 2, from RESTORE_DELETE_ORDER fails 2. That is exactly the omission that shipped silently in PR #1.",
+        "item_id": "table-registries-must-be-hand-synced",
+        "notes": null,
+        "started_at": "2026-07-30T19:05:27Z",
+        "started_branch": "feat/todo-db-standalone-parity",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Add a test asserting the four table registries agree (cheap, do first)",
+        "wid": "w1"
+      },
+      {
+        "evidence": "Considered and deliberately NOT done. Deriving all four registries from one ordered declaration would mean encoding column lists, ORDER BY clauses and FK depth in a single structure and regenerating export()/restore() from it - a large change to the exact code path that carries every byte of tracker data, for a safety property the w1 tests already provide. The tests fail on any drift, including a table that exists in the schema but appears in no registry, which is the failure mode that actually occurred. Cost/benefit favours the guard over the refactor: the remaining duplication is now inert because divergence cannot reach main. Revisit if the registries start disagreeing for reasons the tests cannot express (e.g. per-backend query differences).",
+        "item_id": "table-registries-must-be-hand-synced",
+        "notes": null,
+        "started_at": "2026-07-30T19:08:38Z",
+        "started_branch": "feat/todo-db-standalone-parity",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Consider deriving all four from one ordered table declaration",
+        "wid": "w2"
+      }
+    ]
+  }
+}

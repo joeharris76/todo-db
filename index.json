@@ -1,4 +1,709 @@
 {
-  "items": {},
+  "items": {
+    "adr-location-consolidation": {
+      "claim": null,
+      "needs": [],
+      "priority": "low",
+      "status": "done",
+      "title": "Consolidate ADRs into one directory"
+    },
+    "agent-atomic-lifecycle": {
+      "claim": null,
+      "needs": [
+        "agent-claim-coordination",
+        "agent-projection-service"
+      ],
+      "priority": "high",
+      "status": "done",
+      "title": "Implement atomic take and claim-coordinated progress"
+    },
+    "agent-claim-coordination": {
+      "claim": null,
+      "needs": [
+        "agent-workflow-decisions"
+      ],
+      "priority": "high",
+      "status": "done",
+      "title": "Add stable principals, session adoption, and claim generations"
+    },
+    "agent-cli-namespace": {
+      "claim": null,
+      "needs": [
+        "agent-finish-gates",
+        "agent-project-boundary"
+      ],
+      "priority": "high",
+      "status": "done",
+      "title": "Expose the stable agent CLI namespace and protocol mapping"
+    },
+    "agent-finish-gates": {
+      "claim": null,
+      "needs": [
+        "agent-atomic-lifecycle",
+        "agent-git-scope-engine",
+        "agent-verification-boundary"
+      ],
+      "priority": "high",
+      "status": "done",
+      "title": "Implement no-shell model finish and explicit human verification finish"
+    },
+    "agent-git-scope-engine": {
+      "claim": null,
+      "needs": [
+        "agent-workflow-decisions"
+      ],
+      "priority": "high",
+      "status": "done",
+      "title": "Implement root-safe changed-file and baseline divergence handling"
+    },
+    "agent-json-patch-decision": {
+      "claim": null,
+      "needs": [
+        "agent-workflow-release-gate"
+      ],
+      "priority": "low",
+      "status": "done",
+      "title": "Measure whether JSON patch input is still worth adding"
+    },
+    "agent-project-boundary": {
+      "claim": null,
+      "needs": [
+        "agent-workflow-decisions",
+        "bound-config-discovery",
+        "fix-cli-parser-wrapper-constant"
+      ],
+      "priority": "high",
+      "status": "done",
+      "title": "Require an explicit project boundary for every agent command"
+    },
+    "agent-projection-service": {
+      "claim": null,
+      "needs": [
+        "agent-workflow-decisions"
+      ],
+      "priority": "high",
+      "status": "done",
+      "title": "Build bounded agent context projections independent of CLI rendering"
+    },
+    "agent-turso-claim-acceptance": {
+      "claim": null,
+      "needs": [
+        "agent-cli-namespace"
+      ],
+      "priority": "high",
+      "status": "done",
+      "title": "Decide hosted claim support using a real Turso race"
+    },
+    "agent-verification-boundary": {
+      "claim": null,
+      "needs": [
+        "agent-workflow-decisions",
+        "verify-run-side-doors"
+      ],
+      "priority": "high",
+      "status": "done",
+      "title": "Separate model completion checks from stored shell execution"
+    },
+    "agent-workflow-decisions": {
+      "claim": null,
+      "needs": [],
+      "priority": "high",
+      "status": "done",
+      "title": "Decide the claim-coordinated agent workflow contract"
+    },
+    "agent-workflow-release-gate": {
+      "claim": null,
+      "needs": [
+        "pi-todo-db-ui"
+      ],
+      "priority": "medium-high",
+      "status": "done",
+      "title": "Prove the streamlined workflow end to end before release"
+    },
+    "auth-batch-review-remediation": {
+      "claim": null,
+      "needs": [
+        "hosted-auth-resolver-v2"
+      ],
+      "priority": "high",
+      "status": "done",
+      "title": "Remediate adversarial auth batch path and redaction findings"
+    },
+    "auth-token-fallback-exit4": {
+      "claim": null,
+      "needs": [
+        "wrapper-token-hygiene"
+      ],
+      "priority": "high",
+      "status": "dropped",
+      "title": "Unify hosted credential resolution and auth classification"
+    },
+    "batch-replay-ledger-format": {
+      "claim": null,
+      "needs": [],
+      "priority": "medium-high",
+      "status": "done",
+      "title": "Ledger schema for pending tracker writes so halt/replay is executable"
+    },
+    "bound-config-discovery": {
+      "claim": null,
+      "needs": [],
+      "priority": "medium-high",
+      "status": "done",
+      "title": "Bound config discovery; derive wrapper REPO_ROOT from its actual path"
+    },
+    "capability-removal-replacement-rule": {
+      "claim": null,
+      "needs": [],
+      "priority": "medium-high",
+      "status": "done",
+      "title": "Require removal items to name a merged replacement and narrowed scope to be re-homed"
+    },
+    "credential-provider-review-remediation": {
+      "claim": null,
+      "needs": [
+        "hosted-credential-provider"
+      ],
+      "priority": "high",
+      "status": "done",
+      "title": "Fix the accepted Antigravity findings against the credential provider"
+    },
+    "cutover-rehearsal-drill": {
+      "claim": null,
+      "needs": [],
+      "priority": "high",
+      "status": "done",
+      "title": "Cutover + rollback rehearsal against post-findings production shape"
+    },
+    "finding-sync-robustness": {
+      "claim": null,
+      "needs": [],
+      "priority": "medium-high",
+      "status": "done",
+      "title": "Per-draft error isolation in finding sync; template passes its own validator"
+    },
+    "fix-cli-parser-wrapper-constant": {
+      "claim": null,
+      "needs": [],
+      "priority": "critical",
+      "status": "done",
+      "title": "Restore CLI parser after wrapper constant removal"
+    },
+    "guard-env-db-no-identity": {
+      "claim": null,
+      "needs": [],
+      "priority": "high",
+      "status": "done",
+      "title": "Refuse writes when the DB target came from env and no identity source exists"
+    },
+    "headless-credential-model": {
+      "claim": null,
+      "needs": [],
+      "priority": "high",
+      "status": "done",
+      "title": "Decide and document hosted credential lifecycle"
+    },
+    "hosted-auth-acceptance-gate": {
+      "claim": null,
+      "needs": [
+        "hosted-credential-provider"
+      ],
+      "priority": "high",
+      "status": "done",
+      "title": "Add a scrubbed-environment hosted authentication acceptance harness"
+    },
+    "hosted-auth-acceptance-live-run": {
+      "claim": null,
+      "needs": [
+        "hosted-auth-acceptance-gate",
+        "hosted-credential-provider",
+        "hosted-credential-provisioning-ux"
+      ],
+      "priority": "high",
+      "status": "done",
+      "title": "Run the hosted authentication acceptance harness against a real database"
+    },
+    "hosted-auth-expiry-diagnostics": {
+      "claim": null,
+      "needs": [
+        "headless-credential-model"
+      ],
+      "priority": "medium",
+      "status": "dropped",
+      "title": "Implement or stop advisory hosted-token expiry diagnostics"
+    },
+    "hosted-auth-resolver-v2": {
+      "claim": null,
+      "needs": [
+        "wrapper-token-hygiene"
+      ],
+      "priority": "high",
+      "status": "done",
+      "title": "Unify hosted credentials behind a legacy-safe v2 auth contract"
+    },
+    "hosted-credential-provider": {
+      "claim": null,
+      "needs": [
+        "hosted-credential-provider-adr"
+      ],
+      "priority": "high",
+      "status": "done",
+      "title": "Resolve hosted credentials from an external provider when no credential is injected"
+    },
+    "hosted-credential-provider-adr": {
+      "claim": null,
+      "needs": [],
+      "priority": "high",
+      "status": "done",
+      "title": "Decide the hosted credential provider contract and its acceptance criterion"
+    },
+    "hosted-credential-provisioning-ux": {
+      "claim": null,
+      "needs": [
+        "hosted-credential-provider",
+        "hosted-credential-provider-adr"
+      ],
+      "priority": "medium-high",
+      "status": "done",
+      "title": "Give provisioning and rotation a named, one-time procedure the exit-4 message points at"
+    },
+    "mcp-0-5-0-release": {
+      "claim": null,
+      "needs": [
+        "mcp-connection-model",
+        "mcp-cross-agent-enablement",
+        "mcp-stdio-conformance"
+      ],
+      "priority": "medium-high",
+      "status": "done",
+      "title": "Cut the 0.5.0 additive release"
+    },
+    "mcp-0-6-0-release": {
+      "claim": null,
+      "needs": [
+        "mcp-cli-floor-and-gates",
+        "mcp-remove-pi-adapter"
+      ],
+      "priority": "medium-high",
+      "status": "open",
+      "title": "Cut the 0.6.0 breaking release"
+    },
+    "mcp-benchbox-parity-coordination": {
+      "claim": null,
+      "needs": [
+        "mcp-0-5-0-release"
+      ],
+      "priority": "high",
+      "status": "done",
+      "title": "Coordinate the BenchBox parity command list migration"
+    },
+    "mcp-cli-floor-and-gates": {
+      "claim": null,
+      "needs": [
+        "mcp-remove-agent-cli-surface"
+      ],
+      "priority": "high",
+      "status": "open",
+      "title": "Reshape the floor CLI and rewrite the release gates"
+    },
+    "mcp-connection-model": {
+      "claim": null,
+      "needs": [
+        "mcp-server-foundation"
+      ],
+      "priority": "high",
+      "status": "done",
+      "title": "Per-call capability-scoped credential and no-migrate write path"
+    },
+    "mcp-cross-agent-enablement": {
+      "claim": null,
+      "needs": [
+        "mcp-tools-full-profile"
+      ],
+      "priority": "high",
+      "status": "done",
+      "title": "Per-client registration doc and the todo skill rewrite"
+    },
+    "mcp-decision-record": {
+      "claim": null,
+      "needs": [],
+      "priority": "critical",
+      "status": "done",
+      "title": "Land ADR 0006 and the MCP migration plan"
+    },
+    "mcp-error-taxonomy": {
+      "claim": null,
+      "needs": [
+        "mcp-decision-record"
+      ],
+      "priority": "high",
+      "status": "done",
+      "title": "Error taxonomy and response envelope for the MCP surface"
+    },
+    "mcp-fix-lint-gate-claim-retention": {
+      "claim": null,
+      "needs": [
+        "mcp-decision-record"
+      ],
+      "priority": "high",
+      "status": "done",
+      "title": "finish retains the claim on a lint-gate failure (ADR 0006 G7)"
+    },
+    "mcp-git-engine-seam": {
+      "claim": null,
+      "needs": [
+        "mcp-decision-record"
+      ],
+      "priority": "medium-high",
+      "status": "done",
+      "title": "Inject GitScopeEngine into AgentWorkflow with a pinned repo root"
+    },
+    "mcp-next-action-machine-readable": {
+      "claim": null,
+      "needs": [
+        "mcp-error-taxonomy"
+      ],
+      "priority": "high",
+      "status": "done",
+      "title": "Machine-readable next_action with dual-emitted command string"
+    },
+    "mcp-remove-agent-cli-surface": {
+      "claim": null,
+      "needs": [
+        "mcp-benchbox-parity-coordination",
+        "mcp-target-adoption-proof"
+      ],
+      "priority": "high",
+      "status": "open",
+      "title": "Remove the agent CLI group and the MCP-only subcommands"
+    },
+    "mcp-remove-pi-adapter": {
+      "claim": null,
+      "needs": [
+        "mcp-target-adoption-proof"
+      ],
+      "priority": "high",
+      "status": "done",
+      "title": "Delete the Pi adapter and unpublish its package"
+    },
+    "mcp-server-foundation": {
+      "claim": null,
+      "needs": [
+        "mcp-decision-record"
+      ],
+      "priority": "high",
+      "status": "done",
+      "title": "MCP server package, entry point, lifespan, identity, and worker thread"
+    },
+    "mcp-stdio-conformance": {
+      "claim": null,
+      "needs": [
+        "mcp-tools-full-profile",
+        "mcp-tools-work"
+      ],
+      "priority": "high",
+      "status": "done",
+      "title": "Subprocess stdio smoke test, stdout purity, and tool-schema freeze"
+    },
+    "mcp-target-adoption-proof": {
+      "claim": null,
+      "needs": [
+        "mcp-0-5-0-release"
+      ],
+      "priority": "high",
+      "status": "done",
+      "title": "Prove every named agent drives the stdio server"
+    },
+    "mcp-tools-full-profile": {
+      "claim": null,
+      "needs": [
+        "mcp-tools-query"
+      ],
+      "priority": "medium-high",
+      "status": "done",
+      "title": "Planning, findings, and admin tools behind --profile full"
+    },
+    "mcp-tools-query": {
+      "claim": null,
+      "needs": [
+        "mcp-tools-work"
+      ],
+      "priority": "high",
+      "status": "done",
+      "title": "Read-only query tools in the default profile"
+    },
+    "mcp-tools-work": {
+      "claim": null,
+      "needs": [
+        "mcp-connection-model",
+        "mcp-error-taxonomy",
+        "mcp-fix-lint-gate-claim-retention",
+        "mcp-git-engine-seam",
+        "mcp-next-action-machine-readable"
+      ],
+      "priority": "high",
+      "status": "done",
+      "title": "The six hot-path lifecycle tools"
+    },
+    "opt-audit-head-check-on-open": {
+      "claim": null,
+      "needs": [
+        "opt-audit-open-policy-adr",
+        "opt-query-budget-harness"
+      ],
+      "priority": "medium-high",
+      "status": "done",
+      "title": "Implement the audit-open policy chosen by the decision record"
+    },
+    "opt-audit-open-policy-adr": {
+      "claim": null,
+      "needs": [],
+      "priority": "medium-high",
+      "status": "done",
+      "title": "Decision record: what the audit chain guarantees at database open"
+    },
+    "opt-audit-safe-optimizations": {
+      "claim": null,
+      "needs": [
+        "opt-query-budget-harness"
+      ],
+      "priority": "medium-high",
+      "status": "done",
+      "title": "Safe audit-path optimizations that do not change the open-time guarantee"
+    },
+    "opt-compact-output-contracts": {
+      "claim": null,
+      "needs": [
+        "opt-query-budget-harness"
+      ],
+      "priority": "medium-high",
+      "status": "done",
+      "title": "Compact output contracts: fields, limits, byte caps, and coded errors"
+    },
+    "opt-get-item-bulk-work-needs": {
+      "claim": null,
+      "needs": [
+        "opt-query-budget-harness"
+      ],
+      "priority": "high",
+      "status": "done",
+      "title": "Bulk-load work_needs in get_item instead of one query per work unit"
+    },
+    "opt-hosted-latency-measurement": {
+      "claim": null,
+      "needs": [
+        "opt-audit-head-check-on-open",
+        "opt-get-item-bulk-work-needs",
+        "opt-lint-all-bulk-load",
+        "opt-ready-items-single-query"
+      ],
+      "priority": "medium-high",
+      "status": "done",
+      "title": "Measure hosted read and write latency before any replica decision"
+    },
+    "opt-lint-all-bulk-load": {
+      "claim": null,
+      "needs": [
+        "opt-get-item-bulk-work-needs",
+        "opt-query-budget-harness"
+      ],
+      "priority": "high",
+      "status": "done",
+      "title": "Bulk-load items for lint --all instead of get_item per item"
+    },
+    "opt-query-budget-harness": {
+      "claim": null,
+      "needs": [],
+      "priority": "high",
+      "status": "done",
+      "title": "Query-budget harness: statement counters for the local and hosted paths"
+    },
+    "opt-ready-items-single-query": {
+      "claim": null,
+      "needs": [
+        "opt-query-budget-harness"
+      ],
+      "priority": "high",
+      "status": "done",
+      "title": "Collapse ready_items per-item dependency query into one NOT EXISTS"
+    },
+    "opt-replica-removal": {
+      "claim": null,
+      "needs": [
+        "opt-audit-open-policy-adr",
+        "opt-hosted-latency-measurement"
+      ],
+      "priority": "medium",
+      "status": "done",
+      "title": "Decide the replica architecture from the measured evidence"
+    },
+    "opt-schema-error-codes": {
+      "claim": null,
+      "needs": [],
+      "priority": "high",
+      "status": "done",
+      "title": "Split schema errors into E_SCHEMA_BEHIND and E_SCHEMA_DIVERGED"
+    },
+    "opt-show-and-identity-waste": {
+      "claim": null,
+      "needs": [
+        "opt-query-budget-harness"
+      ],
+      "priority": "medium-high",
+      "status": "done",
+      "title": "Stop show rebuilding the work order and re-reading project identity"
+    },
+    "parity-conformance-suite": {
+      "claim": null,
+      "needs": [],
+      "priority": "high",
+      "status": "done",
+      "title": "Cross-implementation conformance suite (CLI surface, exit codes, DDL)"
+    },
+    "pi-todo-db-adapter": {
+      "claim": null,
+      "needs": [
+        "agent-cli-namespace",
+        "agent-turso-claim-acceptance"
+      ],
+      "priority": "medium-high",
+      "status": "done",
+      "title": "Ship one safe Pi tool over the canonical agent protocol"
+    },
+    "pi-todo-db-ui": {
+      "claim": null,
+      "needs": [
+        "pi-todo-db-adapter"
+      ],
+      "priority": "medium-high",
+      "status": "done",
+      "title": "Add read-only Pi status UI without a background heartbeat"
+    },
+    "provider-capability-provenance": {
+      "claim": null,
+      "needs": [
+        "hosted-credential-provider"
+      ],
+      "priority": "medium-high",
+      "status": "done",
+      "title": "Decide what capability means for a provider-resolved credential"
+    },
+    "publish-todo-db-to-pypi": {
+      "claim": null,
+      "needs": [],
+      "priority": "medium-high",
+      "status": "done",
+      "title": "Publish todo-db to PyPI so dependents can pin a released version"
+    },
+    "release-0-4-3-and-downstream-upgrade": {
+      "claim": null,
+      "needs": [
+        "hosted-auth-acceptance-live-run",
+        "verify-env-credential-command-boundary"
+      ],
+      "priority": "high",
+      "status": "done",
+      "title": "Cut v0.4.3 under the new release gates and re-run the BenchBox upgrade"
+    },
+    "release-consumer-smoke-gate": {
+      "claim": null,
+      "needs": [
+        "hosted-auth-acceptance-gate"
+      ],
+      "priority": "medium-high",
+      "status": "done",
+      "title": "Require a real hosted and downstream check before tagging an auth-affecting release"
+    },
+    "release-provenance-hygiene": {
+      "claim": null,
+      "needs": [],
+      "priority": "medium",
+      "status": "done",
+      "title": "Publish workflow, artifact provenance, alias opt-in, splitter brackets"
+    },
+    "restore-legacy-carry-findings-and-reject-unknown-tables": {
+      "claim": null,
+      "needs": [],
+      "priority": "high",
+      "status": "done",
+      "title": "restore-legacy: carry the findings domain and reject unknown tables"
+    },
+    "schedule-detection-and-alerting": {
+      "claim": null,
+      "needs": [],
+      "priority": "medium-high",
+      "status": "done",
+      "title": "Schedule audit verify + doctor; define mechanical alert channel"
+    },
+    "skills-deployment-repair": {
+      "claim": null,
+      "needs": [],
+      "priority": "high",
+      "status": "done",
+      "title": "Push/merge skill-sync branch; re-lock; define skill propagation model"
+    },
+    "skills-finding-pipeline-docs": {
+      "claim": null,
+      "needs": [],
+      "priority": "medium-high",
+      "status": "done",
+      "title": "Route finding verbs in skills; document capture-to-landing end to end"
+    },
+    "table-registries-must-be-hand-synced": {
+      "claim": null,
+      "needs": [],
+      "priority": "medium-high",
+      "status": "done",
+      "title": "Adding a table needs four hand-synced registries; drift is silent"
+    },
+    "test-double-vacuity-audit": {
+      "claim": null,
+      "needs": [],
+      "priority": "medium-high",
+      "status": "done",
+      "title": "Audit test doubles for stubs that agree with the implementation instead of testing it"
+    },
+    "update-scope-rules": {
+      "claim": null,
+      "needs": [],
+      "priority": "medium-high",
+      "status": "done",
+      "title": "update verb cannot amend scope rules (create-time-only constraint, instance 4)"
+    },
+    "verify-env-auth-secret-boundary": {
+      "claim": null,
+      "needs": [
+        "headless-credential-model"
+      ],
+      "priority": "medium-high",
+      "status": "done",
+      "title": "Keep tracker credentials out of verification subprocesses"
+    },
+    "verify-env-credential-command-boundary": {
+      "claim": null,
+      "needs": [
+        "hosted-credential-provider"
+      ],
+      "priority": "high",
+      "status": "done",
+      "title": "Protect TODO_DB_CREDENTIAL_COMMAND from verification subprocess passthrough"
+    },
+    "verify-run-side-doors": {
+      "claim": null,
+      "needs": [],
+      "priority": "medium-high",
+      "status": "done",
+      "title": "Close verify --run replica side door; classify execute/commit-time hosted errors"
+    },
+    "wrapper-token-hygiene": {
+      "claim": null,
+      "needs": [
+        "headless-credential-model"
+      ],
+      "priority": "high",
+      "status": "done",
+      "title": "Remove wrapper auto-mint and provide a safe migration"
+    }
+  },
   "schema_version": 1
 }

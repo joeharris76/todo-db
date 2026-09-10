@@ -1,0 +1,157 @@
+{
+  "context": "Use one canonical project-relative wrapper-path helper for init-project, refresh-wrapper, doctor, and _wrapper_script. Reject absolute and escaping paths; collapse dot, duplicate separators, and in-root parent traversals before storing the config or calculating depth. Preserve custom nested paths. For redaction, parse the configured hosted URL and replace longest non-empty variants: exact configured URL, normalized URL, HTTPS equivalent for libsql, authority/netloc, hostname, and hostname with default port where applicable. Never include token or endpoint variants in output. Add focused regression tests for ./, repeated separators, nested/../ normalization, escape/absolute rejection, custom depth, and libsql-to-https/host:443 errors at connect and execute time.",
+  "description": "Close the accepted findings from the Google Antigravity review of merged PRs 12-15. SEC-01 applies in refined form: pathlib already normalizes leading dot and redundant separators, but accepted in-root paths containing '..' can make _wrapper_script compute the wrong REPO_ROOT depth. Normalize and validate wrapper paths before recording or generating them. SEC-02 is required because the URL-redaction contract must cover protocol-translated libsql errors that report https:// or host:port variants rather than the configured libsql:// URL. Rebut OPS-01 because CLI help and README already document direct v2 negotiation.",
+  "legacy": {
+    "anti_patterns": [
+      {
+        "dont": "Count raw Path.parts before canonicalizing parent traversal",
+        "instead": "canonicalize one project-relative path before recording and generation",
+        "item_id": "auth-batch-review-remediation",
+        "why": "an in-root a/../ path generates too many upward segments"
+      },
+      {
+        "dont": "Redact only the exact configured URL string",
+        "instead": "derive and redact parsed protocol and authority variants longest-first",
+        "item_id": "auth-batch-review-remediation",
+        "why": "libsql drivers can report an HTTPS authority or host:port representation"
+      }
+    ],
+    "item_deps": [
+      {
+        "item_id": "auth-batch-review-remediation",
+        "needs_item": "hosted-auth-resolver-v2"
+      }
+    ],
+    "item_meta": {
+      "category": "security",
+      "completed_at": "2026-08-19T01:31:03Z",
+      "completed_pr": 16,
+      "created_at": "2026-08-19T01:24:26Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "Default and custom nested generated wrappers resolve the repository root exactly and refresh-wrapper never writes outside it.",
+        "item_id": "auth-batch-review-remediation"
+      },
+      {
+        "behavior": "Hosted token and every configured or translated endpoint representation remain absent from exceptions and tracebacks.",
+        "item_id": "auth-batch-review-remediation"
+      },
+      {
+        "behavior": "V2 exit negotiation, credential precedence, one-shot wrapper behavior, and non-auth error classification remain unchanged.",
+        "item_id": "auth-batch-review-remediation"
+      }
+    ],
+    "prior_art": [
+      {
+        "concept": "hosted error redaction",
+        "decision": "extend",
+        "item_id": "auth-batch-review-remediation",
+        "path": "src/todo_db/backends.py"
+      },
+      {
+        "concept": "v2 wrapper generation and targeted refresh",
+        "decision": "extend",
+        "item_id": "auth-batch-review-remediation",
+        "path": "src/todo_db/cli.py"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "auth-batch-review-remediation",
+        "kind": "only_modify",
+        "path_glob": "CHANGELOG.md"
+      },
+      {
+        "item_id": "auth-batch-review-remediation",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/backends.py"
+      },
+      {
+        "item_id": "auth-batch-review-remediation",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/cli.py"
+      },
+      {
+        "item_id": "auth-batch-review-remediation",
+        "kind": "only_modify",
+        "path_glob": "tests/test_bootstrap.py"
+      },
+      {
+        "item_id": "auth-batch-review-remediation",
+        "kind": "only_modify",
+        "path_glob": "tests/test_hosted_backend.py"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest tests/test_bootstrap.py tests/test_hosted_backend.py -q -k 'wrapper or redacted or protocol or authority'",
+        "description": "Focused wrapper and redaction regressions",
+        "expected": null,
+        "item_id": "auth-batch-review-remediation",
+        "last_result": "pass",
+        "last_run": "2026-08-19T01:31:02Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run pytest tests/test_bootstrap.py tests/test_hosted_backend.py -q",
+        "description": "Complete bootstrap and hosted suites",
+        "expected": null,
+        "item_id": "auth-batch-review-remediation",
+        "last_result": "pass",
+        "last_run": "2026-08-19T01:31:03Z",
+        "seq": 2,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "auth-batch-review-remediation",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "auth-batch-review-remediation",
+        "needs_wid": "w1",
+        "wid": "w2"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "Canonical wrapper path helper collapses dot/redundant/in-root parent segments, rejects absolute/escape/symlink traversal, records normalized config, and drives generation/refresh/doctor",
+        "item_id": "auth-batch-review-remediation",
+        "notes": null,
+        "started_at": "2026-08-19T01:29:45Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Normalize and validate wrapper paths across scaffold, refresh, doctor, and generation",
+        "wid": "w0"
+      },
+      {
+        "evidence": "Hosted redaction derives exact, normalized, HTTPS-equivalent, authority, hostname, and host:port variants and replaces longest-first",
+        "item_id": "auth-batch-review-remediation",
+        "notes": null,
+        "started_at": "2026-08-19T01:29:46Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Redact protocol-translated URL, authority, and host-port variants",
+        "wid": "w1"
+      },
+      {
+        "evidence": "Regression coverage added for normalized depth, refresh of legacy unnormalized config, path escape/absolute/symlink rejection, and translated endpoint redaction at connect/execute",
+        "item_id": "auth-batch-review-remediation",
+        "notes": null,
+        "started_at": "2026-08-19T01:29:46Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Add focused regressions and run auth/bootstrap/full verification",
+        "wid": "w2"
+      }
+    ]
+  }
+}

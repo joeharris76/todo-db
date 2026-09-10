@@ -1,0 +1,178 @@
+{
+  "context": "Provision a bounded credential per the Provision once runbook procedure, point TODO_DB_CREDENTIAL_COMMAND at it, and run the harness with --require against the real hosted database. Record the outcome, the doctor provenance line, and any defect the live run exposes; expect defects, because argument handling, keychain prompting behaviour, timeout headroom, and doctor output under a real backend have only been exercised against stubs. Fix what the live run finds, or open items for anything out of scope. Re-run until the harness passes twice in a row from a clean shell, once for read-write and once for a read-only credential.",
+  "description": "scripts/hosted_auth_acceptance.sh exists and its skip and --require paths are verified locally and in CI, but its pass path has never executed. No run has resolved a credential from a real secret store against a real Turso database, so the ADR 0005 G1 acceptance criterion is asserted by a harness that has not yet asserted it. This is the same shape of gap as v0.4.2: a gate that exists, looks green, and has not run the thing it exists to prove. It is also gate 1 of docs/operations/release-gates.md, so no auth-affecting release can be tagged until this has been done once.",
+  "legacy": {
+    "anti_patterns": [
+      {
+        "dont": "Mark this complete on the strength of the harness passing its skip and --require paths",
+        "instead": "require a recorded run where doctor reported source TODO_DB_CREDENTIAL_COMMAND against a live database",
+        "item_id": "hosted-auth-acceptance-live-run",
+        "why": "those paths are already verified and prove nothing about resolving a real credential against a real backend"
+      },
+      {
+        "dont": "Paste the harness output into tracker evidence verbatim",
+        "instead": "record the outcome and the provenance field only",
+        "item_id": "hosted-auth-acceptance-live-run",
+        "why": "output may include the hosted host name and diagnostic detail"
+      },
+      {
+        "dont": "Run it once and treat a single green run as proof",
+        "instead": "re-run from a clean shell and cover both capabilities",
+        "item_id": "hosted-auth-acceptance-live-run",
+        "why": "a first run can pass from a warm keychain or an already-unlocked store in a way a fresh session will not"
+      }
+    ],
+    "item_deps": [
+      {
+        "item_id": "hosted-auth-acceptance-live-run",
+        "needs_item": "hosted-auth-acceptance-gate"
+      },
+      {
+        "item_id": "hosted-auth-acceptance-live-run",
+        "needs_item": "hosted-credential-provider"
+      },
+      {
+        "item_id": "hosted-auth-acceptance-live-run",
+        "needs_item": "hosted-credential-provisioning-ux"
+      }
+    ],
+    "item_meta": {
+      "category": "test",
+      "completed_at": "2026-08-19T16:05:11Z",
+      "completed_pr": 18,
+      "created_at": "2026-08-19T15:06:55Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "No bearer value, hosted URL, or secret store entry name with a secret in it is recorded in tracker evidence, commit messages, or command output.",
+        "item_id": "hosted-auth-acceptance-live-run"
+      },
+      {
+        "behavior": "The credential used for the live run is bounded per the ADR 0004 lifetime profile and is not a non-expiring token.",
+        "item_id": "hosted-auth-acceptance-live-run"
+      },
+      {
+        "behavior": "The harness stays opt-in and is never wired into CI with a hosted write credential.",
+        "item_id": "hosted-auth-acceptance-live-run"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "hosted-auth-acceptance-live-run",
+        "kind": "do_not_modify",
+        "path_glob": ".github/workflows/audit-monitor.yml"
+      },
+      {
+        "item_id": "hosted-auth-acceptance-live-run",
+        "kind": "do_not_modify",
+        "path_glob": "docs/adr/0004-hosted-credential-lifecycle.md"
+      },
+      {
+        "item_id": "hosted-auth-acceptance-live-run",
+        "kind": "only_modify",
+        "path_glob": "CHANGELOG.md"
+      },
+      {
+        "item_id": "hosted-auth-acceptance-live-run",
+        "kind": "only_modify",
+        "path_glob": "docs/operations/hosted-credentials.md"
+      },
+      {
+        "item_id": "hosted-auth-acceptance-live-run",
+        "kind": "only_modify",
+        "path_glob": "scripts/hosted_auth_acceptance.sh"
+      },
+      {
+        "item_id": "hosted-auth-acceptance-live-run",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/backends.py"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "set +e; env -u TODO_DB_URL -u TODO_DB_ACCEPTANCE_URL -u TODO_DB_AUTH_TOKEN -u TODO_DB_RO_AUTH_TOKEN -u TODO_DB_CREDENTIAL_COMMAND bash scripts/hosted_auth_acceptance.sh; status=$?; set -e; test \"$status\" -eq 77",
+        "description": "The harness still refuses to pass unconfigured",
+        "expected": null,
+        "item_id": "hosted-auth-acceptance-live-run",
+        "last_result": "pass",
+        "last_run": "2026-08-19T16:05:10Z",
+        "seq": 2,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "TODO_DB_ACCEPTANCE_URL=\"libsql://todo-db-standalone-joeharris76.aws-us-east-1.turso.io\" TODO_DB_CREDENTIAL_COMMAND=\"security find-generic-password -w -s todo-db-acceptance-rw\" bash scripts/hosted_auth_acceptance.sh --require",
+        "description": "The harness runs and passes against the configured hosted database",
+        "expected": null,
+        "item_id": "hosted-auth-acceptance-live-run",
+        "last_result": "pass",
+        "last_run": "2026-08-19T16:05:11Z",
+        "seq": 3,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "hosted-auth-acceptance-live-run",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "hosted-auth-acceptance-live-run",
+        "needs_wid": "w1",
+        "wid": "w2"
+      },
+      {
+        "item_id": "hosted-auth-acceptance-live-run",
+        "needs_wid": "w2",
+        "wid": "w3"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "provisioned 1d bounded read-write and read-only tokens into macOS keychain via security add-generic-password -U -a $USER -s todo-db-acceptance-rw -w $tok and -s todo-db-acceptance-ro; confirmed retrieval with security find-generic-password -w",
+        "item_id": "hosted-auth-acceptance-live-run",
+        "notes": null,
+        "started_at": "2026-08-19T16:04:57Z",
+        "started_branch": "feat/hosted-credential-provider",
+        "started_worktree": "/Users/joe/Developer/todo-db.wt-credential-provider",
+        "status": "done",
+        "summary": "Provision a bounded credential into a real secret store per the runbook and confirm the store returns it",
+        "wid": "w0"
+      },
+      {
+        "evidence": "scripts/hosted_auth_acceptance.sh --require passed against libsql://todo-db-standalone-joeharris76.aws-us-east-1.turso.io with TODO_DB_CREDENTIAL_COMMAND pointing to todo-db-acceptance-rw with environment auth tokens unset",
+        "item_id": "hosted-auth-acceptance-live-run",
+        "notes": null,
+        "started_at": "2026-08-19T16:04:57Z",
+        "started_branch": "feat/hosted-credential-provider",
+        "started_worktree": "/Users/joe/Developer/todo-db.wt-credential-provider",
+        "status": "done",
+        "summary": "Run the harness with --require against the real hosted database and record the result",
+        "wid": "w1"
+      },
+      {
+        "evidence": "repeated with TODO_DB_CREDENTIAL_COMMAND pointing to todo-db-acceptance-ro; doctor passed as requested:read-only, stats passed, and mutation attempt failed with server-enforced E_AUTH_REJECTED",
+        "item_id": "hosted-auth-acceptance-live-run",
+        "notes": null,
+        "started_at": "2026-08-19T16:04:57Z",
+        "started_branch": "feat/hosted-credential-provider",
+        "started_worktree": "/Users/joe/Developer/todo-db.wt-credential-provider",
+        "status": "done",
+        "summary": "Repeat for a read-only credential and confirm capability handling under a real backend",
+        "wid": "w2"
+      },
+      {
+        "evidence": "fixed keychain provisioning command syntax in docs/operations/hosted-credentials.md and added unset TODO_DB_CONFIG in scripts/hosted_auth_acceptance.sh; re-ran all checks and pytest (236 passed)",
+        "item_id": "hosted-auth-acceptance-live-run",
+        "notes": null,
+        "started_at": "2026-08-19T16:04:57Z",
+        "started_branch": "feat/hosted-credential-provider",
+        "started_worktree": "/Users/joe/Developer/todo-db.wt-credential-provider",
+        "status": "done",
+        "summary": "Fix or log every defect the live run exposes and re-run from a clean shell",
+        "wid": "w3"
+      }
+    ]
+  }
+}

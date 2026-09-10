@@ -1,0 +1,142 @@
+{
+  "context": "Only the diverged case warrants advice about package or venv consistency. Re-syncing the environment does not fix a behind database, so the current single message sends operators down the wrong path.",
+  "description": "Verified defect: a database whose applied migrations are a valid prefix of the packaged history fails read-only commands with a 443-token checksum dump, while read-write commands silently auto-migrate it. Reproduced on a database built at migration 4: list errors, create succeeds and advances the schema to 5, then list works. Emit E_SCHEMA_BEHIND (valid prefix; remedy is todo-db migrate) separately from E_SCHEMA_DIVERGED (checksum differs; verify the installed version before modifying the database), and decide explicitly whether a read-only open should auto-migrate or return E_SCHEMA_BEHIND.",
+  "legacy": {
+    "anti_patterns": [
+      {
+        "dont": "Recommend checking the installed package version for a behind database",
+        "instead": "Reserve version advice for E_SCHEMA_DIVERGED and tell the behind case to run todo-db migrate",
+        "item_id": "opt-schema-error-codes",
+        "why": "the environment is not the fault and re-syncing it does not migrate the schema"
+      }
+    ],
+    "item_meta": {
+      "category": "correctness",
+      "completed_at": "2026-08-18T16:08:59Z",
+      "created_at": "2026-08-18T14:56:34Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "A diverged checksum is still refused, never auto-repaired",
+        "item_id": "opt-schema-error-codes"
+      },
+      {
+        "behavior": "Migration SQL stays checksum-verified",
+        "item_id": "opt-schema-error-codes"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "opt-schema-error-codes",
+        "kind": "do_not_modify",
+        "path_glob": "src/todo_db/migrations/**"
+      },
+      {
+        "item_id": "opt-schema-error-codes",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/database.py"
+      },
+      {
+        "item_id": "opt-schema-error-codes",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/errors.py"
+      },
+      {
+        "item_id": "opt-schema-error-codes",
+        "kind": "only_modify",
+        "path_glob": "tests/**"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest tests/test_contracts.py tests/test_bootstrap.py -q",
+        "description": "Contract suite",
+        "expected": null,
+        "item_id": "opt-schema-error-codes",
+        "last_result": "pass",
+        "last_run": "2026-08-18T16:08:54Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run pytest -q",
+        "description": "Full suite",
+        "expected": null,
+        "item_id": "opt-schema-error-codes",
+        "last_result": "pass",
+        "last_run": "2026-08-18T16:08:59Z",
+        "seq": 2,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "opt-schema-error-codes",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "opt-schema-error-codes",
+        "needs_wid": "w0",
+        "wid": "w2"
+      },
+      {
+        "item_id": "opt-schema-error-codes",
+        "needs_wid": "w1",
+        "wid": "w3"
+      },
+      {
+        "item_id": "opt-schema-error-codes",
+        "needs_wid": "w2",
+        "wid": "w3"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "src/todo_db/database.py:_migrate,_check_schema",
+        "item_id": "opt-schema-error-codes",
+        "notes": null,
+        "started_at": "2026-08-18T16:07:50Z",
+        "started_branch": "fix/schema-error-codes",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Classify behind versus diverged at both raise sites in database.py",
+        "wid": "w0"
+      },
+      {
+        "evidence": "src/todo_db/database.py:_migrate,_check_schema",
+        "item_id": "opt-schema-error-codes",
+        "notes": null,
+        "started_at": "2026-08-18T16:08:15Z",
+        "started_branch": "fix/schema-error-codes",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Emit compact coded messages naming versions and the remedy",
+        "wid": "w1"
+      },
+      {
+        "evidence": "src/todo_db/database.py:_check_schema",
+        "item_id": "opt-schema-error-codes",
+        "notes": null,
+        "started_at": "2026-08-18T16:08:15Z",
+        "started_branch": "fix/schema-error-codes",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Decide and implement read-only behaviour on a behind schema",
+        "wid": "w2"
+      },
+      {
+        "evidence": "tests/test_contracts.py:test_schema_behind_in_read_only_mode_raises_schema_behind_error,test_schema_diverged_raises_schema_diverged_error",
+        "item_id": "opt-schema-error-codes",
+        "notes": null,
+        "started_at": "2026-08-18T16:08:40Z",
+        "started_branch": "fix/schema-error-codes",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Tests covering behind, diverged, and read-only paths",
+        "wid": "w3"
+      }
+    ]
+  }
+}

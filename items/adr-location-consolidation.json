@@ -1,0 +1,157 @@
+{
+  "context": "Pick one location, most likely docs/adr/ since the two most recent records were written there, and move the rest with git mv so history follows. Reconcile the duplicated 0003 by keeping the newer content and confirming no decision text is lost. Leave a short pointer in the abandoned directory or delete it, depending on whether anything links to it. Update every cross-reference, including README, the operations runbook, ADR bodies, and any skill or tracker text that cites a path.",
+  "description": "Decision records live in two places. _project/decisions/ holds 0001, 0002, and 0003; docs/adr/ holds 0003, 0004, and now 0005. ADR 0003 exists in both, so a reader can find two copies of one decision and cannot tell which is authoritative, and the numbering sequence is shared across directories that are not. Noticed while writing ADR 0005 and deliberately not touched, because moving decision records during a security change would have mixed unrelated churn into a reviewed diff.",
+  "legacy": {
+    "anti_patterns": [
+      {
+        "dont": "Delete the duplicate without diffing both copies",
+        "instead": "diff them and reconcile deliberately",
+        "item_id": "adr-location-consolidation",
+        "why": "the two versions of 0003 may have diverged and one may carry text the other lacks"
+      },
+      {
+        "dont": "Renumber the records to close the sequence",
+        "instead": "keep the numbers and move the files",
+        "item_id": "adr-location-consolidation",
+        "why": "existing commits, tracker items, and source comments cite these numbers"
+      }
+    ],
+    "item_meta": {
+      "category": "docs",
+      "completed_at": "2026-08-19T15:21:37Z",
+      "completed_pr": 18,
+      "created_at": "2026-08-19T15:08:31Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "Existing ADR numbers keep their meaning; records are not renumbered.",
+        "item_id": "adr-location-consolidation"
+      },
+      {
+        "behavior": "File history follows the move.",
+        "item_id": "adr-location-consolidation"
+      },
+      {
+        "behavior": "No decision text is lost when the duplicated record is reconciled.",
+        "item_id": "adr-location-consolidation"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "adr-location-consolidation",
+        "kind": "do_not_modify",
+        "path_glob": ".github/workflows/**"
+      },
+      {
+        "item_id": "adr-location-consolidation",
+        "kind": "do_not_modify",
+        "path_glob": "_project/scripts/todo"
+      },
+      {
+        "item_id": "adr-location-consolidation",
+        "kind": "do_not_modify",
+        "path_glob": "src/**"
+      },
+      {
+        "item_id": "adr-location-consolidation",
+        "kind": "do_not_modify",
+        "path_glob": "tests/**"
+      },
+      {
+        "item_id": "adr-location-consolidation",
+        "kind": "only_modify",
+        "path_glob": "CHANGELOG.md"
+      },
+      {
+        "item_id": "adr-location-consolidation",
+        "kind": "only_modify",
+        "path_glob": "README.md"
+      },
+      {
+        "item_id": "adr-location-consolidation",
+        "kind": "only_modify",
+        "path_glob": "_project/decisions/**"
+      },
+      {
+        "item_id": "adr-location-consolidation",
+        "kind": "only_modify",
+        "path_glob": "docs/adr/**"
+      },
+      {
+        "item_id": "adr-location-consolidation",
+        "kind": "only_modify",
+        "path_glob": "docs/operations/**"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "test -z \"$(ls _project/decisions 2>/dev/null)\" || test -z \"$(ls docs/adr 2>/dev/null)\"",
+        "description": "Only one directory holds decision records",
+        "expected": null,
+        "item_id": "adr-location-consolidation",
+        "last_result": "pass",
+        "last_run": "2026-08-19T15:21:37Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "test -z \"$(rg -n \"_project/decisions\" README.md docs src --glob \"!docs/adr/README.md\" 2>/dev/null)\"",
+        "description": "No cross-reference outside the index points at the abandoned location",
+        "expected": null,
+        "item_id": "adr-location-consolidation",
+        "last_result": "pass",
+        "last_run": "2026-08-19T15:21:37Z",
+        "seq": 3,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "adr-location-consolidation",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "adr-location-consolidation",
+        "needs_wid": "w1",
+        "wid": "w2"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "the two copies of 0003 have diverged; docs/adr holds the newer text (workspace-fingerprint model finish, hosted-primary experimental status, JSON patch stop decision) and _project/decisions holds the superseded version",
+        "item_id": "adr-location-consolidation",
+        "notes": null,
+        "started_at": "2026-08-19T15:20:44Z",
+        "started_branch": "feat/hosted-credential-provider",
+        "started_worktree": "/Users/joe/Developer/todo-db.wt-credential-provider",
+        "status": "done",
+        "summary": "Diff the two copies of 0003 and confirm which content is authoritative",
+        "wid": "w0"
+      },
+      {
+        "evidence": "0001 and 0002 moved with git mv so history follows; the superseded _project/decisions copy of 0003 removed",
+        "item_id": "adr-location-consolidation",
+        "notes": null,
+        "started_at": "2026-08-19T15:20:58Z",
+        "started_branch": "feat/hosted-credential-provider",
+        "started_worktree": "/Users/joe/Developer/todo-db.wt-credential-provider",
+        "status": "done",
+        "summary": "Move the remaining records into the chosen directory with git mv",
+        "wid": "w1"
+      },
+      {
+        "evidence": "no reference to _project/decisions remained anywhere in the tree; added docs/adr/README.md index and linked it from README",
+        "item_id": "adr-location-consolidation",
+        "notes": null,
+        "started_at": "2026-08-19T15:20:58Z",
+        "started_branch": "feat/hosted-credential-provider",
+        "started_worktree": "/Users/joe/Developer/todo-db.wt-credential-provider",
+        "status": "done",
+        "summary": "Update every cross-reference and confirm no link points at the old location",
+        "wid": "w2"
+      }
+    ]
+  }
+}

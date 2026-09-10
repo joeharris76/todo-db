@@ -1,0 +1,167 @@
+{
+  "description": "The subset of the original audit item that carries no threat-model change and can land normally. _upgrade_audit_history (database.py:728) full-scans events including the fat detail column on every read-write open purely to evaluate all(hash_version == 2); replace with a LIMIT 1 existence probe. Also pin the four-key verify_audit result shape, cover empty history explicitly, instrument the full walk, and rename the audit tests so each states its actual contract.",
+  "legacy": {
+    "anti_patterns": [
+      {
+        "dont": "Slip any change to what runs at open time into this item",
+        "instead": "Keep every open-time change in opt-audit-head-check-on-open, which is blocked on the ADR",
+        "item_id": "opt-audit-safe-optimizations",
+        "why": "the open-time guarantee is a documented product property gated behind a separate decision record"
+      }
+    ],
+    "item_deps": [
+      {
+        "item_id": "opt-audit-safe-optimizations",
+        "needs_item": "opt-query-budget-harness"
+      }
+    ],
+    "item_meta": {
+      "category": "performance",
+      "completed_at": "2026-08-18T16:04:29Z",
+      "created_at": "2026-08-18T14:56:34Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "TodoDatabase.open still performs the full chain walk after this item",
+        "item_id": "opt-audit-safe-optimizations"
+      },
+      {
+        "behavior": "audit verify, export, and restore still walk the full chain",
+        "item_id": "opt-audit-safe-optimizations"
+      },
+      {
+        "behavior": "verify_audit returns algorithm, event_count, head_seq, head_hash",
+        "item_id": "opt-audit-safe-optimizations"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "opt-audit-safe-optimizations",
+        "kind": "do_not_modify",
+        "path_glob": "README.md"
+      },
+      {
+        "item_id": "opt-audit-safe-optimizations",
+        "kind": "do_not_modify",
+        "path_glob": "src/todo_db/migrations/**"
+      },
+      {
+        "item_id": "opt-audit-safe-optimizations",
+        "kind": "do_not_modify",
+        "path_glob": "src/todo_db/tracker.py"
+      },
+      {
+        "item_id": "opt-audit-safe-optimizations",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/audit.py"
+      },
+      {
+        "item_id": "opt-audit-safe-optimizations",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/database.py"
+      },
+      {
+        "item_id": "opt-audit-safe-optimizations",
+        "kind": "only_modify",
+        "path_glob": "tests/**"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest tests/test_audit.py tests/test_contracts.py -q",
+        "description": "Audit suite",
+        "expected": null,
+        "item_id": "opt-audit-safe-optimizations",
+        "last_result": "pass",
+        "last_run": "2026-08-18T16:04:24Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run pytest tests/test_query_budget.py -q",
+        "description": "Budget improved",
+        "expected": null,
+        "item_id": "opt-audit-safe-optimizations",
+        "last_result": "pass",
+        "last_run": "2026-08-18T16:04:24Z",
+        "seq": 2,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run pytest -q",
+        "description": "Full suite",
+        "expected": null,
+        "item_id": "opt-audit-safe-optimizations",
+        "last_result": "pass",
+        "last_run": "2026-08-18T16:04:29Z",
+        "seq": 3,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "opt-audit-safe-optimizations",
+        "needs_wid": "w0",
+        "wid": "w3"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "src/todo_db/database.py:_upgrade_audit_history",
+        "item_id": "opt-audit-safe-optimizations",
+        "notes": null,
+        "started_at": "2026-08-18T16:03:26Z",
+        "started_branch": "perf/audit-safe-optimizations",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Replace the _upgrade_audit_history scan with a LIMIT 1 existence probe",
+        "wid": "w0"
+      },
+      {
+        "evidence": "tests/test_audit.py:test_verify_audit_returns_exact_four_key_shape_and_handles_empty_history",
+        "item_id": "opt-audit-safe-optimizations",
+        "notes": null,
+        "started_at": "2026-08-18T16:03:26Z",
+        "started_branch": "perf/audit-safe-optimizations",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Pin the four-key verify_audit result shape in tests",
+        "wid": "w1"
+      },
+      {
+        "evidence": "tests/test_audit.py:test_verify_audit_rejects_missing_audit_head",
+        "item_id": "opt-audit-safe-optimizations",
+        "notes": null,
+        "started_at": "2026-08-18T16:03:26Z",
+        "started_branch": "perf/audit-safe-optimizations",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Cover empty-history and missing-head behaviour explicitly",
+        "wid": "w2"
+      },
+      {
+        "evidence": "tests/test_query_budget.py:test_audit_full_walk_statement_and_byte_counts",
+        "item_id": "opt-audit-safe-optimizations",
+        "notes": null,
+        "started_at": "2026-08-18T16:04:09Z",
+        "started_branch": "perf/audit-safe-optimizations",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Instrument full-walk statement and byte counts",
+        "wid": "w3"
+      },
+      {
+        "evidence": "tests/test_audit.py",
+        "item_id": "opt-audit-safe-optimizations",
+        "notes": null,
+        "started_at": "2026-08-18T16:03:26Z",
+        "started_branch": "perf/audit-safe-optimizations",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Rename audit tests so each name states the contract it proves",
+        "wid": "w4"
+      }
+    ]
+  }
+}

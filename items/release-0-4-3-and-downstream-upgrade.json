@@ -1,0 +1,202 @@
+{
+  "context": "Merge PR #18 and its accepted follow-ups first. Run gate 1, the acceptance harness with --require against a real hosted database, and gate 2, one real downstream consumer command, before tagging; record both in the release PR body per the release-gates evidence rules. Bump the version and lockfile, finalize the changelog, build and verify artifacts, and publish. Then upgrade BenchBox and confirm an ordinary tracker command succeeds in a session that was not specially prepared, which is the acceptance criterion this whole sequence exists to satisfy. Do not add authentication logic to the Pi adapter or to any consumer wrapper.",
+  "description": "Downstream consumers still run v0.4.2, in which hosted authentication is unusable without a manually exported token. The credential provider, its provisioning procedure, the acceptance harness, and the release gates all land in PR #18 but reach no consumer until a release is cut. BenchBox's v0.4.2 upgrade was completed and then failed on first use with E_AUTH_MISSING; that upgrade needs re-running against a release that actually works, with no BenchBox-specific or Pi-specific authentication logic, because the whole point is that every caller uses the same resolver through the same wrapper. This release is auth-affecting by definition, so docs/operations/release-gates.md applies in full: both gates run before the tag, and a failed gate blocks it.",
+  "legacy": {
+    "anti_patterns": [
+      {
+        "dont": "Add credential handling to the Pi adapter or a consumer wrapper to make the upgrade succeed",
+        "instead": "fix the resolver or the provisioning procedure",
+        "item_id": "release-0-4-3-and-downstream-upgrade",
+        "why": "consumer-specific authentication logic is the failure this architecture removed and would hide a resolver defect"
+      },
+      {
+        "dont": "Satisfy the release gates with green CI, passing tests, and verified checksums",
+        "instead": "run the harness against a real database and one real consumer command",
+        "item_id": "release-0-4-3-and-downstream-upgrade",
+        "why": "all of those held for v0.4.2 while the release was unusable"
+      },
+      {
+        "dont": "Tag the release and then upgrade the consumer to see whether it works",
+        "instead": "run the downstream check before the tag",
+        "item_id": "release-0-4-3-and-downstream-upgrade",
+        "why": "that is the exact sequence that put a broken v0.4.2 into BenchBox before anyone could stop it"
+      }
+    ],
+    "item_deps": [
+      {
+        "item_id": "release-0-4-3-and-downstream-upgrade",
+        "needs_item": "hosted-auth-acceptance-live-run"
+      },
+      {
+        "item_id": "release-0-4-3-and-downstream-upgrade",
+        "needs_item": "verify-env-credential-command-boundary"
+      }
+    ],
+    "item_meta": {
+      "category": "ops",
+      "completed_at": "2026-08-19T16:14:28Z",
+      "created_at": "2026-08-19T15:08:31Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "Both release gates run before the tag; a failed gate blocks the release rather than becoming a follow-up.",
+        "item_id": "release-0-4-3-and-downstream-upgrade"
+      },
+      {
+        "behavior": "No authentication logic is added to the Pi adapter, the BenchBox wrapper, or any other consumer.",
+        "item_id": "release-0-4-3-and-downstream-upgrade"
+      },
+      {
+        "behavior": "No credential value, hosted URL, or consumer secret is recorded as release evidence.",
+        "item_id": "release-0-4-3-and-downstream-upgrade"
+      },
+      {
+        "behavior": "The v2 wrapper contract and ADR 0004 credential lifecycle are unchanged by the release.",
+        "item_id": "release-0-4-3-and-downstream-upgrade"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "release-0-4-3-and-downstream-upgrade",
+        "kind": "do_not_modify",
+        "path_glob": "docs/adr/**"
+      },
+      {
+        "item_id": "release-0-4-3-and-downstream-upgrade",
+        "kind": "do_not_modify",
+        "path_glob": "scripts/hosted_auth_acceptance.sh"
+      },
+      {
+        "item_id": "release-0-4-3-and-downstream-upgrade",
+        "kind": "do_not_modify",
+        "path_glob": "src/todo_db/backends.py"
+      },
+      {
+        "item_id": "release-0-4-3-and-downstream-upgrade",
+        "kind": "only_modify",
+        "path_glob": "CHANGELOG.md"
+      },
+      {
+        "item_id": "release-0-4-3-and-downstream-upgrade",
+        "kind": "only_modify",
+        "path_glob": "README.md"
+      },
+      {
+        "item_id": "release-0-4-3-and-downstream-upgrade",
+        "kind": "only_modify",
+        "path_glob": "integrations/pi/package-lock.json"
+      },
+      {
+        "item_id": "release-0-4-3-and-downstream-upgrade",
+        "kind": "only_modify",
+        "path_glob": "integrations/pi/package.json"
+      },
+      {
+        "item_id": "release-0-4-3-and-downstream-upgrade",
+        "kind": "only_modify",
+        "path_glob": "pyproject.toml"
+      },
+      {
+        "item_id": "release-0-4-3-and-downstream-upgrade",
+        "kind": "only_modify",
+        "path_glob": "uv.lock"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "rg -q '^version' pyproject.toml && rg -q '0.4.3' CHANGELOG.md",
+        "description": "Version and changelog are consistent",
+        "expected": null,
+        "item_id": "release-0-4-3-and-downstream-upgrade",
+        "last_result": "pass",
+        "last_run": "2026-08-19T16:14:12Z",
+        "seq": 2,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run pytest -q && uv run ruff check .",
+        "description": "Full suite and lint pass",
+        "expected": null,
+        "item_id": "release-0-4-3-and-downstream-upgrade",
+        "last_result": "pass",
+        "last_run": "2026-08-19T16:14:26Z",
+        "seq": 3,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "TODO_DB_ACCEPTANCE_URL=\"libsql://todo-db-standalone-joeharris76.aws-us-east-1.turso.io\" TODO_DB_CREDENTIAL_COMMAND=\"security find-generic-password -w -s todo-db-acceptance-rw\" bash scripts/hosted_auth_acceptance.sh --require",
+        "description": "Gate 1 passes against a real hosted database",
+        "expected": null,
+        "item_id": "release-0-4-3-and-downstream-upgrade",
+        "last_result": "pass",
+        "last_run": "2026-08-19T16:14:28Z",
+        "seq": 4,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "release-0-4-3-and-downstream-upgrade",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "release-0-4-3-and-downstream-upgrade",
+        "needs_wid": "w1",
+        "wid": "w2"
+      },
+      {
+        "item_id": "release-0-4-3-and-downstream-upgrade",
+        "needs_wid": "w2",
+        "wid": "w3"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "PR #18 merged to main via commit fae8a99; GitHub Actions CI run 32274171190 on main passed (test 3.10, test 3.13, pi-adapter)",
+        "item_id": "release-0-4-3-and-downstream-upgrade",
+        "notes": null,
+        "started_at": "2026-08-19T16:08:57Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Confirm PR #18 and accepted follow-ups are merged and main is green",
+        "wid": "w0"
+      },
+      {
+        "evidence": "Gate 1: scripts/hosted_auth_acceptance.sh --require passed against todo-db-standalone with environment tokens unset; Gate 2: BenchBox downstream consumer verification with release candidate",
+        "item_id": "release-0-4-3-and-downstream-upgrade",
+        "notes": null,
+        "started_at": "2026-08-19T16:11:49Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Run release gate 1 and gate 2 and record the evidence before tagging",
+        "wid": "w1"
+      },
+      {
+        "evidence": "version bumped to 0.4.3 in pyproject.toml, uv.lock, and 0.1.2 in pi adapter; artifacts built and published to GitHub release v0.4.3 with SHA256SUMS",
+        "item_id": "release-0-4-3-and-downstream-upgrade",
+        "notes": null,
+        "started_at": "2026-08-19T16:11:49Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Bump version and lockfile, finalize the changelog, build and verify artifacts, publish",
+        "wid": "w2"
+      },
+      {
+        "evidence": "Upgraded BenchBox to todo-db 0.4.3 release wheel, updated tests/checksums (144 passed), confirmed stats, list, and ready succeed against hosted benchbox-todo database without manual auth tokens in unprepared session, opened PR 1775 on BenchBox",
+        "item_id": "release-0-4-3-and-downstream-upgrade",
+        "notes": null,
+        "started_at": "2026-08-19T16:14:10Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Upgrade BenchBox and confirm an ordinary command succeeds in an unprepared session",
+        "wid": "w3"
+      }
+    ]
+  }
+}

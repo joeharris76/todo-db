@@ -1,0 +1,72 @@
+{
+  "description": "Scripted rehearsal against a restored copy of the production DB in post-phase-5 shape: assert per-table row-count parity INCLUDING findings tables, then a rollback drill with the same assertions. The current drill passes audit-verify green while dropping the findings domain.",
+  "legacy": {
+    "item_meta": {
+      "completed_at": "2026-09-02T01:26:35Z",
+      "created_at": "2026-07-26T13:00:37Z",
+      "worktree": "todo-db"
+    },
+    "scope_rules": [
+      {
+        "item_id": "cutover-rehearsal-drill",
+        "kind": "only_modify",
+        "path_glob": ".claude/*"
+      },
+      {
+        "item_id": "cutover-rehearsal-drill",
+        "kind": "only_modify",
+        "path_glob": ".codex/*"
+      },
+      {
+        "item_id": "cutover-rehearsal-drill",
+        "kind": "only_modify",
+        "path_glob": ".gemini/*"
+      },
+      {
+        "item_id": "cutover-rehearsal-drill",
+        "kind": "only_modify",
+        "path_glob": ".gitattributes"
+      },
+      {
+        "item_id": "cutover-rehearsal-drill",
+        "kind": "only_modify",
+        "path_glob": "scripts/*"
+      },
+      {
+        "item_id": "cutover-rehearsal-drill",
+        "kind": "only_modify",
+        "path_glob": "skill-sync.lock"
+      },
+      {
+        "item_id": "cutover-rehearsal-drill",
+        "kind": "only_modify",
+        "path_glob": "skill-sync.yaml"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "test -x scripts/cutover_rehearsal.sh",
+        "description": "Rehearsal",
+        "expected": null,
+        "item_id": "cutover-rehearsal-drill",
+        "last_result": "pass",
+        "last_run": "2026-09-02T01:26:31Z",
+        "seq": 1,
+        "workspace_fingerprint": "e02c56ccfd9eba8d9d28e7a2ca3af59834c95af75a25b0fba4be163c42afebae"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "scripts/cutover_rehearsal.sh rehearsal: per-table parity incl. findings (cutover + rollback drill), audit-verify stays green-only-with-parity; verified via synthetic post-phase-5 shape and restored-copy flow",
+        "item_id": "cutover-rehearsal-drill",
+        "notes": null,
+        "started_at": null,
+        "started_branch": null,
+        "started_worktree": null,
+        "status": "done",
+        "summary": "Rehearsal script asserting per-table parity incl. findings, plus rollback drill",
+        "wid": "w0"
+      }
+    ]
+  }
+}

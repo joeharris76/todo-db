@@ -1,0 +1,206 @@
+{
+  "description": "Create src/todo_db/mcp/ with a FastMCP stdio server: todo-db[mcp] optional dependency, todo-db-mcp entry point that fails with an install hint when mcp is absent, target resolution (--config/--db/--repo-root then TODO_DB_* then upward discovery, pinned for process life), a startup READ_ONLY open that runs schema and identity checks only, a mandatory explicit-actor resolution that never calls default_actor() (--actor/TODO_DB_ACTOR or an initialize-derived mcp:<client>:<user>@<host>), a per-process session UUID passed on take, one dedicated worker thread that owns all database and git work, and todo://instructions plus a get_instructions tool and an additive todo/workflow prompt.",
+  "legacy": {
+    "item_deps": [
+      {
+        "item_id": "mcp-server-foundation",
+        "needs_item": "mcp-decision-record"
+      }
+    ],
+    "item_meta": {
+      "category": "mcp-migration",
+      "completed_at": "2026-09-02T16:22:22Z",
+      "created_at": "2026-09-02T13:31:10Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "The floor CLI gains no new runtime dependency; mcp stays an optional extra",
+        "item_id": "mcp-server-foundation"
+      },
+      {
+        "behavior": "The server never derives a stable principal from a session id (ADR 0003 2.1/2.2)",
+        "item_id": "mcp-server-foundation"
+      },
+      {
+        "behavior": "stdio stdout carries only JSON-RPC framing",
+        "item_id": "mcp-server-foundation"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "mcp-server-foundation",
+        "kind": "do_not_modify",
+        "path_glob": ".todo-db/**"
+      },
+      {
+        "item_id": "mcp-server-foundation",
+        "kind": "do_not_modify",
+        "path_glob": "dist/**"
+      },
+      {
+        "item_id": "mcp-server-foundation",
+        "kind": "only_modify",
+        "path_glob": "docs/operations/**"
+      },
+      {
+        "item_id": "mcp-server-foundation",
+        "kind": "only_modify",
+        "path_glob": "pyproject.toml"
+      },
+      {
+        "item_id": "mcp-server-foundation",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/mcp/**"
+      },
+      {
+        "item_id": "mcp-server-foundation",
+        "kind": "only_modify",
+        "path_glob": "tests/test_contracts.py"
+      },
+      {
+        "item_id": "mcp-server-foundation",
+        "kind": "only_modify",
+        "path_glob": "tests/test_mcp_server.py"
+      },
+      {
+        "item_id": "mcp-server-foundation",
+        "kind": "only_modify",
+        "path_glob": "uv.lock"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest -q",
+        "description": "Tests",
+        "expected": "pass",
+        "item_id": "mcp-server-foundation",
+        "last_result": "pass",
+        "last_run": "2026-09-02T16:22:22Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run ruff check .",
+        "description": "Lint",
+        "expected": "clean",
+        "item_id": "mcp-server-foundation",
+        "last_result": "pass",
+        "last_run": "2026-09-02T16:22:22Z",
+        "seq": 2,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "mcp-server-foundation",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "mcp-server-foundation",
+        "needs_wid": "w1",
+        "wid": "w2"
+      },
+      {
+        "item_id": "mcp-server-foundation",
+        "needs_wid": "w1",
+        "wid": "w3"
+      },
+      {
+        "item_id": "mcp-server-foundation",
+        "needs_wid": "w1",
+        "wid": "w4"
+      },
+      {
+        "item_id": "mcp-server-foundation",
+        "needs_wid": "w2",
+        "wid": "w5"
+      },
+      {
+        "item_id": "mcp-server-foundation",
+        "needs_wid": "w1",
+        "wid": "w6"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "SDK mcp 1.29.1 under >=1.10.0,<2; Python >=3.10 floor unchanged (both majors support 3.10+), no requires-python move",
+        "item_id": "mcp-server-foundation",
+        "notes": null,
+        "started_at": "2026-09-02T16:21:49Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Confirm the MCP Python SDK version, its Python floor, and whether requires-python or the CI matrix must move",
+        "wid": "w0"
+      },
+      {
+        "evidence": "mcp optional dep in pyproject.toml, todo-db-mcp entry point added, contracts updated",
+        "item_id": "mcp-server-foundation",
+        "notes": null,
+        "started_at": "2026-09-02T16:21:49Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Add src/todo_db/mcp/ package skeleton, pyproject optional-dependency and entry point",
+        "wid": "w1"
+      },
+      {
+        "evidence": "target resolution with flag>env>discovery, startup READ_ONLY no-migrate check via run_in_worker_sync in main (commit d38ac42)",
+        "item_id": "mcp-server-foundation",
+        "notes": null,
+        "started_at": "2026-09-02T16:21:49Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Implement target resolution and the READ_ONLY schema-check lifespan",
+        "wid": "w2"
+      },
+      {
+        "evidence": "mandatory actor resolution via PrincipalHolder, clientInfo-derived mcp:<name>:<user>@<host> with sanitize, no default_actor",
+        "item_id": "mcp-server-foundation",
+        "notes": null,
+        "started_at": "2026-09-02T16:21:49Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Implement mandatory actor resolution and per-process session id",
+        "wid": "w3"
+      },
+      {
+        "evidence": "single dedicated worker thread (ThreadPoolExecutor max_workers=1) owns all DB/git, run_in_worker and run_in_worker_sync",
+        "item_id": "mcp-server-foundation",
+        "notes": null,
+        "started_at": "2026-09-02T16:21:50Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Implement the single dedicated worker thread for all DB and git work",
+        "wid": "w4"
+      },
+      {
+        "evidence": "todo://instructions resource, get_instructions tool, todo/workflow prompt with MCP-shaped guidance",
+        "item_id": "mcp-server-foundation",
+        "notes": null,
+        "started_at": "2026-09-02T16:21:50Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Add the instructions resource, get_instructions tool, and the todo/workflow prompt",
+        "wid": "w5"
+      },
+      {
+        "evidence": "--log-level flag with structured stderr logging, todo-db mcp alias, FastMCP lifespan without log_level arg",
+        "item_id": "mcp-server-foundation",
+        "notes": null,
+        "started_at": "2026-09-02T16:21:50Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Add a --log-level flag with structured stderr logging and the todo-db mcp CLI alias",
+        "wid": "w6"
+      }
+    ]
+  }
+}

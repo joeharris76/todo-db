@@ -1,0 +1,218 @@
+{
+  "description": "Harden verification before exposing finish to Pi. Sanitize the environment at the verification subprocess boundary, add explicit human-only environment passthrough, define a fresh verification attestation or require-verified contract, and keep stored command execution behind an explicit human CLI action with visible command preview.",
+  "legacy": {
+    "anti_patterns": [
+      {
+        "dont": "Hide stored command execution behind a collapsed finish label",
+        "instead": "keep execution human-explicit and preview commands",
+        "item_id": "agent-verification-boundary",
+        "why": "the user cannot see the approval surface"
+      },
+      {
+        "dont": "Scrub only the Pi-to-todo-db environment",
+        "instead": "sanitize again at run_verification",
+        "item_id": "agent-verification-boundary",
+        "why": "todo-db needs DB credentials which would still flow into shell=True verification"
+      },
+      {
+        "dont": "Treat last_result=pass as permanently fresh",
+        "instead": "bind completion to an approved freshness/attestation contract",
+        "item_id": "agent-verification-boundary",
+        "why": "code can change after a passing run"
+      }
+    ],
+    "item_deps": [
+      {
+        "item_id": "agent-verification-boundary",
+        "needs_item": "agent-workflow-decisions"
+      },
+      {
+        "item_id": "agent-verification-boundary",
+        "needs_item": "verify-run-side-doors"
+      }
+    ],
+    "item_meta": {
+      "category": "agent-workflow",
+      "completed_at": "2026-08-18T21:36:12Z",
+      "created_at": "2026-08-18T21:15:34Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "Environment sanitation is documented as reducing ambient-secret exposure, not sandboxing repository commands",
+        "item_id": "agent-verification-boundary"
+      },
+      {
+        "behavior": "Hosted stored commands remain refused unless the existing explicit human opt-in is present",
+        "item_id": "agent-verification-boundary"
+      },
+      {
+        "behavior": "The Pi tool cannot execute stored shell commands or pass verification overrides/environment names",
+        "item_id": "agent-verification-boundary"
+      }
+    ],
+    "prior_art": [
+      {
+        "concept": "atomic audit event envelope",
+        "decision": "reuse",
+        "item_id": "agent-verification-boundary",
+        "path": "src/todo_db/database.py"
+      },
+      {
+        "concept": "hosted verify-run trust boundary",
+        "decision": "extend",
+        "item_id": "agent-verification-boundary",
+        "path": "src/todo_db/tracker.py"
+      },
+      {
+        "concept": "transactional lifecycle and claims",
+        "decision": "extend",
+        "item_id": "agent-verification-boundary",
+        "path": "src/todo_db/tracker.py"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "agent-verification-boundary",
+        "kind": "do_not_modify",
+        "path_glob": ".todo-db/**"
+      },
+      {
+        "item_id": "agent-verification-boundary",
+        "kind": "do_not_modify",
+        "path_glob": "dist/**"
+      },
+      {
+        "item_id": "agent-verification-boundary",
+        "kind": "only_modify",
+        "path_glob": "README.md"
+      },
+      {
+        "item_id": "agent-verification-boundary",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/cli.py"
+      },
+      {
+        "item_id": "agent-verification-boundary",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/database.py"
+      },
+      {
+        "item_id": "agent-verification-boundary",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/migrations/**"
+      },
+      {
+        "item_id": "agent-verification-boundary",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/tracker.py"
+      },
+      {
+        "item_id": "agent-verification-boundary",
+        "kind": "only_modify",
+        "path_glob": "tests/test_cli_tracker.py"
+      },
+      {
+        "item_id": "agent-verification-boundary",
+        "kind": "only_modify",
+        "path_glob": "tests/test_hosted_backend.py"
+      },
+      {
+        "item_id": "agent-verification-boundary",
+        "kind": "only_modify",
+        "path_glob": "tests/test_tracker.py"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest -q tests/test_tracker.py tests/test_cli_tracker.py tests/test_hosted_backend.py",
+        "description": "Verification security tests",
+        "expected": "all selected tests pass",
+        "item_id": "agent-verification-boundary",
+        "last_result": "pass",
+        "last_run": "2026-08-18T21:36:12Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "agent-verification-boundary",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "agent-verification-boundary",
+        "needs_wid": "w1",
+        "wid": "w2"
+      },
+      {
+        "item_id": "agent-verification-boundary",
+        "needs_wid": "w2",
+        "wid": "w3"
+      },
+      {
+        "item_id": "agent-verification-boundary",
+        "needs_wid": "w3",
+        "wid": "w4"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "Verification environment allowlist defined",
+        "item_id": "agent-verification-boundary",
+        "notes": null,
+        "started_at": "2026-08-18T21:36:09Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Define launcher and verification environment allowlists and threat limitations",
+        "wid": "w0"
+      },
+      {
+        "evidence": "Sanitized verification subprocess environment and passthrough implemented",
+        "item_id": "agent-verification-boundary",
+        "notes": null,
+        "started_at": "2026-08-18T21:36:09Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Implement sanitized verification subprocess environment and audited passthrough names",
+        "wid": "w1"
+      },
+      {
+        "evidence": "Require-verified freshness semantics implemented",
+        "item_id": "agent-verification-boundary",
+        "notes": null,
+        "started_at": "2026-08-18T21:36:09Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Implement require-verified freshness semantics without executing commands",
+        "wid": "w2"
+      },
+      {
+        "evidence": "Explicit human run-verification with preview and hosted refusal maintained",
+        "item_id": "agent-verification-boundary",
+        "notes": null,
+        "started_at": "2026-08-18T21:36:10Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Add explicit human run-verifications flow with command preview and hosted refusal",
+        "wid": "w3"
+      },
+      {
+        "evidence": "Tested secret stripping, passthrough, and model assertion",
+        "item_id": "agent-verification-boundary",
+        "notes": null,
+        "started_at": "2026-08-18T21:36:10Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Test secret stripping, stale verification rejection, and zero-spawn model finish",
+        "wid": "w4"
+      }
+    ]
+  }
+}

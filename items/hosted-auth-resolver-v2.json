@@ -1,0 +1,291 @@
+{
+  "context": "Add ResolvedCredential(token, source, capability) and carry it through connect, HostedConnection and doctor without rendering token values. Explicit API tokens retain external/unknown provenance; doctor must call the shared resolver directly rather than convert env input to an explicit token. Set TodoDBError.code to E_AUTH_MISSING or E_AUTH_REJECTED and add optional code/source fields to doctor JSON. Treat TODO_DB_AUTH_CONTRACT=v2 as a caller-controlled compatibility handshake only: all CLI auth-return paths, including doctor, must map to exit 2 with migration guidance when absent and to exit 4 when present. Document explicit opt-in for direct CLI automation. Narrow classification to 401 or explicit unauthorized/forbidden/invalid-token/JWT-expired evidence; never classify bare 403, authority, auth*, token*, quota or suspension alone. Add sanitized fixtures for observed Turso 400 JWT InvalidToken, expiry, network/TLS/proxy authority text, quota/suspension and attempted RO-write behavior. Update audit CI to run doctor --json, assert TODO_DB_RO_AUTH_TOKEN provenance, and never inject RW.",
+  "description": "After v2 wrappers stop auto-minting, centralize hosted credential selection, provenance, errors and doctor behavior without exposing legacy wrappers to exit 4. DatabaseConfig.auth_token has highest precedence. RW requires TODO_DB_AUTH_TOKEN. RO prefers TODO_DB_RO_AUTH_TOKEN and uses TODO_DB_AUTH_TOKEN only when RO is absent or empty; a rejected RO token never escalates to RW. Library calls always receive coded HostedAuthError for missing or confidently rejected credentials. CLI/doctor return exit 4 only when TODO_DB_AUTH_CONTRACT=v2 is present; without it, the same auth result returns legacy-safe exit 2 plus a non-secret wrapper-migration warning, so an old wrapper cannot trigger token minting. Narrow auth classification against sanitized real fixtures and keep ambiguous failures at exit 2.",
+  "legacy": {
+    "anti_patterns": [
+      {
+        "dont": "Classify any message containing auth*, token*, or bare 403 as authentication",
+        "instead": "require high-confidence evidence and keep ambiguous failures generic",
+        "item_id": "hosted-auth-resolver-v2",
+        "why": "authority/network and quota/suspension errors would receive incorrect credential remediation"
+      },
+      {
+        "dont": "Retry rejected RO credentials with RW",
+        "instead": "fail with a coded auth result and require explicit operator correction",
+        "item_id": "hosted-auth-resolver-v2",
+        "why": "it hides bad permissions or accidental writes and silently escalates capability"
+      },
+      {
+        "dont": "Return exit 4 without the v2 compatibility marker",
+        "instead": "return exit 2 with migration guidance until the caller explicitly negotiates v2",
+        "item_id": "hosted-auth-resolver-v2",
+        "why": "a committed legacy wrapper will intercept it and mint a never-expiring RW token"
+      }
+    ],
+    "item_deps": [
+      {
+        "item_id": "hosted-auth-resolver-v2",
+        "needs_item": "wrapper-token-hygiene"
+      }
+    ],
+    "item_meta": {
+      "category": "security",
+      "completed_at": "2026-08-18T23:53:24Z",
+      "completed_pr": 15,
+      "created_at": "2026-08-18T23:20:20Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "A present TODO_DB_RO_AUTH_TOKEN is never replaced by RW after rejection; fallback occurs only when RO is absent or empty.",
+        "item_id": "hosted-auth-resolver-v2"
+      },
+      {
+        "behavior": "Hosted URLs and token values remain absent from exceptions, tracebacks, doctor output, JSON, logs, workflow output, and test evidence.",
+        "item_id": "hosted-auth-resolver-v2"
+      },
+      {
+        "behavior": "HostedAuthError remains a TodoDBError subclass and library callers receive coded errors independent of the CLI compatibility exit mapping.",
+        "item_id": "hosted-auth-resolver-v2"
+      },
+      {
+        "behavior": "TODO_DB_AUTH_CONTRACT is not treated as identity, authorization, or proof that a wrapper is genuine.",
+        "item_id": "hosted-auth-resolver-v2"
+      },
+      {
+        "behavior": "Without TODO_DB_AUTH_CONTRACT=v2, no CLI or doctor authentication path returns exit 4 to a potentially stale wrapper.",
+        "item_id": "hosted-auth-resolver-v2"
+      }
+    ],
+    "prior_art": [
+      {
+        "concept": "hosted token selection and broad auth classifier",
+        "decision": "supersede",
+        "item_id": "hosted-auth-resolver-v2",
+        "path": "src/todo_db/backends.py"
+      },
+      {
+        "concept": "manual doctor fallback and exit-code mapping",
+        "decision": "supersede",
+        "item_id": "hosted-auth-resolver-v2",
+        "path": "src/todo_db/cli.py"
+      },
+      {
+        "concept": "TodoDBError.code machine-readable errors",
+        "decision": "extend",
+        "item_id": "hosted-auth-resolver-v2",
+        "path": "src/todo_db/errors.py"
+      },
+      {
+        "concept": "legacy and v2 wrapper behavior",
+        "decision": "extend",
+        "item_id": "hosted-auth-resolver-v2",
+        "path": "tests/test_bootstrap.py"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "hosted-auth-resolver-v2",
+        "kind": "only_modify",
+        "path_glob": ".github/workflows/audit-monitor.yml"
+      },
+      {
+        "item_id": "hosted-auth-resolver-v2",
+        "kind": "only_modify",
+        "path_glob": "CHANGELOG.md"
+      },
+      {
+        "item_id": "hosted-auth-resolver-v2",
+        "kind": "only_modify",
+        "path_glob": "README.md"
+      },
+      {
+        "item_id": "hosted-auth-resolver-v2",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/__init__.py"
+      },
+      {
+        "item_id": "hosted-auth-resolver-v2",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/backends.py"
+      },
+      {
+        "item_id": "hosted-auth-resolver-v2",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/cli.py"
+      },
+      {
+        "item_id": "hosted-auth-resolver-v2",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/errors.py"
+      },
+      {
+        "item_id": "hosted-auth-resolver-v2",
+        "kind": "only_modify",
+        "path_glob": "tests/test_bootstrap.py"
+      },
+      {
+        "item_id": "hosted-auth-resolver-v2",
+        "kind": "only_modify",
+        "path_glob": "tests/test_doctor.py"
+      },
+      {
+        "item_id": "hosted-auth-resolver-v2",
+        "kind": "only_modify",
+        "path_glob": "tests/test_hosted_backend.py"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest tests/test_hosted_backend.py tests/test_doctor.py tests/test_bootstrap.py -q",
+        "description": "Hosted resolver, doctor, and wrapper compatibility suites",
+        "expected": null,
+        "item_id": "hosted-auth-resolver-v2",
+        "last_result": "pass",
+        "last_run": "2026-08-18T23:53:23Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run pytest tests/test_hosted_backend.py tests/test_doctor.py -q -k 'legacy_contract or missing_token or auth_rejected'",
+        "description": "Legacy contract never emits exit 4",
+        "expected": null,
+        "item_id": "hosted-auth-resolver-v2",
+        "last_result": "pass",
+        "last_run": "2026-08-18T23:53:23Z",
+        "seq": 2,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run pytest tests/test_hosted_backend.py -q -k 'auth or outage or network or quota or suspension or authority'",
+        "description": "Auth classifier rejects network and policy false positives",
+        "expected": null,
+        "item_id": "hosted-auth-resolver-v2",
+        "last_result": "pass",
+        "last_run": "2026-08-18T23:53:24Z",
+        "seq": 3,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "test -z \"$(rg -n 'TODO_DB_AUTH_TOKEN' .github/workflows/audit-monitor.yml)\" && rg -q 'TODO_DB_RO_AUTH_TOKEN' .github/workflows/audit-monitor.yml && rg -q 'doctor.*--json|--json.*doctor' .github/workflows/audit-monitor.yml",
+        "description": "Audit workflow contains RO only and proves provenance",
+        "expected": null,
+        "item_id": "hosted-auth-resolver-v2",
+        "last_result": "pass",
+        "last_run": "2026-08-18T23:53:24Z",
+        "seq": 4,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "hosted-auth-resolver-v2",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "hosted-auth-resolver-v2",
+        "needs_wid": "w0",
+        "wid": "w2"
+      },
+      {
+        "item_id": "hosted-auth-resolver-v2",
+        "needs_wid": "w0",
+        "wid": "w3"
+      },
+      {
+        "item_id": "hosted-auth-resolver-v2",
+        "needs_wid": "w1",
+        "wid": "w4"
+      },
+      {
+        "item_id": "hosted-auth-resolver-v2",
+        "needs_wid": "w2",
+        "wid": "w4"
+      },
+      {
+        "item_id": "hosted-auth-resolver-v2",
+        "needs_wid": "w3",
+        "wid": "w4"
+      },
+      {
+        "item_id": "hosted-auth-resolver-v2",
+        "needs_wid": "w2",
+        "wid": "w5"
+      },
+      {
+        "item_id": "hosted-auth-resolver-v2",
+        "needs_wid": "w4",
+        "wid": "w5"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "ResolvedCredential centralizes explicit/RW/RO-fallback precedence with redacted token repr and E_AUTH_MISSING/E_AUTH_REJECTED codes",
+        "item_id": "hosted-auth-resolver-v2",
+        "notes": null,
+        "started_at": "2026-08-18T23:49:55Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Implement ResolvedCredential precedence, provenance, and coded missing-token errors",
+        "wid": "w0"
+      },
+      {
+        "evidence": "CLI and doctor return exit 4 only for TODO_DB_AUTH_CONTRACT=v2; absent marker returns exit 2 with migration warning while library errors remain coded",
+        "item_id": "hosted-auth-resolver-v2",
+        "notes": null,
+        "started_at": "2026-08-18T23:49:55Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Implement v2-marker exit 4 and absent-marker legacy-safe exit 2 across CLI and doctor",
+        "wid": "w1"
+      },
+      {
+        "evidence": "Doctor calls shared resolver and emits non-secret source/capability/code metadata in JSON and text",
+        "item_id": "hosted-auth-resolver-v2",
+        "notes": null,
+        "started_at": "2026-08-18T23:49:55Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Unify doctor resolution and additive JSON code/source metadata",
+        "wid": "w2"
+      },
+      {
+        "evidence": "Classifier now requires 401 or explicit rejection/JWT evidence; corpus tests cover bare 403, quota, suspension, TLS authority, token bucket, and RO-write policy",
+        "item_id": "hosted-auth-resolver-v2",
+        "notes": null,
+        "started_at": "2026-08-18T23:49:56Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Narrow auth classification from a sanitized Turso/libSQL fixture corpus",
+        "wid": "w3"
+      },
+      {
+        "evidence": "Tests prove v2/legacy exits, missing-token codes, absent-only RO fallback, no rejected-RO escalation, explicit provenance, and execute-time redaction",
+        "item_id": "hosted-auth-resolver-v2",
+        "notes": null,
+        "started_at": "2026-08-18T23:49:56Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Test legacy wrapper suppression, direct opt-in, no RO escalation, and redaction",
+        "wid": "w4"
+      },
+      {
+        "evidence": "Audit workflow negotiates v2, runs doctor --json, asserts TODO_DB_RO_AUTH_TOKEN/read-only provenance, and receives no RW credential; README/CHANGELOG updated",
+        "item_id": "hosted-auth-resolver-v2",
+        "notes": null,
+        "started_at": "2026-08-18T23:49:56Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Enforce scheduled audit RO provenance and update migration/remediation guidance",
+        "wid": "w5"
+      }
+    ]
+  }
+}

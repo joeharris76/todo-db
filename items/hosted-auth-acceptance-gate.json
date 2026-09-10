@@ -1,0 +1,286 @@
+{
+  "context": "Model the harness on scripts/turso_acceptance.sh: opt-in, bounded, and never printing secrets. Read the hosted URL and provider configuration from the invoking environment, then explicitly unset TODO_DB_AUTH_TOKEN and TODO_DB_RO_AUTH_TOKEN inside the harness so an inherited CI or shell credential cannot satisfy the run. Execute todo-db doctor --json under TODO_DB_AUTH_CONTRACT=v2 and assert exit 0 and a source field equal to TODO_DB_CREDENTIAL_COMMAND, then run one ordinary read command and assert success. Support two modes: default skips with a clear message and exit 0 when no hosted database or provider is configured, and --require turns that skip into a failure so the release gate cannot pass by silently skipping. Keep xtrace disabled around credential handling, assert that no output line contains the resolved token, and add a bash -n syntax step to .github/workflows/ci.yml next to the existing turso harness check while leaving the full run opt-in and local.",
+  "description": "The v0.4.2 cycle passed 219 tests, Ruff, two CI matrices, scope checks, isolated wheel and sdist consumer smoke tests, and SHA-256 asset verification, and none of it executed the path a user takes. This repository's own tracker is .todo-db/standalone.sqlite, so it structurally cannot regress on hosted authentication locally, and CI injects credentials into the environment, which masks the exact failure being guarded against. Add scripts/hosted_auth_acceptance.sh: it removes every inherited TODO_DB_* credential variable, leaves only the configured provider, and asserts that doctor and one ordinary read succeed with provenance TODO_DB_CREDENTIAL_COMMAND. This is the gate that was missing, and it is the only check in the repository that can fail the way the user failed.",
+  "legacy": {
+    "anti_patterns": [
+      {
+        "dont": "Assert only that the command exited 0",
+        "instead": "also assert the credential provenance is the provider",
+        "item_id": "hosted-auth-acceptance-gate",
+        "why": "an inherited environment token would otherwise produce a green run that proves nothing about the provider"
+      },
+      {
+        "dont": "Enable shell xtrace or echo the resolved credential while debugging the harness",
+        "instead": "keep tracing off around credential handling and assert absence of the token in output",
+        "item_id": "hosted-auth-acceptance-gate",
+        "why": "harness output lands in CI logs and tracker evidence"
+      },
+      {
+        "dont": "Let a missing hosted database or provider silently pass the check",
+        "instead": "skip loudly by default and fail under --require",
+        "item_id": "hosted-auth-acceptance-gate",
+        "why": "a silent skip reads as coverage and is how a gate becomes decorative"
+      },
+      {
+        "dont": "Run the acceptance check only in CI",
+        "instead": "make it locally runnable and required before an auth-touching release",
+        "item_id": "hosted-auth-acceptance-gate",
+        "why": "CI injects credentials into the environment, which is precisely the condition that hid the v0.4.2 failure"
+      }
+    ],
+    "item_deps": [
+      {
+        "item_id": "hosted-auth-acceptance-gate",
+        "needs_item": "hosted-credential-provider"
+      }
+    ],
+    "item_meta": {
+      "category": "test",
+      "completed_at": "2026-08-19T13:34:16Z",
+      "completed_pr": 18,
+      "created_at": "2026-08-19T13:12:23Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "Inherited TODO_DB_AUTH_TOKEN and TODO_DB_RO_AUTH_TOKEN are removed inside the harness, so an environment credential cannot make the run pass.",
+        "item_id": "hosted-auth-acceptance-gate"
+      },
+      {
+        "behavior": "No token value, hosted URL, or provider output appears in harness output, CI logs, or tracker evidence.",
+        "item_id": "hosted-auth-acceptance-gate"
+      },
+      {
+        "behavior": "The audit-monitor workflow keeps its read-only credential and is untouched by this item.",
+        "item_id": "hosted-auth-acceptance-gate"
+      },
+      {
+        "behavior": "The full harness stays opt-in; CI gains only a syntax check and never receives a read-write credential.",
+        "item_id": "hosted-auth-acceptance-gate"
+      },
+      {
+        "behavior": "The harness never reads or writes the repository's own .todo-db/standalone.sqlite tracker.",
+        "item_id": "hosted-auth-acceptance-gate"
+      }
+    ],
+    "prior_art": [
+      {
+        "concept": "read-only workflow credential handling and provenance assertions",
+        "decision": "reuse",
+        "item_id": "hosted-auth-acceptance-gate",
+        "path": ".github/workflows/audit-monitor.yml"
+      },
+      {
+        "concept": "harness syntax validation as a cheap always-on CI step",
+        "decision": "extend",
+        "item_id": "hosted-auth-acceptance-gate",
+        "path": ".github/workflows/ci.yml"
+      },
+      {
+        "concept": "opt-in bounded acceptance harness invoked outside the default test suite",
+        "decision": "extend",
+        "item_id": "hosted-auth-acceptance-gate",
+        "path": "scripts/turso_acceptance.sh"
+      },
+      {
+        "concept": "non-secret doctor provenance fields used as assertions",
+        "decision": "reuse",
+        "item_id": "hosted-auth-acceptance-gate",
+        "path": "tests/test_doctor.py"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "hosted-auth-acceptance-gate",
+        "kind": "do_not_modify",
+        "path_glob": ".github/workflows/audit-monitor.yml"
+      },
+      {
+        "item_id": "hosted-auth-acceptance-gate",
+        "kind": "do_not_modify",
+        "path_glob": "_project/scripts/todo"
+      },
+      {
+        "item_id": "hosted-auth-acceptance-gate",
+        "kind": "do_not_modify",
+        "path_glob": "docs/adr/**"
+      },
+      {
+        "item_id": "hosted-auth-acceptance-gate",
+        "kind": "do_not_modify",
+        "path_glob": "src/**"
+      },
+      {
+        "item_id": "hosted-auth-acceptance-gate",
+        "kind": "only_modify",
+        "path_glob": ".github/workflows/ci.yml"
+      },
+      {
+        "item_id": "hosted-auth-acceptance-gate",
+        "kind": "only_modify",
+        "path_glob": "CHANGELOG.md"
+      },
+      {
+        "item_id": "hosted-auth-acceptance-gate",
+        "kind": "only_modify",
+        "path_glob": "README.md"
+      },
+      {
+        "item_id": "hosted-auth-acceptance-gate",
+        "kind": "only_modify",
+        "path_glob": "docs/operations/hosted-credentials.md"
+      },
+      {
+        "item_id": "hosted-auth-acceptance-gate",
+        "kind": "only_modify",
+        "path_glob": "scripts/hosted_auth_acceptance.sh"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "test -s scripts/hosted_auth_acceptance.sh && bash -n scripts/hosted_auth_acceptance.sh",
+        "description": "The harness exists and parses",
+        "expected": null,
+        "item_id": "hosted-auth-acceptance-gate",
+        "last_result": "pass",
+        "last_run": "2026-08-19T13:34:16Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "rg -q 'unset' scripts/hosted_auth_acceptance.sh && rg -q 'TODO_DB_AUTH_TOKEN' scripts/hosted_auth_acceptance.sh && rg -q 'TODO_DB_CREDENTIAL_COMMAND' scripts/hosted_auth_acceptance.sh",
+        "description": "The harness scrubs inherited credential variables and asserts provider provenance",
+        "expected": null,
+        "item_id": "hosted-auth-acceptance-gate",
+        "last_result": "pass",
+        "last_run": "2026-08-19T13:34:16Z",
+        "seq": 2,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "rg -q -- '--require' scripts/hosted_auth_acceptance.sh",
+        "description": "The harness supports a fail-loud --require mode",
+        "expected": null,
+        "item_id": "hosted-auth-acceptance-gate",
+        "last_result": "pass",
+        "last_run": "2026-08-19T13:34:16Z",
+        "seq": 3,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "rg -q 'hosted_auth_acceptance.sh' .github/workflows/ci.yml",
+        "description": "CI validates the harness syntax",
+        "expected": null,
+        "item_id": "hosted-auth-acceptance-gate",
+        "last_result": "pass",
+        "last_run": "2026-08-19T13:37:03Z",
+        "seq": 6,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "if env -u TODO_DB_URL -u TODO_DB_AUTH_TOKEN -u TODO_DB_RO_AUTH_TOKEN -u TODO_DB_CREDENTIAL_COMMAND bash scripts/hosted_auth_acceptance.sh --require; then exit 1; else exit 0; fi",
+        "description": "Unconfigured invocation fails under --require",
+        "expected": null,
+        "item_id": "hosted-auth-acceptance-gate",
+        "last_result": "pass",
+        "last_run": "2026-08-19T13:34:16Z",
+        "seq": 7,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "set +e; env -u TODO_DB_URL -u TODO_DB_ACCEPTANCE_URL -u TODO_DB_AUTH_TOKEN -u TODO_DB_RO_AUTH_TOKEN -u TODO_DB_CREDENTIAL_COMMAND bash scripts/hosted_auth_acceptance.sh; status=$?; set -e; test \"$status\" -eq 77",
+        "description": "Unconfigured invocation skips with exit 77 even under errexit",
+        "expected": null,
+        "item_id": "hosted-auth-acceptance-gate",
+        "last_result": "pass",
+        "last_run": "2026-08-19T13:37:03Z",
+        "seq": 9,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "hosted-auth-acceptance-gate",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "hosted-auth-acceptance-gate",
+        "needs_wid": "w0",
+        "wid": "w2"
+      },
+      {
+        "item_id": "hosted-auth-acceptance-gate",
+        "needs_wid": "w1",
+        "wid": "w3"
+      },
+      {
+        "item_id": "hosted-auth-acceptance-gate",
+        "needs_wid": "w2",
+        "wid": "w4"
+      },
+      {
+        "item_id": "hosted-auth-acceptance-gate",
+        "needs_wid": "w3",
+        "wid": "w4"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "scripts/hosted_auth_acceptance.sh unsets TODO_DB_AUTH_TOKEN and TODO_DB_RO_AUTH_TOKEN before running, leaving only the provider",
+        "item_id": "hosted-auth-acceptance-gate",
+        "notes": null,
+        "started_at": "2026-08-19T13:33:47Z",
+        "started_branch": "feat/hosted-credential-provider",
+        "started_worktree": "/Users/joe/Developer/todo-db.wt-credential-provider",
+        "status": "done",
+        "summary": "Write scripts/hosted_auth_acceptance.sh with explicit credential scrubbing and provider-only resolution",
+        "wid": "w0"
+      },
+      {
+        "evidence": "asserts doctor --json exit 0 with database source TODO_DB_CREDENTIAL_COMMAND, then an ordinary stats read",
+        "item_id": "hosted-auth-acceptance-gate",
+        "notes": null,
+        "started_at": "2026-08-19T13:33:47Z",
+        "started_branch": "feat/hosted-credential-provider",
+        "started_worktree": "/Users/joe/Developer/todo-db.wt-credential-provider",
+        "status": "done",
+        "summary": "Assert doctor exit 0, provenance TODO_DB_CREDENTIAL_COMMAND, and one successful ordinary read",
+        "wid": "w1"
+      },
+      {
+        "evidence": "default exits 77 with SKIP; --require converts the same condition to exit 1 with FAIL",
+        "item_id": "hosted-auth-acceptance-gate",
+        "notes": null,
+        "started_at": "2026-08-19T13:33:47Z",
+        "started_branch": "feat/hosted-credential-provider",
+        "started_worktree": "/Users/joe/Developer/todo-db.wt-credential-provider",
+        "status": "done",
+        "summary": "Implement default skip and --require fail-loud modes with distinguishable messages",
+        "wid": "w2"
+      },
+      {
+        "evidence": "set +x held throughout, harness never retrieves the token itself, stderr redacted, and outputs scanned for token-shaped strings",
+        "item_id": "hosted-auth-acceptance-gate",
+        "notes": null,
+        "started_at": "2026-08-19T13:33:47Z",
+        "started_branch": "feat/hosted-credential-provider",
+        "started_worktree": "/Users/joe/Developer/todo-db.wt-credential-provider",
+        "status": "done",
+        "summary": "Assert no token value appears in harness output and keep xtrace off around credentials",
+        "wid": "w3"
+      },
+      {
+        "evidence": "CI validates harness syntax and asserts the exit-77 skip contract; README, runbook, and CHANGELOG document invocation",
+        "item_id": "hosted-auth-acceptance-gate",
+        "notes": null,
+        "started_at": "2026-08-19T13:33:47Z",
+        "started_branch": "feat/hosted-credential-provider",
+        "started_worktree": "/Users/joe/Developer/todo-db.wt-credential-provider",
+        "status": "done",
+        "summary": "Add the harness syntax check to CI and document invocation in the runbook and CHANGELOG",
+        "wid": "w4"
+      }
+    ]
+  }
+}

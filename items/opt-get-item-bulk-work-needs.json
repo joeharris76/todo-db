@@ -1,0 +1,138 @@
+{
+  "description": "tracker.py:1068-1082 queries work_needs once per work unit. get_item is called by show, claim, lint, and work_order, so the fan-out multiplies across the busiest paths. Load all edges with one SELECT wid, needs_wid WHERE item_id = ? and group in Python; work_order (tracker.py:1122) then derives unmet units from the loaded graph with no further query.",
+  "legacy": {
+    "item_deps": [
+      {
+        "item_id": "opt-get-item-bulk-work-needs",
+        "needs_item": "opt-query-budget-harness"
+      }
+    ],
+    "item_meta": {
+      "category": "performance",
+      "completed_at": "2026-08-18T15:58:50Z",
+      "created_at": "2026-08-18T14:27:56Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "Work-unit needs ordering stays deterministic",
+        "item_id": "opt-get-item-bulk-work-needs"
+      },
+      {
+        "behavior": "work_order derives unmet units from the loaded graph with no extra query",
+        "item_id": "opt-get-item-bulk-work-needs"
+      },
+      {
+        "behavior": "work_order still refuses units with unmet needs",
+        "item_id": "opt-get-item-bulk-work-needs"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "opt-get-item-bulk-work-needs",
+        "kind": "do_not_modify",
+        "path_glob": "src/todo_db/migrations/**"
+      },
+      {
+        "item_id": "opt-get-item-bulk-work-needs",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/tracker.py"
+      },
+      {
+        "item_id": "opt-get-item-bulk-work-needs",
+        "kind": "only_modify",
+        "path_glob": "tests/**"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest tests/test_tracker.py -q",
+        "description": "Tracker suite",
+        "expected": null,
+        "item_id": "opt-get-item-bulk-work-needs",
+        "last_result": "pass",
+        "last_run": "2026-08-18T15:58:45Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run pytest tests/test_query_budget.py -q",
+        "description": "Budget improved",
+        "expected": null,
+        "item_id": "opt-get-item-bulk-work-needs",
+        "last_result": "pass",
+        "last_run": "2026-08-18T15:58:46Z",
+        "seq": 2,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run pytest -q",
+        "description": "Full suite",
+        "expected": null,
+        "item_id": "opt-get-item-bulk-work-needs",
+        "last_result": "pass",
+        "last_run": "2026-08-18T15:58:50Z",
+        "seq": 3,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "opt-get-item-bulk-work-needs",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "opt-get-item-bulk-work-needs",
+        "needs_wid": "w0",
+        "wid": "w2"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "src/todo_db/tracker.py:_load_item_plan",
+        "item_id": "opt-get-item-bulk-work-needs",
+        "notes": null,
+        "started_at": "2026-08-18T15:58:06Z",
+        "started_branch": "perf/get-item-bulk-work-needs",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Single work_needs query grouped in Python inside get_item",
+        "wid": "w0"
+      },
+      {
+        "evidence": "src/todo_db/tracker.py:work_order",
+        "item_id": "opt-get-item-bulk-work-needs",
+        "notes": null,
+        "started_at": "2026-08-18T15:58:34Z",
+        "started_branch": "perf/get-item-bulk-work-needs",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "work_order derives unmet units from the loaded graph",
+        "wid": "w1"
+      },
+      {
+        "evidence": "tests/test_query_budget.py:test_baseline_counts_per_command",
+        "item_id": "opt-get-item-bulk-work-needs",
+        "notes": null,
+        "started_at": "2026-08-18T15:58:34Z",
+        "started_branch": "perf/get-item-bulk-work-needs",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Assert the new statement budget",
+        "wid": "w2"
+      },
+      {
+        "evidence": "src/todo_db/tracker.py:_load_item_summary,_load_item_plan,_load_item_full",
+        "item_id": "opt-get-item-bulk-work-needs",
+        "notes": null,
+        "started_at": "2026-08-18T15:58:06Z",
+        "started_branch": "perf/get-item-bulk-work-needs",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Split loaders into summary, plan, and full projections",
+        "wid": "w3"
+      }
+    ]
+  }
+}

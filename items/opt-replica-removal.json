@@ -1,0 +1,223 @@
+{
+  "context": "The replica currently makes the full audit walk local for write commands, so this decision is coupled to the audit-open policy and must not be taken independently of it.",
+  "description": "Blocked behind opt-hosted-latency-measurement and must stay blocked until that item's audit note is written. This item has three admissible outcomes and does not presume removal. Remove the replica if direct-primary latency is acceptable for write commands; keep and improve it if per-statement round-trip latency dominates; or extend it to read-only commands if that is what removes the 4.7 MB audit transfer while preserving the full guarantee. If removal is chosen, deprecate --replica and DatabaseConfig.replica_path for one minor version first since they are public surface, and replace rather than delete the replica assertions in test_hosted_backend.py. Replica file cleanup on disk stays a separately authorized task requiring a live worktree inventory.",
+  "legacy": {
+    "anti_patterns": [
+      {
+        "dont": "Bulk-delete replica files on disk as part of this item",
+        "instead": "Leave cleanup to a separately authorized task gated on a live worktree inventory",
+        "item_id": "opt-replica-removal",
+        "why": "Replica files may belong to active worktrees mid-task; deleting them destroys in-flight state"
+      },
+      {
+        "dont": "Remove --replica in the same release that deprecates it",
+        "instead": "Warn for one minor version, then remove",
+        "item_id": "opt-replica-removal",
+        "why": "It is documented public surface used by the hosted bootstrap path"
+      }
+    ],
+    "item_deps": [
+      {
+        "item_id": "opt-replica-removal",
+        "needs_item": "opt-audit-open-policy-adr"
+      },
+      {
+        "item_id": "opt-replica-removal",
+        "needs_item": "opt-hosted-latency-measurement"
+      }
+    ],
+    "item_meta": {
+      "category": "simplification",
+      "completed_at": "2026-08-18T16:17:40Z",
+      "created_at": "2026-08-18T14:27:57Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "BEGIN IMMEDIATE gates still serialize at the primary",
+        "item_id": "opt-replica-removal"
+      },
+      {
+        "behavior": "Claim arbitration still yields exactly one winner across processes",
+        "item_id": "opt-replica-removal"
+      },
+      {
+        "behavior": "Hosted credentials never appear in output or on disk",
+        "item_id": "opt-replica-removal"
+      },
+      {
+        "behavior": "Removal is one of three admissible outcomes, never the presumed one",
+        "item_id": "opt-replica-removal"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "opt-replica-removal",
+        "kind": "do_not_modify",
+        "path_glob": "src/todo_db/audit.py"
+      },
+      {
+        "item_id": "opt-replica-removal",
+        "kind": "do_not_modify",
+        "path_glob": "src/todo_db/migrations/**"
+      },
+      {
+        "item_id": "opt-replica-removal",
+        "kind": "do_not_modify",
+        "path_glob": "src/todo_db/tracker.py"
+      },
+      {
+        "item_id": "opt-replica-removal",
+        "kind": "only_modify",
+        "path_glob": "README.md"
+      },
+      {
+        "item_id": "opt-replica-removal",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/backends.py"
+      },
+      {
+        "item_id": "opt-replica-removal",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/cli.py"
+      },
+      {
+        "item_id": "opt-replica-removal",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/models.py"
+      },
+      {
+        "item_id": "opt-replica-removal",
+        "kind": "only_modify",
+        "path_glob": "tests/**"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest tests/test_hosted_backend.py tests/test_concurrency.py -q",
+        "description": "Hosted suite",
+        "expected": null,
+        "item_id": "opt-replica-removal",
+        "last_result": "pass",
+        "last_run": "2026-08-18T16:17:36Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run pytest -q",
+        "description": "Full suite",
+        "expected": null,
+        "item_id": "opt-replica-removal",
+        "last_result": "pass",
+        "last_run": "2026-08-18T16:17:40Z",
+        "seq": 2,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run ruff check . && uv run ruff format --check .",
+        "description": "Lint",
+        "expected": null,
+        "item_id": "opt-replica-removal",
+        "last_result": "pass",
+        "last_run": "2026-08-18T16:17:40Z",
+        "seq": 3,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "opt-replica-removal",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "opt-replica-removal",
+        "needs_wid": "w1",
+        "wid": "w2"
+      },
+      {
+        "item_id": "opt-replica-removal",
+        "needs_wid": "w1",
+        "wid": "w3"
+      },
+      {
+        "item_id": "opt-replica-removal",
+        "needs_wid": "w1",
+        "wid": "w4"
+      },
+      {
+        "item_id": "opt-replica-removal",
+        "needs_wid": "w1",
+        "wid": "w5"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "_project/decisions/0002-hosted-replica-measurement.md",
+        "item_id": "opt-replica-removal",
+        "notes": null,
+        "started_at": "2026-08-18T16:15:17Z",
+        "started_branch": "refactor/replica-removal",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Choose an outcome from the audit note and record the rationale",
+        "wid": "w0"
+      },
+      {
+        "evidence": "src/todo_db/backends.py:_connect_hosted",
+        "item_id": "opt-replica-removal",
+        "notes": null,
+        "started_at": "2026-08-18T16:17:19Z",
+        "started_branch": "refactor/replica-removal",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Read-write hosted path uses the direct primary connection",
+        "wid": "w1"
+      },
+      {
+        "evidence": "src/todo_db/backends.py",
+        "item_id": "opt-replica-removal",
+        "notes": null,
+        "started_at": "2026-08-18T16:17:19Z",
+        "started_branch": "refactor/replica-removal",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Delete _replica_lock, the fcntl import, and the connect-time sync",
+        "wid": "w2"
+      },
+      {
+        "evidence": "tests/test_hosted_backend.py:test_turso_backend_connects_directly_with_read_write_token",
+        "item_id": "opt-replica-removal",
+        "notes": null,
+        "started_at": "2026-08-18T16:17:19Z",
+        "started_branch": "refactor/replica-removal",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Replace the replica assertions in test_hosted_backend.py",
+        "wid": "w3"
+      },
+      {
+        "evidence": "src/todo_db/cli.py:SCAFFOLD_GITIGNORE",
+        "item_id": "opt-replica-removal",
+        "notes": null,
+        "started_at": "2026-08-18T16:17:19Z",
+        "started_branch": "refactor/replica-removal",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Drop replica rules from the init-project gitignore template",
+        "wid": "w4"
+      },
+      {
+        "evidence": "README.md",
+        "item_id": "opt-replica-removal",
+        "notes": null,
+        "started_at": "2026-08-18T16:17:19Z",
+        "started_branch": "refactor/replica-removal",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Update README hosted docs",
+        "wid": "w5"
+      }
+    ]
+  }
+}

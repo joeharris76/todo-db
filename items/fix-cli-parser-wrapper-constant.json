@@ -1,0 +1,138 @@
+{
+  "context": "Restore or deliberately replace the default wrapper constant, then exercise parser construction and init-project wrapper defaults in focused and full tests. Do not route around the parser failure.",
+  "description": "Current main raises NameError in _parser because replica-removal commit deleted DEFAULT_WRAPPER_RELATIVE while init-project still references it. Every todo-db CLI command is unusable; restore the contract and add a parser smoke that would have blocked the commit.",
+  "legacy": {
+    "anti_patterns": [
+      {
+        "dont": "Patch the planning script to avoid the CLI",
+        "instead": "repair parser construction and test it",
+        "item_id": "fix-cli-parser-wrapper-constant",
+        "why": "all users and wrappers remain broken"
+      }
+    ],
+    "item_meta": {
+      "category": "regression",
+      "completed_at": "2026-08-18T21:28:31Z",
+      "created_at": "2026-08-18T21:16:00Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "No CLI path constructs a parser with an undefined symbol",
+        "item_id": "fix-cli-parser-wrapper-constant"
+      },
+      {
+        "behavior": "Replica-removal behavior remains unchanged",
+        "item_id": "fix-cli-parser-wrapper-constant"
+      },
+      {
+        "behavior": "init-project --wrapper keeps its documented default path",
+        "item_id": "fix-cli-parser-wrapper-constant"
+      }
+    ],
+    "prior_art": [
+      {
+        "concept": "DEFAULT_WRAPPER_RELATIVE and init-project parser contract",
+        "decision": "reuse",
+        "item_id": "fix-cli-parser-wrapper-constant",
+        "path": "src/todo_db/cli.py"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "fix-cli-parser-wrapper-constant",
+        "kind": "do_not_modify",
+        "path_glob": ".todo-db/**"
+      },
+      {
+        "item_id": "fix-cli-parser-wrapper-constant",
+        "kind": "do_not_modify",
+        "path_glob": "src/todo_db/migrations/**"
+      },
+      {
+        "item_id": "fix-cli-parser-wrapper-constant",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/cli.py"
+      },
+      {
+        "item_id": "fix-cli-parser-wrapper-constant",
+        "kind": "only_modify",
+        "path_glob": "tests/test_bootstrap.py"
+      },
+      {
+        "item_id": "fix-cli-parser-wrapper-constant",
+        "kind": "only_modify",
+        "path_glob": "tests/test_cli_parity.py"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest -q tests/test_bootstrap.py tests/test_cli_parity.py",
+        "description": "CLI parser and bootstrap tests",
+        "expected": "all selected tests pass",
+        "item_id": "fix-cli-parser-wrapper-constant",
+        "last_result": "pass",
+        "last_run": "2026-08-18T21:28:31Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run todo-db --help >/dev/null",
+        "description": "CLI help smoke",
+        "expected": "exit 0",
+        "item_id": "fix-cli-parser-wrapper-constant",
+        "last_result": "pass",
+        "last_run": "2026-08-18T21:28:31Z",
+        "seq": 2,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "fix-cli-parser-wrapper-constant",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "fix-cli-parser-wrapper-constant",
+        "needs_wid": "w1",
+        "wid": "w2"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "Reproduced NameError on missing DEFAULT_WRAPPER_RELATIVE",
+        "item_id": "fix-cli-parser-wrapper-constant",
+        "notes": null,
+        "started_at": "2026-08-18T21:28:29Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Reproduce NameError from todo-db help and a normal command",
+        "wid": "w0"
+      },
+      {
+        "evidence": "Restored DEFAULT_WRAPPER_RELATIVE in cli.py",
+        "item_id": "fix-cli-parser-wrapper-constant",
+        "notes": null,
+        "started_at": "2026-08-18T21:28:29Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Restore the wrapper default contract without reverting replica work",
+        "wid": "w1"
+      },
+      {
+        "evidence": "Verified parser and bootstrap tests pass",
+        "item_id": "fix-cli-parser-wrapper-constant",
+        "notes": null,
+        "started_at": "2026-08-18T21:28:29Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Add parser construction and init-project regression coverage",
+        "wid": "w2"
+      }
+    ]
+  }
+}

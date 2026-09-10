@@ -1,0 +1,229 @@
+{
+  "context": "Implementation only. The threat-model decision belongs to the ADR, and the safe non-policy optimizations belong to opt-audit-safe-optimizations.",
+  "description": "Blocked behind opt-audit-open-policy-adr. Implements whichever option that record approves for what the audit chain guarantees at open. Today database.py:283 calls verify_audit() on every open in both credential modes, full-scanning events at 9738 rows and 4.7 MB per invocation on BenchBox. The candidate options are a head-only check, extending the replica to read-only commands so the full walk stays local, a persistent process, or signed checkpoints. Do not presume the head-only outcome: it cannot detect mid-chain modification of actor, action, detail, timestamp, or a same-sequence replacement, and that is a change to a documented product property.",
+  "legacy": {
+    "anti_patterns": [
+      {
+        "dont": "Call the new check O(1) verification",
+        "instead": "Name and document it as a bounded-cost health check, with verify_audit as the integrity authority",
+        "item_id": "opt-audit-head-check-on-open",
+        "why": "count(*) still scans in SQLite and the check cannot detect mid-chain tampering; the honest claim is constant network payload under a bounded corruption model"
+      },
+      {
+        "dont": "Present a head check as chain verification",
+        "instead": "instead name it a bounded-cost health check and keep verify_audit as the integrity authority",
+        "item_id": "opt-audit-head-check-on-open",
+        "why": "count(*) still scans and the check cannot detect mid-chain tampering, so calling it verification overstates the guarantee"
+      },
+      {
+        "dont": "Ship the narrowing without the nightly full verify wired to a real target",
+        "instead": "Land w5 in the same change as w1, pointed at the production database, not a fresh CI one",
+        "item_id": "opt-audit-head-check-on-open",
+        "why": "On-open full verification is the only thing currently walking the chain; removing it with no replacement leaves mid-chain tampering undetected indefinitely"
+      }
+    ],
+    "item_deps": [
+      {
+        "item_id": "opt-audit-head-check-on-open",
+        "needs_item": "opt-audit-open-policy-adr"
+      },
+      {
+        "item_id": "opt-audit-head-check-on-open",
+        "needs_item": "opt-query-budget-harness"
+      }
+    ],
+    "item_meta": {
+      "category": "performance",
+      "completed_at": "2026-08-18T16:12:05Z",
+      "created_at": "2026-08-18T14:27:57Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "Head tampering, truncation, and bogus appends are still caught at open",
+        "item_id": "opt-audit-head-check-on-open"
+      },
+      {
+        "behavior": "Signed export manifests keep verifying against the full chain",
+        "item_id": "opt-audit-head-check-on-open"
+      },
+      {
+        "behavior": "audit verify, export, and restore still perform the full chain walk",
+        "item_id": "opt-audit-head-check-on-open"
+      },
+      {
+        "behavior": "verify_audit returns algorithm, event_count, head_seq, head_hash",
+        "item_id": "opt-audit-head-check-on-open"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "opt-audit-head-check-on-open",
+        "kind": "do_not_modify",
+        "path_glob": "src/todo_db/migrations/**"
+      },
+      {
+        "item_id": "opt-audit-head-check-on-open",
+        "kind": "do_not_modify",
+        "path_glob": "src/todo_db/tracker.py"
+      },
+      {
+        "item_id": "opt-audit-head-check-on-open",
+        "kind": "only_modify",
+        "path_glob": ".github/workflows/**"
+      },
+      {
+        "item_id": "opt-audit-head-check-on-open",
+        "kind": "only_modify",
+        "path_glob": "README.md"
+      },
+      {
+        "item_id": "opt-audit-head-check-on-open",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/audit.py"
+      },
+      {
+        "item_id": "opt-audit-head-check-on-open",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/database.py"
+      },
+      {
+        "item_id": "opt-audit-head-check-on-open",
+        "kind": "only_modify",
+        "path_glob": "tests/**"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest tests/test_audit.py tests/test_contracts.py -q",
+        "description": "Audit suite",
+        "expected": null,
+        "item_id": "opt-audit-head-check-on-open",
+        "last_result": "pass",
+        "last_run": "2026-08-18T16:12:00Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run pytest tests/test_query_budget.py -q",
+        "description": "Budget improved",
+        "expected": null,
+        "item_id": "opt-audit-head-check-on-open",
+        "last_result": "pass",
+        "last_run": "2026-08-18T16:12:00Z",
+        "seq": 2,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run pytest -q",
+        "description": "Full suite",
+        "expected": null,
+        "item_id": "opt-audit-head-check-on-open",
+        "last_result": "pass",
+        "last_run": "2026-08-18T16:12:05Z",
+        "seq": 3,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run ruff check . && uv run ruff format --check .",
+        "description": "Lint",
+        "expected": null,
+        "item_id": "opt-audit-head-check-on-open",
+        "last_result": "pass",
+        "last_run": "2026-08-18T16:12:05Z",
+        "seq": 4,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "opt-audit-head-check-on-open",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "opt-audit-head-check-on-open",
+        "needs_wid": "w0",
+        "wid": "w3"
+      },
+      {
+        "item_id": "opt-audit-head-check-on-open",
+        "needs_wid": "w1",
+        "wid": "w4"
+      },
+      {
+        "item_id": "opt-audit-head-check-on-open",
+        "needs_wid": "w1",
+        "wid": "w5"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "src/todo_db/audit.py:verify_audit_head",
+        "item_id": "opt-audit-head-check-on-open",
+        "notes": null,
+        "started_at": "2026-08-18T16:10:02Z",
+        "started_branch": "perf/audit-head-check-on-open",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Implement the audit-open option approved by the decision record",
+        "wid": "w0"
+      },
+      {
+        "evidence": "src/todo_db/database.py:_check_audit_head,open",
+        "item_id": "opt-audit-head-check-on-open",
+        "notes": null,
+        "started_at": "2026-08-18T16:10:48Z",
+        "started_branch": "perf/audit-head-check-on-open",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Wire it into TodoDatabase.open behind the approved default",
+        "wid": "w1"
+      },
+      {
+        "evidence": "tests/test_audit.py:test_audit_head_check_on_open_detects_head_mismatch_and_missing_head",
+        "item_id": "opt-audit-head-check-on-open",
+        "notes": null,
+        "started_at": "2026-08-18T16:10:02Z",
+        "started_branch": "perf/audit-head-check-on-open",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Tests pinning the approved option's exact detection boundary",
+        "wid": "w2"
+      },
+      {
+        "evidence": "tests/test_audit.py:test_audit_chain_verification_detects_all_tamper_classes",
+        "item_id": "opt-audit-head-check-on-open",
+        "notes": null,
+        "started_at": "2026-08-18T16:10:48Z",
+        "started_branch": "perf/audit-head-check-on-open",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Tests: mid-chain tamper, same-seq replace, malformed seq, bad hash version",
+        "wid": "w3"
+      },
+      {
+        "evidence": "README.md",
+        "item_id": "opt-audit-head-check-on-open",
+        "notes": null,
+        "started_at": "2026-08-18T16:10:48Z",
+        "started_branch": "perf/audit-head-check-on-open",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "README: state the resulting open-time guarantee precisely",
+        "wid": "w4"
+      },
+      {
+        "evidence": ".github/workflows/audit-monitor.yml",
+        "item_id": "opt-audit-head-check-on-open",
+        "notes": null,
+        "started_at": "2026-08-18T16:10:48Z",
+        "started_branch": "perf/audit-head-check-on-open",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Operational monitor: scheduled full verify with target, credential, retention, alerting",
+        "wid": "w5"
+      }
+    ]
+  }
+}

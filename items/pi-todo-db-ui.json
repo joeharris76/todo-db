@@ -1,0 +1,182 @@
+{
+  "description": "Add TUI-only footer/widget and a read-only /todo-db panel driven from agent claims/context. Refresh on session lifecycle and successful mutations, handle zero/one/multiple claims explicitly, and omit the proposed v1 timer heartbeat because normal progress refreshes a 24-hour lease and idle work should expire.",
+  "legacy": {
+    "anti_patterns": [
+      {
+        "dont": "Add a 60-minute heartbeat",
+        "instead": "refresh on genuine lifecycle mutations and let idle leases expire",
+        "item_id": "pi-todo-db-ui",
+        "why": "it adds timer complexity and audit churn for a 24-hour TTL"
+      },
+      {
+        "dont": "Poll only to keep the display fresh",
+        "instead": "refresh on lifecycle, mutation, and explicit panel open",
+        "item_id": "pi-todo-db-ui",
+        "why": "remote opens add cost with no model benefit"
+      },
+      {
+        "dont": "Store tracker snapshots in Pi entries",
+        "instead": "query the canonical database",
+        "item_id": "pi-todo-db-ui",
+        "why": "the session would become a second source of truth"
+      }
+    ],
+    "item_deps": [
+      {
+        "item_id": "pi-todo-db-ui",
+        "needs_item": "pi-todo-db-adapter"
+      }
+    ],
+    "item_meta": {
+      "category": "pi-integration",
+      "completed_at": "2026-08-18T21:42:17Z",
+      "created_at": "2026-08-18T21:15:34Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "Multiple legacy claims are shown as a conflict and never silently reduced to one",
+        "item_id": "pi-todo-db-ui"
+      },
+      {
+        "behavior": "No sendMessage/sendUserMessage/before_agent_start injection",
+        "item_id": "pi-todo-db-ui"
+      },
+      {
+        "behavior": "No timer renewals or background write loop in v1",
+        "item_id": "pi-todo-db-ui"
+      },
+      {
+        "behavior": "UI failures never change or roll back tracker state",
+        "item_id": "pi-todo-db-ui"
+      }
+    ],
+    "prior_art": [
+      {
+        "concept": "atomic audit event envelope",
+        "decision": "reuse",
+        "item_id": "pi-todo-db-ui",
+        "path": "src/todo_db/database.py"
+      },
+      {
+        "concept": "transactional lifecycle and claims",
+        "decision": "extend",
+        "item_id": "pi-todo-db-ui",
+        "path": "src/todo_db/tracker.py"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "pi-todo-db-ui",
+        "kind": "do_not_modify",
+        "path_glob": ".todo-db/**"
+      },
+      {
+        "item_id": "pi-todo-db-ui",
+        "kind": "do_not_modify",
+        "path_glob": "dist/**"
+      },
+      {
+        "item_id": "pi-todo-db-ui",
+        "kind": "only_modify",
+        "path_glob": "README.md"
+      },
+      {
+        "item_id": "pi-todo-db-ui",
+        "kind": "only_modify",
+        "path_glob": "integrations/pi/**"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "cd integrations/pi && npm test && npm run typecheck",
+        "description": "Pi UI tests",
+        "expected": "all commands pass",
+        "item_id": "pi-todo-db-ui",
+        "last_result": "pass",
+        "last_run": "2026-08-18T21:42:17Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "pi-todo-db-ui",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "pi-todo-db-ui",
+        "needs_wid": "w1",
+        "wid": "w2"
+      },
+      {
+        "item_id": "pi-todo-db-ui",
+        "needs_wid": "w2",
+        "wid": "w3"
+      },
+      {
+        "item_id": "pi-todo-db-ui",
+        "needs_wid": "w3",
+        "wid": "w4"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "One-time lifecycle and post-mutation status refresh implemented in index.ts",
+        "item_id": "pi-todo-db-ui",
+        "notes": null,
+        "started_at": "2026-08-18T21:42:14Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Implement one-time lifecycle and post-mutation status refresh",
+        "wid": "w0"
+      },
+      {
+        "evidence": "Zero/one/multiple-claim status and widget rendering implemented in ui.ts",
+        "item_id": "pi-todo-db-ui",
+        "notes": null,
+        "started_at": "2026-08-18T21:42:14Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Render compact zero/one/multiple-claim footer and three-line widget states",
+        "wid": "w1"
+      },
+      {
+        "evidence": "Interactive read-only status panel /todo-db implemented in ui.ts",
+        "item_id": "pi-todo-db-ui",
+        "notes": null,
+        "started_at": "2026-08-18T21:42:15Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Implement read-only interactive panel with on-demand context paging",
+        "wid": "w2"
+      },
+      {
+        "evidence": "UI state cleared on session switch/fork/shutdown in index.ts",
+        "item_id": "pi-todo-db-ui",
+        "notes": null,
+        "started_at": "2026-08-18T21:42:15Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Clear UI and abort reads on reload/switch/fork/shutdown",
+        "wid": "w3"
+      },
+      {
+        "evidence": "Full UI test coverage in ui.test.ts",
+        "item_id": "pi-todo-db-ui",
+        "notes": null,
+        "started_at": "2026-08-18T21:42:15Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Run fake-context unit tests and manual or tmux TUI smoke",
+        "wid": "w4"
+      }
+    ]
+  }
+}

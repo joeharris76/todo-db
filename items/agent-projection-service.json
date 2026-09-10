@@ -1,0 +1,194 @@
+{
+  "description": "Add a plain Python AgentWorkflow projection service with next and context operations, section completeness/cursors, mandatory guardrail visibility, and no dependency on argparse or the output serializer. Reuse global fields at the CLI boundary rather than inventing a competing include syntax.",
+  "legacy": {
+    "anti_patterns": [
+      {
+        "dont": "Add context --include beside global --fields",
+        "instead": "extend --fields and add section cursor/limit semantics",
+        "item_id": "agent-projection-service",
+        "why": "two projection dialects create drift"
+      },
+      {
+        "dont": "Call get_item then delete fields",
+        "instead": "load the projection directly",
+        "item_id": "agent-projection-service",
+        "why": "large child rows are still fetched and transported"
+      },
+      {
+        "dont": "Return an action the one-tool surface cannot perform",
+        "instead": "return human_action_required with an exact command or a supported action",
+        "item_id": "agent-projection-service",
+        "why": "the model will loop"
+      }
+    ],
+    "item_deps": [
+      {
+        "item_id": "agent-projection-service",
+        "needs_item": "agent-workflow-decisions"
+      }
+    ],
+    "item_meta": {
+      "category": "agent-workflow",
+      "completed_at": "2026-08-18T21:34:57Z",
+      "created_at": "2026-08-18T21:15:34Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "Scope, blockers, preserves, anti-patterns, and section completeness are never silently truncated",
+        "item_id": "agent-projection-service"
+      },
+      {
+        "behavior": "Service tests import no CLI output-contract module",
+        "item_id": "agent-projection-service"
+      },
+      {
+        "behavior": "Verification commands, old evidence, findings bodies, and audit history are absent by default",
+        "item_id": "agent-projection-service"
+      }
+    ],
+    "prior_art": [
+      {
+        "concept": "atomic audit event envelope",
+        "decision": "reuse",
+        "item_id": "agent-projection-service",
+        "path": "src/todo_db/database.py"
+      },
+      {
+        "concept": "transactional lifecycle and claims",
+        "decision": "extend",
+        "item_id": "agent-projection-service",
+        "path": "src/todo_db/tracker.py"
+      },
+      {
+        "concept": "landed output and statement budget harness",
+        "decision": "reuse",
+        "item_id": "agent-projection-service",
+        "path": "tests/test_query_budget.py"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "agent-projection-service",
+        "kind": "do_not_modify",
+        "path_glob": ".todo-db/**"
+      },
+      {
+        "item_id": "agent-projection-service",
+        "kind": "do_not_modify",
+        "path_glob": "dist/**"
+      },
+      {
+        "item_id": "agent-projection-service",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/agent.py"
+      },
+      {
+        "item_id": "agent-projection-service",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/tracker.py"
+      },
+      {
+        "item_id": "agent-projection-service",
+        "kind": "only_modify",
+        "path_glob": "tests/test_agent_service.py"
+      },
+      {
+        "item_id": "agent-projection-service",
+        "kind": "only_modify",
+        "path_glob": "tests/test_query_budget.py"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest -q tests/test_agent_service.py tests/test_query_budget.py",
+        "description": "Agent projection tests",
+        "expected": "all selected tests pass",
+        "item_id": "agent-projection-service",
+        "last_result": "pass",
+        "last_run": "2026-08-18T21:34:57Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "agent-projection-service",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "agent-projection-service",
+        "needs_wid": "w1",
+        "wid": "w2"
+      },
+      {
+        "item_id": "agent-projection-service",
+        "needs_wid": "w2",
+        "wid": "w3"
+      },
+      {
+        "item_id": "agent-projection-service",
+        "needs_wid": "w3",
+        "wid": "w4"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "Plain projection dictionaries and next_action vocabulary implemented in agent.py",
+        "item_id": "agent-projection-service",
+        "notes": null,
+        "started_at": "2026-08-18T21:34:55Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Define plain projection dictionaries and next_action vocabulary",
+        "wid": "w0"
+      },
+      {
+        "evidence": "Projection specific SQL and bulk work loading implemented",
+        "item_id": "agent-projection-service",
+        "notes": null,
+        "started_at": "2026-08-18T21:34:55Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Implement projection-specific SQL with bulk work dependency loading",
+        "wid": "w1"
+      },
+      {
+        "evidence": "Pageable safety sections and completeness metadata implemented",
+        "item_id": "agent-projection-service",
+        "notes": null,
+        "started_at": "2026-08-18T21:34:55Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Add pageable safety sections with explicit completeness metadata",
+        "wid": "w2"
+      },
+      {
+        "evidence": "Executable next_action semantics implemented and verified",
+        "item_id": "agent-projection-service",
+        "notes": null,
+        "started_at": "2026-08-18T21:34:55Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Prove every next_action is executable or terminal with exact human remediation",
+        "wid": "w3"
+      },
+      {
+        "evidence": "Full test coverage in test_agent_service.py",
+        "item_id": "agent-projection-service",
+        "notes": null,
+        "started_at": "2026-08-18T21:34:55Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Add query, byte, omission, and sensitive-field regression tests",
+        "wid": "w4"
+      }
+    ]
+  }
+}

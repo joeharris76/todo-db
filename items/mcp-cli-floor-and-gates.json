@@ -1,0 +1,162 @@
+{
+  "description": "Add todo-db verify-run <id> --claim-token <t> --actor <p> that previews and runs the ladder, re-checks scope, and attests only (it does not complete the item; finish stays the closer). Add todo-db rebaseline with --actor. Delete _project/scripts/todo, DEFAULT_WRAPPER_RELATIVE, refresh-wrapper, and init-project --wrapper; strip wrapper-key handling from doctor and init-project and ship a one-line config migration note. Rewrite docs/operations/release-gates.md Gate 2 against a surviving floor verb, not the deleted todo list/ready/show and not the uncertified hosted path.",
+  "legacy": {
+    "item_deps": [
+      {
+        "item_id": "mcp-cli-floor-and-gates",
+        "needs_item": "mcp-remove-agent-cli-surface"
+      }
+    ],
+    "item_meta": {
+      "category": "mcp-migration",
+      "created_at": "2026-09-02T13:31:23Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "The release gate never depends on the uncertified hosted mutation path",
+        "item_id": "mcp-cli-floor-and-gates"
+      },
+      {
+        "behavior": "verify-run and rebaseline require an explicit --actor that matches the claim holder",
+        "item_id": "mcp-cli-floor-and-gates"
+      },
+      {
+        "behavior": "verify-run previews every stored command before running it (ADR 0003 2.4)",
+        "item_id": "mcp-cli-floor-and-gates"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "mcp-cli-floor-and-gates",
+        "kind": "do_not_modify",
+        "path_glob": ".todo-db/**"
+      },
+      {
+        "item_id": "mcp-cli-floor-and-gates",
+        "kind": "only_modify",
+        "path_glob": "_project/scripts/todo"
+      },
+      {
+        "item_id": "mcp-cli-floor-and-gates",
+        "kind": "only_modify",
+        "path_glob": "docs/**"
+      },
+      {
+        "item_id": "mcp-cli-floor-and-gates",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/agent.py"
+      },
+      {
+        "item_id": "mcp-cli-floor-and-gates",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/cli.py"
+      },
+      {
+        "item_id": "mcp-cli-floor-and-gates",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/tracker.py"
+      },
+      {
+        "item_id": "mcp-cli-floor-and-gates",
+        "kind": "only_modify",
+        "path_glob": "tests/**"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest -q",
+        "description": "Tests",
+        "expected": "pass",
+        "item_id": "mcp-cli-floor-and-gates",
+        "last_result": null,
+        "last_run": null,
+        "seq": 1,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run ruff check .",
+        "description": "Lint",
+        "expected": "clean",
+        "item_id": "mcp-cli-floor-and-gates",
+        "last_result": null,
+        "last_run": null,
+        "seq": 2,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "test ! -e _project/scripts/todo",
+        "description": "Wrapper gone",
+        "expected": "removed",
+        "item_id": "mcp-cli-floor-and-gates",
+        "last_result": null,
+        "last_run": null,
+        "seq": 3,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "mcp-cli-floor-and-gates",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "mcp-cli-floor-and-gates",
+        "needs_wid": "w0",
+        "wid": "w2"
+      },
+      {
+        "item_id": "mcp-cli-floor-and-gates",
+        "needs_wid": "w1",
+        "wid": "w3"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": null,
+        "item_id": "mcp-cli-floor-and-gates",
+        "notes": null,
+        "started_at": null,
+        "started_branch": null,
+        "started_worktree": null,
+        "status": "pending",
+        "summary": "Confirm verify-run and rebaseline actor plumbing and the wrapper-key sites in doctor and init-project",
+        "wid": "w0"
+      },
+      {
+        "evidence": null,
+        "item_id": "mcp-cli-floor-and-gates",
+        "notes": null,
+        "started_at": null,
+        "started_branch": null,
+        "started_worktree": null,
+        "status": "pending",
+        "summary": "Add verify-run (attest-only) and rebaseline with required --actor",
+        "wid": "w1"
+      },
+      {
+        "evidence": null,
+        "item_id": "mcp-cli-floor-and-gates",
+        "notes": null,
+        "started_at": null,
+        "started_branch": null,
+        "started_worktree": null,
+        "status": "pending",
+        "summary": "Delete the wrapper and all wrapper-key handling; add the config migration note",
+        "wid": "w2"
+      },
+      {
+        "evidence": null,
+        "item_id": "mcp-cli-floor-and-gates",
+        "notes": null,
+        "started_at": null,
+        "started_branch": null,
+        "started_worktree": null,
+        "status": "pending",
+        "summary": "Rewrite release-gates.md Gate 2 against a surviving floor verb",
+        "wid": "w3"
+      }
+    ]
+  }
+}

@@ -1,0 +1,175 @@
+{
+  "description": "Implement next, take, context, progress, finish, and release as MCP tools wrapping AgentWorkflow. take passes the server session id so a restarted server auto-adopts. context keeps section/cursor/limit paging, fields projection, and remains the way to re-read claim_token and next_action after a client restart. finish is model-assert only. The E_MULTIPLE_CLAIMS envelope carries every offending item id and its claim token in recovery, and claims stays in the default profile so the hot path can self-recover. Choose the byte cap and context default limit together.",
+  "legacy": {
+    "item_deps": [
+      {
+        "item_id": "mcp-tools-work",
+        "needs_item": "mcp-connection-model"
+      },
+      {
+        "item_id": "mcp-tools-work",
+        "needs_item": "mcp-error-taxonomy"
+      },
+      {
+        "item_id": "mcp-tools-work",
+        "needs_item": "mcp-fix-lint-gate-claim-retention"
+      },
+      {
+        "item_id": "mcp-tools-work",
+        "needs_item": "mcp-git-engine-seam"
+      },
+      {
+        "item_id": "mcp-tools-work",
+        "needs_item": "mcp-next-action-machine-readable"
+      }
+    ],
+    "item_meta": {
+      "category": "mcp-migration",
+      "completed_at": "2026-09-02T17:19:01Z",
+      "created_at": "2026-09-02T13:31:11Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "A restarted server re-adopts its own claim via same-principal adoption",
+        "item_id": "mcp-tools-work"
+      },
+      {
+        "behavior": "One live claim per principal; claim-token generation checks on progress, finish, release",
+        "item_id": "mcp-tools-work"
+      },
+      {
+        "behavior": "finish never executes a stored shell command (ADR 0003 2.4)",
+        "item_id": "mcp-tools-work"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "mcp-tools-work",
+        "kind": "do_not_modify",
+        "path_glob": ".todo-db/**"
+      },
+      {
+        "item_id": "mcp-tools-work",
+        "kind": "do_not_modify",
+        "path_glob": "dist/**"
+      },
+      {
+        "item_id": "mcp-tools-work",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/agent.py"
+      },
+      {
+        "item_id": "mcp-tools-work",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/mcp/**"
+      },
+      {
+        "item_id": "mcp-tools-work",
+        "kind": "only_modify",
+        "path_glob": "tests/test_mcp_server.py"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest -q",
+        "description": "Tests",
+        "expected": "pass",
+        "item_id": "mcp-tools-work",
+        "last_result": "pass",
+        "last_run": "2026-09-02T17:19:01Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run ruff check .",
+        "description": "Lint",
+        "expected": "clean",
+        "item_id": "mcp-tools-work",
+        "last_result": "pass",
+        "last_run": "2026-09-02T17:19:01Z",
+        "seq": 2,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "mcp-tools-work",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "mcp-tools-work",
+        "needs_wid": "w1",
+        "wid": "w2"
+      },
+      {
+        "item_id": "mcp-tools-work",
+        "needs_wid": "w1",
+        "wid": "w3"
+      },
+      {
+        "item_id": "mcp-tools-work",
+        "needs_wid": "w1",
+        "wid": "w4"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "Confirmed AgentWorkflow return shapes and E_MULTIPLE_CLAIMS hard-fail on next/take via current_claim",
+        "item_id": "mcp-tools-work",
+        "notes": null,
+        "started_at": "2026-09-02T17:18:24Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Confirm AgentWorkflow return shapes and the E_MULTIPLE_CLAIMS hard-fail on next and take",
+        "wid": "w0"
+      },
+      {
+        "evidence": "Implemented 6 tools (next/take/context/progress/finish/release) plus claims via FastMCP, worker dispatch, envelope, dbpool with pinned GitScopeEngine and session",
+        "item_id": "mcp-tools-work",
+        "notes": null,
+        "started_at": "2026-09-02T17:18:24Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Implement the six tools with the envelope and worker-thread dispatch",
+        "wid": "w1"
+      },
+      {
+        "evidence": "E_MULTIPLE_CLAIMS envelope now carries item ids and claim tokens in recovery via _claims_for_principal; claims tool stays in default profile",
+        "item_id": "mcp-tools-work",
+        "notes": null,
+        "started_at": "2026-09-02T17:18:24Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Make the E_MULTIPLE_CLAIMS envelope carry item ids and claim tokens; keep claims in the default profile",
+        "wid": "w2"
+      },
+      {
+        "evidence": "Chose 16KB cap (envelope.MAX_BYTES) together with context default limit 20 (DEFAULT_CONTEXT_LIMIT) and documented pair",
+        "item_id": "mcp-tools-work",
+        "notes": null,
+        "started_at": "2026-09-02T17:18:24Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Choose byte cap and context default limit together and document the pair",
+        "wid": "w3"
+      },
+      {
+        "evidence": "Added 3 tests: next->take->progress->context->finish->release flow, E_MULTIPLE_CLAIMS recovery, and empty-queue E_NOTHING_READY; updated server start test to expect work tools",
+        "item_id": "mcp-tools-work",
+        "notes": null,
+        "started_at": "2026-09-02T17:18:24Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Add tool tests to tests/test_mcp_server.py",
+        "wid": "w4"
+      }
+    ]
+  }
+}

@@ -1,0 +1,147 @@
+{
+  "description": "Remove from cli.py: the entire agent subcommand group, _run_agent, _agent_instructions, the AGENT_* constants, the finding subcommand group except sync, and the subcommands that are now MCP-only (create, update, list, show, ready, stats, deps, start, done, defer, promote, dismiss, block, unblock, release, claim, check-scope, verify, lint). Drop next_action.command. Delete tests/test_cli_agent.py and port its assertions to the MCP suite.",
+  "legacy": {
+    "item_deps": [
+      {
+        "item_id": "mcp-remove-agent-cli-surface",
+        "needs_item": "mcp-benchbox-parity-coordination"
+      },
+      {
+        "item_id": "mcp-remove-agent-cli-surface",
+        "needs_item": "mcp-target-adoption-proof"
+      }
+    ],
+    "item_meta": {
+      "category": "mcp-migration",
+      "claim_token": "b9ef3c6ce833f58914add5cc447b94d8",
+      "claimed_at": "2026-09-02T18:19:39Z",
+      "claimed_branch": "mcp-migration",
+      "claimed_by": "joe@joe-mac-mini.local",
+      "claimed_worktree": "/Users/joe/Developer/todo-db",
+      "created_at": "2026-09-02T13:31:23Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "The audit chain and every lifecycle invariant are unchanged",
+        "item_id": "mcp-remove-agent-cli-surface"
+      },
+      {
+        "behavior": "The floor CLI verbs in ADR 0006 G2 still work: init, init-project, migrate, doctor, audit verify, export, restore, restore-legacy, import-yaml, finding sync, config, sweep-stale, complete",
+        "item_id": "mcp-remove-agent-cli-surface"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "mcp-remove-agent-cli-surface",
+        "kind": "do_not_modify",
+        "path_glob": ".todo-db/**"
+      },
+      {
+        "item_id": "mcp-remove-agent-cli-surface",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/agent.py"
+      },
+      {
+        "item_id": "mcp-remove-agent-cli-surface",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/cli.py"
+      },
+      {
+        "item_id": "mcp-remove-agent-cli-surface",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/tracker.py"
+      },
+      {
+        "item_id": "mcp-remove-agent-cli-surface",
+        "kind": "only_modify",
+        "path_glob": "tests/**"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest -q",
+        "description": "Tests",
+        "expected": "pass",
+        "item_id": "mcp-remove-agent-cli-surface",
+        "last_result": null,
+        "last_run": null,
+        "seq": 1,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run ruff check .",
+        "description": "Lint",
+        "expected": "clean",
+        "item_id": "mcp-remove-agent-cli-surface",
+        "last_result": null,
+        "last_run": null,
+        "seq": 2,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "mcp-remove-agent-cli-surface",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "mcp-remove-agent-cli-surface",
+        "needs_wid": "w1",
+        "wid": "w2"
+      },
+      {
+        "item_id": "mcp-remove-agent-cli-surface",
+        "needs_wid": "w1",
+        "wid": "w3"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": null,
+        "item_id": "mcp-remove-agent-cli-surface",
+        "notes": null,
+        "started_at": null,
+        "started_branch": null,
+        "started_worktree": null,
+        "status": "pending",
+        "summary": "List every cli.py symbol, parser, and test tied to the removed surface",
+        "wid": "w0"
+      },
+      {
+        "evidence": null,
+        "item_id": "mcp-remove-agent-cli-surface",
+        "notes": null,
+        "started_at": null,
+        "started_branch": null,
+        "started_worktree": null,
+        "status": "pending",
+        "summary": "Remove the agent group, finding group except sync, and the MCP-only subcommands",
+        "wid": "w1"
+      },
+      {
+        "evidence": null,
+        "item_id": "mcp-remove-agent-cli-surface",
+        "notes": null,
+        "started_at": null,
+        "started_branch": null,
+        "started_worktree": null,
+        "status": "pending",
+        "summary": "Drop next_action.command from agent.py and tracker.py",
+        "wid": "w2"
+      },
+      {
+        "evidence": null,
+        "item_id": "mcp-remove-agent-cli-surface",
+        "notes": null,
+        "started_at": null,
+        "started_branch": null,
+        "started_worktree": null,
+        "status": "pending",
+        "summary": "Delete tests/test_cli_agent.py and port assertions into tests/test_mcp_server.py",
+        "wid": "w3"
+      }
+    ]
+  }
+}

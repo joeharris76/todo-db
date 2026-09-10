@@ -1,0 +1,113 @@
+{
+  "description": "scripts/parity_conformance.py diffs the standalone CLI against BenchBox's todo_db_standalone_compat.py COMMANDS list. Deleting the agent and most tracker subcommands in 0.6.0 produces a parity failure per removed command. Migrate COMMANDS, STANDALONE_ONLY_COMMANDS, and scripts/parity_allowlist.json in lockstep with BenchBox, or expand the allowlist ahead of the deletions. The DDL and exit-code halves of the gate stay intact.",
+  "legacy": {
+    "item_deps": [
+      {
+        "item_id": "mcp-benchbox-parity-coordination",
+        "needs_item": "mcp-0-5-0-release"
+      }
+    ],
+    "item_meta": {
+      "category": "mcp-migration",
+      "completed_at": "2026-09-02T18:15:36Z",
+      "created_at": "2026-09-02T13:31:23Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "Exit code 4 and its epilog keywords remain for the floor CLI",
+        "item_id": "mcp-benchbox-parity-coordination"
+      },
+      {
+        "behavior": "The DDL and exit-code parity checks stay in force",
+        "item_id": "mcp-benchbox-parity-coordination"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "mcp-benchbox-parity-coordination",
+        "kind": "do_not_modify",
+        "path_glob": ".todo-db/**"
+      },
+      {
+        "item_id": "mcp-benchbox-parity-coordination",
+        "kind": "only_modify",
+        "path_glob": "docs/operations/**"
+      },
+      {
+        "item_id": "mcp-benchbox-parity-coordination",
+        "kind": "only_modify",
+        "path_glob": "scripts/parity_allowlist.json"
+      },
+      {
+        "item_id": "mcp-benchbox-parity-coordination",
+        "kind": "only_modify",
+        "path_glob": "scripts/parity_conformance.py"
+      },
+      {
+        "item_id": "mcp-benchbox-parity-coordination",
+        "kind": "only_modify",
+        "path_glob": "scripts/parity_snapshots/**"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run python scripts/parity_conformance.py",
+        "description": "Parity suite",
+        "expected": "pass",
+        "item_id": "mcp-benchbox-parity-coordination",
+        "last_result": "pass",
+        "last_run": "2026-09-02T18:15:36Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "mcp-benchbox-parity-coordination",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "mcp-benchbox-parity-coordination",
+        "needs_wid": "w1",
+        "wid": "w2"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "Enumerated 21 removed commands and cross-referenced with BenchBox COMMANDS in docs/operations/benchbox-parity-coordination.md",
+        "item_id": "mcp-benchbox-parity-coordination",
+        "notes": null,
+        "started_at": "2026-09-02T18:15:28Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Enumerate the commands 0.6.0 removes and cross-reference BenchBox COMMANDS",
+        "wid": "w0"
+      },
+      {
+        "evidence": "Expanded scripts/parity_allowlist.json ahead of deletions per plan §13/§B6",
+        "item_id": "mcp-benchbox-parity-coordination",
+        "notes": null,
+        "started_at": "2026-09-02T18:15:28Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Agree the lockstep change with BenchBox or expand parity_allowlist.json first",
+        "wid": "w1"
+      },
+      {
+        "evidence": "Updated scripts/parity_allowlist.json for help and freeze sections; scripts/parity_conformance.py passes clean",
+        "item_id": "mcp-benchbox-parity-coordination",
+        "notes": null,
+        "started_at": "2026-09-02T18:15:28Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Update scripts/parity_allowlist.json and scripts/parity_conformance.py expectations",
+        "wid": "w2"
+      }
+    ]
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "description": "The nine finding verbs are routed nowhere in the live skills tree; ready's banner advertises finding candidates which no doc teaches; the review-protocol default binding never names finding sync as the landing step nor the required body headings (hand-written drafts fail validation). Also classify exit 1 in the skill's exit-code table and fix the verify --run doc (--run takes a required SEQ; 'run the ladder' is an argparse error).",
+  "legacy": {
+    "item_meta": {
+      "completed_at": "2026-09-02T01:36:45Z",
+      "created_at": "2026-07-26T13:01:45Z",
+      "worktree": "skill-sync"
+    },
+    "scope_rules": [
+      {
+        "item_id": "skills-finding-pipeline-docs",
+        "kind": "only_modify",
+        "path_glob": ".claude/skills/**"
+      },
+      {
+        "item_id": "skills-finding-pipeline-docs",
+        "kind": "only_modify",
+        "path_glob": ".codex/skills/**"
+      },
+      {
+        "item_id": "skills-finding-pipeline-docs",
+        "kind": "only_modify",
+        "path_glob": ".gemini/skills/**"
+      },
+      {
+        "item_id": "skills-finding-pipeline-docs",
+        "kind": "only_modify",
+        "path_glob": "skills/**"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "grep -q 'finding sync' .claude/skills/todo/SKILL.md && grep -q 'finding sync' .claude/skills/todo/references/findings.md && grep -q 'finding sync' .claude/skills/shared-review-protocol/SKILL.md && grep -q 'Exit code 1' .claude/skills/todo/SKILL.md && grep -q -- '--run <seq>' .claude/skills/todo/references/implement.md",
+        "description": "Doc: finding pipeline wired",
+        "expected": null,
+        "item_id": "skills-finding-pipeline-docs",
+        "last_result": "pass",
+        "last_run": "2026-09-02T01:36:45Z",
+        "seq": 1,
+        "workspace_fingerprint": "c7d951ffcf6f4ed661e662262f0a407a5d1b080d98b241350169d0785b48abd0"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "patched .claude/.codex/.gemini mirrors: exit-1 gate, nine finding verbs, findings.md pipeline (capture->sync landing), verify --run SEQ correction, review-protocol required body headings; widened scope to mirror trees",
+        "item_id": "skills-finding-pipeline-docs",
+        "notes": null,
+        "started_at": null,
+        "started_branch": null,
+        "started_worktree": null,
+        "status": "done",
+        "summary": "Add finding action rows + pipeline reference + exit-1 and verify --run corrections",
+        "wid": "w0"
+      }
+    ]
+  }
+}

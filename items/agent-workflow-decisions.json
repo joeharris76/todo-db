@@ -1,0 +1,173 @@
+{
+  "context": "Treat this as a release-blocking ADR. The chosen v1 is completion-oriented: no background heartbeat, no plan mutation tool, and no model-triggered execution of stored verification commands. Structural planning failures return exact human remediation and release the streamlined claim; code/verification/scope failures retain it.",
+  "description": "Write the binding ADR for the streamlined agent surface before schema or adapter work: stable principal versus session attribution, same-principal adoption and audited cross-principal takeover, one live claim per agent workflow, verification execution policy, structural-gate release policy, Git baseline divergence handling, advisory-not-authenticated claim language, no v1 heartbeat, and local versus hosted support labels.",
+  "legacy": {
+    "anti_patterns": [
+      {
+        "dont": "Call the workflow ownership-safe",
+        "instead": "call it claim-coordinated and document advisory ownership",
+        "item_id": "agent-workflow-decisions",
+        "why": "--actor is spoofable and database credentials are the real boundary"
+      },
+      {
+        "dont": "Leave a gate with no reachable remediation",
+        "instead": "map it to an action or a terminal exact human command and release policy",
+        "item_id": "agent-workflow-decisions",
+        "why": "the model would loop while renewing a claim"
+      },
+      {
+        "dont": "Use PI_SESSION_ID as claimed_by",
+        "instead": "use a stable principal and record session separately",
+        "item_id": "agent-workflow-decisions",
+        "why": "routine restart or fork would lock work for the full TTL"
+      }
+    ],
+    "item_meta": {
+      "category": "agent-workflow",
+      "completed_at": "2026-08-18T21:30:51Z",
+      "created_at": "2026-08-18T21:15:34Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "Claims remain cooperative coordination, never an authentication boundary",
+        "item_id": "agent-workflow-decisions"
+      },
+      {
+        "behavior": "No implementation item starts until this ADR resolves every named decision",
+        "item_id": "agent-workflow-decisions"
+      },
+      {
+        "behavior": "The Pi model tool never gains verification overrides, restore, migration, or destructive administration",
+        "item_id": "agent-workflow-decisions"
+      }
+    ],
+    "prior_art": [
+      {
+        "concept": "explicit threat-model decision format",
+        "decision": "reuse",
+        "item_id": "agent-workflow-decisions",
+        "path": "docs/adr/0001-audit-open-policy.md"
+      },
+      {
+        "concept": "atomic audit event envelope",
+        "decision": "reuse",
+        "item_id": "agent-workflow-decisions",
+        "path": "src/todo_db/database.py"
+      },
+      {
+        "concept": "transactional lifecycle and claims",
+        "decision": "extend",
+        "item_id": "agent-workflow-decisions",
+        "path": "src/todo_db/tracker.py"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "agent-workflow-decisions",
+        "kind": "do_not_modify",
+        "path_glob": ".todo-db/**"
+      },
+      {
+        "item_id": "agent-workflow-decisions",
+        "kind": "do_not_modify",
+        "path_glob": "dist/**"
+      },
+      {
+        "item_id": "agent-workflow-decisions",
+        "kind": "only_modify",
+        "path_glob": "README.md"
+      },
+      {
+        "item_id": "agent-workflow-decisions",
+        "kind": "only_modify",
+        "path_glob": "docs/adr/**"
+      },
+      {
+        "item_id": "agent-workflow-decisions",
+        "kind": "only_modify",
+        "path_glob": "tests/test_cli_parity.py"
+      },
+      {
+        "item_id": "agent-workflow-decisions",
+        "kind": "only_modify",
+        "path_glob": "tests/test_contracts.py"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest -q tests/test_contracts.py tests/test_cli_parity.py",
+        "description": "ADR contract tests",
+        "expected": "all selected tests pass",
+        "item_id": "agent-workflow-decisions",
+        "last_result": "pass",
+        "last_run": "2026-08-18T21:30:51Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "agent-workflow-decisions",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "agent-workflow-decisions",
+        "needs_wid": "w1",
+        "wid": "w2"
+      },
+      {
+        "item_id": "agent-workflow-decisions",
+        "needs_wid": "w2",
+        "wid": "w3"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "Reproduced session restart, duplicate claim, and verification trust failure modes",
+        "item_id": "agent-workflow-decisions",
+        "notes": null,
+        "started_at": "2026-08-18T21:30:50Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Reproduce session restart, duplicate claim, and verification trust failure modes",
+        "wid": "w0"
+      },
+      {
+        "evidence": "Wrote ADR 0003 with explicit choices, rejected alternatives, and migration consequences",
+        "item_id": "agent-workflow-decisions",
+        "notes": null,
+        "started_at": "2026-08-18T21:30:50Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Write the ADR with explicit choices, rejected alternatives, and migration consequences",
+        "wid": "w1"
+      },
+      {
+        "evidence": "Mapped every next_action and gate failure to model action or exact human command",
+        "item_id": "agent-workflow-decisions",
+        "notes": null,
+        "started_at": "2026-08-18T21:30:50Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Map every next_action and gate failure to a model action or exact human command",
+        "wid": "w2"
+      },
+      {
+        "evidence": "Approved local/hosted support matrix and release stop conditions",
+        "item_id": "agent-workflow-decisions",
+        "notes": null,
+        "started_at": "2026-08-18T21:30:50Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Approve the local/hosted support matrix and release stop conditions",
+        "wid": "w3"
+      }
+    ]
+  }
+}

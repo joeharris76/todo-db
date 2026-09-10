@@ -1,0 +1,125 @@
+{
+  "description": "cli.py:1244-1249 calls get_item and then, in the default non-json branch, work_order, which rebuilds the identical result; get_item's value is discarded. Traced show is 25 statements of which 10 are pure duplication. Separately, project_identity is queried twice on every invocation. Call each builder only in the branch that uses it, and memoize project_identity for the lifetime of the TodoDatabase instance.",
+  "legacy": {
+    "anti_patterns": [
+      {
+        "dont": "Memoize project_identity without documenting the lifetime",
+        "instead": "Docstring it as immutable for the lifetime of a TodoDatabase and keep the cache instance-scoped, never module-scoped",
+        "item_id": "opt-show-and-identity-waste",
+        "why": "A cached identity makes an external change invisible to a long-lived instance"
+      }
+    ],
+    "item_deps": [
+      {
+        "item_id": "opt-show-and-identity-waste",
+        "needs_item": "opt-query-budget-harness"
+      }
+    ],
+    "item_meta": {
+      "category": "performance",
+      "completed_at": "2026-08-18T16:02:40Z",
+      "created_at": "2026-08-18T14:27:57Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "Identity mismatch is still rejected before access",
+        "item_id": "opt-show-and-identity-waste"
+      },
+      {
+        "behavior": "The identity cache is populated after _bind_identity and never before an unbound database is bound",
+        "item_id": "opt-show-and-identity-waste"
+      },
+      {
+        "behavior": "restore still validates identity rather than replacing it",
+        "item_id": "opt-show-and-identity-waste"
+      },
+      {
+        "behavior": "show --json output is byte-identical",
+        "item_id": "opt-show-and-identity-waste"
+      },
+      {
+        "behavior": "show text output is unchanged",
+        "item_id": "opt-show-and-identity-waste"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "opt-show-and-identity-waste",
+        "kind": "do_not_modify",
+        "path_glob": "src/todo_db/migrations/**"
+      },
+      {
+        "item_id": "opt-show-and-identity-waste",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/cli.py"
+      },
+      {
+        "item_id": "opt-show-and-identity-waste",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/database.py"
+      },
+      {
+        "item_id": "opt-show-and-identity-waste",
+        "kind": "only_modify",
+        "path_glob": "tests/**"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest tests/test_cli_tracker.py tests/test_cli_parity.py -q",
+        "description": "CLI suite",
+        "expected": null,
+        "item_id": "opt-show-and-identity-waste",
+        "last_result": "pass",
+        "last_run": "2026-08-18T16:02:35Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run pytest tests/test_query_budget.py -q",
+        "description": "Budget improved",
+        "expected": null,
+        "item_id": "opt-show-and-identity-waste",
+        "last_result": "pass",
+        "last_run": "2026-08-18T16:02:36Z",
+        "seq": 2,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run pytest -q",
+        "description": "Full suite",
+        "expected": null,
+        "item_id": "opt-show-and-identity-waste",
+        "last_result": "pass",
+        "last_run": "2026-08-18T16:02:40Z",
+        "seq": 3,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "src/todo_db/cli.py:show",
+        "item_id": "opt-show-and-identity-waste",
+        "notes": null,
+        "started_at": "2026-08-18T16:01:48Z",
+        "started_branch": "perf/show-and-identity-waste",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "show calls get_item only under --json and work_order only otherwise",
+        "wid": "w0"
+      },
+      {
+        "evidence": "src/todo_db/database.py:project_identity",
+        "item_id": "opt-show-and-identity-waste",
+        "notes": null,
+        "started_at": "2026-08-18T16:01:49Z",
+        "started_branch": "perf/show-and-identity-waste",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Memoize project_identity on the TodoDatabase instance",
+        "wid": "w1"
+      }
+    ]
+  }
+}

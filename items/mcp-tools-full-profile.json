@@ -1,0 +1,138 @@
+{
+  "description": "Implement the --profile full tools: create_item, update_item, add_dependency, defer, promote_deferral, dismiss_deferral, block, unblock, drop; finding_create (draft file only, never the DB), finding_list, finding_show, finding_triage, finding_link, finding_promote, finding_dismiss; init_project and config_get. finding_sync, config_set, sweep_stale, migrate, complete, verification execution, and rebaseline are never tools. Wire the --profile flag so agent exposes only tools_work plus tools_query.",
+  "legacy": {
+    "item_deps": [
+      {
+        "item_id": "mcp-tools-full-profile",
+        "needs_item": "mcp-tools-query"
+      }
+    ],
+    "item_meta": {
+      "category": "mcp-migration",
+      "completed_at": "2026-09-02T17:22:44Z",
+      "created_at": "2026-09-02T13:31:11Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "No tool can lower a lint gate or clear another principal's claim",
+        "item_id": "mcp-tools-full-profile"
+      },
+      {
+        "behavior": "finding_create writes a draft file and never opens a database connection",
+        "item_id": "mcp-tools-full-profile"
+      },
+      {
+        "behavior": "update_item is the audited amend surface, not a general JSON-patch channel (ADR 0006 G8)",
+        "item_id": "mcp-tools-full-profile"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "mcp-tools-full-profile",
+        "kind": "do_not_modify",
+        "path_glob": ".todo-db/**"
+      },
+      {
+        "item_id": "mcp-tools-full-profile",
+        "kind": "do_not_modify",
+        "path_glob": "dist/**"
+      },
+      {
+        "item_id": "mcp-tools-full-profile",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/mcp/**"
+      },
+      {
+        "item_id": "mcp-tools-full-profile",
+        "kind": "only_modify",
+        "path_glob": "tests/test_mcp_server.py"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest -q",
+        "description": "Tests",
+        "expected": "pass",
+        "item_id": "mcp-tools-full-profile",
+        "last_result": "pass",
+        "last_run": "2026-09-02T17:22:43Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run ruff check .",
+        "description": "Lint",
+        "expected": "clean",
+        "item_id": "mcp-tools-full-profile",
+        "last_result": "pass",
+        "last_run": "2026-09-02T17:22:43Z",
+        "seq": 2,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "mcp-tools-full-profile",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "mcp-tools-full-profile",
+        "needs_wid": "w0",
+        "wid": "w2"
+      },
+      {
+        "item_id": "mcp-tools-full-profile",
+        "needs_wid": "w1",
+        "wid": "w3"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "Confirmed create_item/update_item param shapes and finding draft capture via findings.create_draft",
+        "item_id": "mcp-tools-full-profile",
+        "notes": null,
+        "started_at": "2026-09-02T17:22:05Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Confirm create_item and update_item parameter shapes and the finding draft-capture boundary",
+        "wid": "w0"
+      },
+      {
+        "evidence": "Implemented 18 full-profile tools: 9 planning, 7 findings, 2 admin via FastMCP with worker dispatch",
+        "item_id": "mcp-tools-full-profile",
+        "notes": null,
+        "started_at": "2026-09-02T17:22:05Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Implement the planning and findings tools",
+        "wid": "w1"
+      },
+      {
+        "evidence": "Implemented init_project and config_get; wired --profile flag so agent has 19 tools, full has 37",
+        "item_id": "mcp-tools-full-profile",
+        "notes": null,
+        "started_at": "2026-09-02T17:22:05Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Implement init_project and config_get; wire the --profile flag",
+        "wid": "w2"
+      },
+      {
+        "evidence": "Verified excluded operations absent at every profile (finding_sync, config_set, sweep_stale, migrate, complete, rebaseline)",
+        "item_id": "mcp-tools-full-profile",
+        "notes": null,
+        "started_at": "2026-09-02T17:22:05Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Assert the excluded operations are absent at every profile in tests",
+        "wid": "w3"
+      }
+    ]
+  }
+}

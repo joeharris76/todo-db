@@ -1,0 +1,162 @@
+{
+  "description": "Ship 0.6.0 where MCP is the sole agent interface. Add the BREAKING CHANGELOG entry, bump the version to 0.6.0, reshape scripts/parity_conformance.py snapshots for the reduced CLI, confirm the mcp_snapshots freeze covers the final tool set, and run the full release-gate checklist including the rewritten Gate 2.",
+  "legacy": {
+    "item_deps": [
+      {
+        "item_id": "mcp-0-6-0-release",
+        "needs_item": "mcp-cli-floor-and-gates"
+      },
+      {
+        "item_id": "mcp-0-6-0-release",
+        "needs_item": "mcp-remove-pi-adapter"
+      }
+    ],
+    "item_meta": {
+      "category": "mcp-migration",
+      "created_at": "2026-09-02T13:31:23Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "Every ADR 0003 lifecycle and audit invariant survives the cutover",
+        "item_id": "mcp-0-6-0-release"
+      },
+      {
+        "behavior": "The human/CI floor CLI still bootstraps, audits, exports, and recovers",
+        "item_id": "mcp-0-6-0-release"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "mcp-0-6-0-release",
+        "kind": "do_not_modify",
+        "path_glob": ".todo-db/**"
+      },
+      {
+        "item_id": "mcp-0-6-0-release",
+        "kind": "do_not_modify",
+        "path_glob": "dist/**"
+      },
+      {
+        "item_id": "mcp-0-6-0-release",
+        "kind": "only_modify",
+        "path_glob": ".github/workflows/**"
+      },
+      {
+        "item_id": "mcp-0-6-0-release",
+        "kind": "only_modify",
+        "path_glob": "CHANGELOG.md"
+      },
+      {
+        "item_id": "mcp-0-6-0-release",
+        "kind": "only_modify",
+        "path_glob": "docs/**"
+      },
+      {
+        "item_id": "mcp-0-6-0-release",
+        "kind": "only_modify",
+        "path_glob": "pyproject.toml"
+      },
+      {
+        "item_id": "mcp-0-6-0-release",
+        "kind": "only_modify",
+        "path_glob": "scripts/**"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest -q",
+        "description": "Tests",
+        "expected": "pass",
+        "item_id": "mcp-0-6-0-release",
+        "last_result": null,
+        "last_run": null,
+        "seq": 1,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run python scripts/parity_conformance.py",
+        "description": "Parity suite",
+        "expected": "pass",
+        "item_id": "mcp-0-6-0-release",
+        "last_result": null,
+        "last_run": null,
+        "seq": 2,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run pytest -q tests/test_packaging_smoke.py",
+        "description": "Packaging smoke",
+        "expected": "pass",
+        "item_id": "mcp-0-6-0-release",
+        "last_result": null,
+        "last_run": null,
+        "seq": 3,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "mcp-0-6-0-release",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "mcp-0-6-0-release",
+        "needs_wid": "w0",
+        "wid": "w2"
+      },
+      {
+        "item_id": "mcp-0-6-0-release",
+        "needs_wid": "w1",
+        "wid": "w3"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": null,
+        "item_id": "mcp-0-6-0-release",
+        "notes": null,
+        "started_at": null,
+        "started_branch": null,
+        "started_worktree": null,
+        "status": "pending",
+        "summary": "Re-run the full suite, packaging smoke, parity conformance, and the schema freeze",
+        "wid": "w0"
+      },
+      {
+        "evidence": null,
+        "item_id": "mcp-0-6-0-release",
+        "notes": null,
+        "started_at": null,
+        "started_branch": null,
+        "started_worktree": null,
+        "status": "pending",
+        "summary": "Add the BREAKING CHANGELOG entry and bump to 0.6.0",
+        "wid": "w1"
+      },
+      {
+        "evidence": null,
+        "item_id": "mcp-0-6-0-release",
+        "notes": null,
+        "started_at": null,
+        "started_branch": null,
+        "started_worktree": null,
+        "status": "pending",
+        "summary": "Reshape parity snapshots for the reduced CLI and re-freeze mcp_snapshots",
+        "wid": "w2"
+      },
+      {
+        "evidence": null,
+        "item_id": "mcp-0-6-0-release",
+        "notes": null,
+        "started_at": null,
+        "started_branch": null,
+        "started_worktree": null,
+        "status": "pending",
+        "summary": "Run the full release-gate checklist including the rewritten Gate 2",
+        "wid": "w3"
+      }
+    ]
+  }
+}

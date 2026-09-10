@@ -1,0 +1,42 @@
+{
+  "description": "Run audit verify and doctor --json on a cadence (weekly export workflow, CI lanes), fail loudly, and define the mechanical notification path for headless detection hits. Detection nothing runs is indistinguishable from no detection.",
+  "legacy": {
+    "item_meta": {
+      "completed_at": "2026-09-02T01:51:20Z",
+      "created_at": "2026-07-26T13:00:37Z",
+      "worktree": "todo-db"
+    },
+    "scope_rules": [
+      {
+        "item_id": "schedule-detection-and-alerting",
+        "kind": "only_modify",
+        "path_glob": ".github/workflows/*"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "grep -rq 'audit verify' .github/workflows/",
+        "description": "Workflow",
+        "expected": null,
+        "item_id": "schedule-detection-and-alerting",
+        "last_result": "pass",
+        "last_run": "2026-09-02T01:51:20Z",
+        "seq": 1,
+        "workspace_fingerprint": "64345238fbc7ad890086cae218ca7a0fedb7bdc1c9442ff06c6583e65ce4b824"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "Workflows hardened: audit-monitor now every 6h + weekly Monday export with doctor --json RO provenance gating, silent-skip is failure, export envelope verified, artifacts uploaded always+error, mechanical alert via gh issue create + ::error. CI now has detection-proof lanes (ephemeral DB doctor --json + audit verify + export FULL) and wiring guard. Verified grep workflows, doctor/audit/export smoke, ruff clean.",
+        "item_id": "schedule-detection-and-alerting",
+        "notes": null,
+        "started_at": null,
+        "started_branch": null,
+        "started_worktree": null,
+        "status": "done",
+        "summary": "Wire audit verify + doctor --json into scheduled workflows with loud failure",
+        "wid": "w0"
+      }
+    ]
+  }
+}

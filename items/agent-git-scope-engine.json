@@ -1,0 +1,203 @@
+{
+  "description": "Replace ambiguous changed-file discovery with root-pinned NUL-delimited Git commands that include both rename paths, all tracked states, and untracked files. Preserve the claim SHA as provenance; refuse divergent or unreachable baselines until an explicit human audited rebaseline rather than using merge-base to launder unrelated upstream changes.",
+  "legacy": {
+    "anti_patterns": [
+      {
+        "dont": "Parse newline-delimited filenames",
+        "instead": "use -z and byte-safe parsing",
+        "item_id": "agent-git-scope-engine",
+        "why": "newline and quoted Unicode paths corrupt the checked set"
+      },
+      {
+        "dont": "Run git relative to caller cwd",
+        "instead": "always use git -C repository-root",
+        "item_id": "agent-git-scope-engine",
+        "why": "subdirectories alter path names and can evade deny rules"
+      },
+      {
+        "dont": "Silently use merge-base after rebase",
+        "instead": "stop and require audited human rebaseline",
+        "item_id": "agent-git-scope-engine",
+        "why": "upstream changes become indistinguishable from item work"
+      }
+    ],
+    "item_deps": [
+      {
+        "item_id": "agent-git-scope-engine",
+        "needs_item": "agent-workflow-decisions"
+      }
+    ],
+    "item_meta": {
+      "category": "agent-workflow",
+      "completed_at": "2026-08-18T21:33:35Z",
+      "created_at": "2026-08-18T21:15:34Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "Both old and new paths of a rename are checked",
+        "item_id": "agent-git-scope-engine"
+      },
+      {
+        "behavior": "Claim base and actual scope base/source are distinct audit fields",
+        "item_id": "agent-git-scope-engine"
+      },
+      {
+        "behavior": "Every path passed to check_scope is repository-relative and losslessly decoded",
+        "item_id": "agent-git-scope-engine"
+      },
+      {
+        "behavior": "Filesystem scope is documented as a race-prone check, not attestation",
+        "item_id": "agent-git-scope-engine"
+      }
+    ],
+    "prior_art": [
+      {
+        "concept": "existing _changed_files helper",
+        "decision": "supersede",
+        "item_id": "agent-git-scope-engine",
+        "path": "src/todo_db/cli.py"
+      },
+      {
+        "concept": "atomic audit event envelope",
+        "decision": "reuse",
+        "item_id": "agent-git-scope-engine",
+        "path": "src/todo_db/database.py"
+      },
+      {
+        "concept": "transactional lifecycle and claims",
+        "decision": "extend",
+        "item_id": "agent-git-scope-engine",
+        "path": "src/todo_db/tracker.py"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "agent-git-scope-engine",
+        "kind": "do_not_modify",
+        "path_glob": ".todo-db/**"
+      },
+      {
+        "item_id": "agent-git-scope-engine",
+        "kind": "do_not_modify",
+        "path_glob": "dist/**"
+      },
+      {
+        "item_id": "agent-git-scope-engine",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/agent.py"
+      },
+      {
+        "item_id": "agent-git-scope-engine",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/cli.py"
+      },
+      {
+        "item_id": "agent-git-scope-engine",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/tracker.py"
+      },
+      {
+        "item_id": "agent-git-scope-engine",
+        "kind": "only_modify",
+        "path_glob": "tests/test_agent_git.py"
+      },
+      {
+        "item_id": "agent-git-scope-engine",
+        "kind": "only_modify",
+        "path_glob": "tests/test_cli_tracker.py"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest -q tests/test_cli_tracker.py tests/test_agent_git.py",
+        "description": "Git scope tests",
+        "expected": "all selected tests pass",
+        "item_id": "agent-git-scope-engine",
+        "last_result": "pass",
+        "last_run": "2026-08-18T21:33:35Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "agent-git-scope-engine",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "agent-git-scope-engine",
+        "needs_wid": "w1",
+        "wid": "w2"
+      },
+      {
+        "item_id": "agent-git-scope-engine",
+        "needs_wid": "w2",
+        "wid": "w3"
+      },
+      {
+        "item_id": "agent-git-scope-engine",
+        "needs_wid": "w3",
+        "wid": "w4"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "GitState capture outside transactions implemented in agent.py",
+        "item_id": "agent-git-scope-engine",
+        "notes": null,
+        "started_at": "2026-08-18T21:33:33Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Implement injectable GitState capture outside database transactions",
+        "wid": "w0"
+      },
+      {
+        "evidence": "Root-pinned -C and -z tracked/untracked and rename pair parsing implemented",
+        "item_id": "agent-git-scope-engine",
+        "notes": null,
+        "started_at": "2026-08-18T21:33:33Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Implement -C root, -z tracked/untracked and rename-pair parsing",
+        "wid": "w1"
+      },
+      {
+        "evidence": "Baseline ancestor reachability and divergence detection implemented",
+        "item_id": "agent-git-scope-engine",
+        "notes": null,
+        "started_at": "2026-08-18T21:33:33Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Add baseline ancestor/divergence detection and E_BASE_DIVERGED/E_BASE_UNREACHABLE",
+        "wid": "w2"
+      },
+      {
+        "evidence": "Human rebaseline method and audit events implemented",
+        "item_id": "agent-git-scope-engine",
+        "notes": null,
+        "started_at": "2026-08-18T21:33:33Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Add human-only clean-tree rebaseline with old/new base and reason audit",
+        "wid": "w3"
+      },
+      {
+        "evidence": "Full test coverage in test_agent_git.py",
+        "item_id": "agent-git-scope-engine",
+        "notes": null,
+        "started_at": "2026-08-18T21:33:33Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Test subdirectory, Unicode, newline, rename, delete, stage, worktree, and untracked cases",
+        "wid": "w4"
+      }
+    ]
+  }
+}

@@ -1,0 +1,194 @@
+{
+  "context": "Projection must be opt-in. ready --json currently emits 14 fields and list --json emits the full item; silently narrowing either would break a machine interface.",
+  "description": "Backend query savings do not reduce what reaches a model. Measured earlier, 77 percent of per-item token cost at BenchBox scale is the guardrail payload: work units add 73k tokens, verifications 26k, scope 11k, prior art 10k, and anti-patterns 9.5k across 261 open items. Add opt-in projection and bounding so callers pay only for what they need, plus stable error codes and bounded verification output.",
+  "legacy": {
+    "anti_patterns": [
+      {
+        "dont": "Make projection the default to save tokens",
+        "instead": "Ship projection opt-in behind --fields and leave default shapes byte-identical",
+        "item_id": "opt-compact-output-contracts",
+        "why": "list --json and ready --json are machine interfaces that existing callers already parse"
+      }
+    ],
+    "item_deps": [
+      {
+        "item_id": "opt-compact-output-contracts",
+        "needs_item": "opt-query-budget-harness"
+      }
+    ],
+    "item_meta": {
+      "category": "performance",
+      "completed_at": "2026-08-18T16:07:11Z",
+      "created_at": "2026-08-18T14:56:34Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "Default --json output keeps every field it emits today",
+        "item_id": "opt-compact-output-contracts"
+      },
+      {
+        "behavior": "Exit codes 0, 1, 2, and 4 keep their current meanings",
+        "item_id": "opt-compact-output-contracts"
+      },
+      {
+        "behavior": "Truncation is always explicitly marked, never silent",
+        "item_id": "opt-compact-output-contracts"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "opt-compact-output-contracts",
+        "kind": "do_not_modify",
+        "path_glob": "src/todo_db/audit.py"
+      },
+      {
+        "item_id": "opt-compact-output-contracts",
+        "kind": "do_not_modify",
+        "path_glob": "src/todo_db/backends.py"
+      },
+      {
+        "item_id": "opt-compact-output-contracts",
+        "kind": "do_not_modify",
+        "path_glob": "src/todo_db/migrations/**"
+      },
+      {
+        "item_id": "opt-compact-output-contracts",
+        "kind": "only_modify",
+        "path_glob": "README.md"
+      },
+      {
+        "item_id": "opt-compact-output-contracts",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/cli.py"
+      },
+      {
+        "item_id": "opt-compact-output-contracts",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/tracker.py"
+      },
+      {
+        "item_id": "opt-compact-output-contracts",
+        "kind": "only_modify",
+        "path_glob": "tests/**"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest tests/test_cli_tracker.py tests/test_cli_parity.py -q",
+        "description": "CLI suite",
+        "expected": null,
+        "item_id": "opt-compact-output-contracts",
+        "last_result": "pass",
+        "last_run": "2026-08-18T16:07:07Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run pytest tests/test_query_budget.py -q",
+        "description": "Budget suite",
+        "expected": null,
+        "item_id": "opt-compact-output-contracts",
+        "last_result": "pass",
+        "last_run": "2026-08-18T16:07:07Z",
+        "seq": 2,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run pytest -q",
+        "description": "Full suite",
+        "expected": null,
+        "item_id": "opt-compact-output-contracts",
+        "last_result": "pass",
+        "last_run": "2026-08-18T16:07:11Z",
+        "seq": 3,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "opt-compact-output-contracts",
+        "needs_wid": "w0",
+        "wid": "w5"
+      },
+      {
+        "item_id": "opt-compact-output-contracts",
+        "needs_wid": "w1",
+        "wid": "w5"
+      },
+      {
+        "item_id": "opt-compact-output-contracts",
+        "needs_wid": "w3",
+        "wid": "w5"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "src/todo_db/cli.py:_project_fields",
+        "item_id": "opt-compact-output-contracts",
+        "notes": null,
+        "started_at": "2026-08-18T16:05:21Z",
+        "started_branch": "perf/compact-output-contracts",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Global --fields projection for list, ready, and show",
+        "wid": "w0"
+      },
+      {
+        "evidence": "src/todo_db/cli.py:_output",
+        "item_id": "opt-compact-output-contracts",
+        "notes": null,
+        "started_at": "2026-08-18T16:05:21Z",
+        "started_branch": "perf/compact-output-contracts",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Global --limit and --max-bytes with explicit truncation markers",
+        "wid": "w1"
+      },
+      {
+        "evidence": "src/todo_db/cli.py:error_handling",
+        "item_id": "opt-compact-output-contracts",
+        "notes": null,
+        "started_at": "2026-08-18T16:05:21Z",
+        "started_branch": "perf/compact-output-contracts",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Stable machine-readable error codes across the CLI",
+        "wid": "w2"
+      },
+      {
+        "evidence": "src/todo_db/tracker.py:run_verification",
+        "item_id": "opt-compact-output-contracts",
+        "notes": null,
+        "started_at": "2026-08-18T16:05:21Z",
+        "started_branch": "perf/compact-output-contracts",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Bounded verification output: head and tail with a byte cap",
+        "wid": "w3"
+      },
+      {
+        "evidence": "src/todo_db/cli.py:mutations",
+        "item_id": "opt-compact-output-contracts",
+        "notes": null,
+        "started_at": "2026-08-18T16:05:21Z",
+        "started_branch": "perf/compact-output-contracts",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Mutation results name the next valid action to remove read-back calls",
+        "wid": "w4"
+      },
+      {
+        "evidence": "tests/test_query_budget.py:test_output_metrics_recording",
+        "item_id": "opt-compact-output-contracts",
+        "notes": null,
+        "started_at": "2026-08-18T16:06:55Z",
+        "started_branch": "perf/compact-output-contracts",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Assert output token and byte budgets per command",
+        "wid": "w5"
+      }
+    ]
+  }
+}

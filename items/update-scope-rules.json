@@ -1,0 +1,88 @@
+{
+  "description": "Dogfooding the tracker for the adversarial-review backlog: lint correctly flags all items missing only_modify/do_not_modify scope rules, but update supports no scope amendment — the fourth create-time-only constraint after description (fixed by update), verifications (fixed), and promote guardrails (open). Extend update with --add-scope/--drop-scope carrying the same audit from/to contract and reason gating as verification amendments; then backfill scope onto the review backlog items.",
+  "legacy": {
+    "item_meta": {
+      "completed_at": "2026-09-02T01:25:05Z",
+      "created_at": "2026-07-26T13:04:04Z",
+      "worktree": "todo-db"
+    },
+    "scope_rules": [
+      {
+        "item_id": "update-scope-rules",
+        "kind": "only_modify",
+        "path_glob": ".claude/*"
+      },
+      {
+        "item_id": "update-scope-rules",
+        "kind": "only_modify",
+        "path_glob": ".codex/*"
+      },
+      {
+        "item_id": "update-scope-rules",
+        "kind": "only_modify",
+        "path_glob": ".gemini/*"
+      },
+      {
+        "item_id": "update-scope-rules",
+        "kind": "only_modify",
+        "path_glob": ".gitattributes"
+      },
+      {
+        "item_id": "update-scope-rules",
+        "kind": "only_modify",
+        "path_glob": "scripts/*"
+      },
+      {
+        "item_id": "update-scope-rules",
+        "kind": "only_modify",
+        "path_glob": "skill-sync.lock"
+      },
+      {
+        "item_id": "update-scope-rules",
+        "kind": "only_modify",
+        "path_glob": "skill-sync.yaml"
+      },
+      {
+        "item_id": "update-scope-rules",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/*"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest tests/test_update.py -q",
+        "description": "Suite",
+        "expected": null,
+        "item_id": "update-scope-rules",
+        "last_result": "pass",
+        "last_run": "2026-09-02T01:25:05Z",
+        "seq": 1,
+        "workspace_fingerprint": "1e93e90bf51fd9eaa0a3840e0f46b359a7687acf72b486b9a75771d7edb843b6"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "CLI already exposes --add-only-modify/--drop-only-modify and --add-do-not-modify/--drop-do-not-modify (cli.py:316-318), wired to tracker.update_item add_scope/drop_scope (tracker.py:627-650,836) with reason gating (688). No code change needed, just w1 backfill remains",
+        "item_id": "update-scope-rules",
+        "notes": null,
+        "started_at": null,
+        "started_branch": null,
+        "started_worktree": null,
+        "status": "done",
+        "summary": "add-scope/drop-scope in update_item + CLI + tests",
+        "wid": "w0"
+      },
+      {
+        "evidence": "Backfilled only_modify scopes onto 9 lint-blocked review-backlog items (cutover-rehearsal-drill→scripts/*, guard-env→src/todo_db/*, parity→scripts/*, finding-sync→findings.py, release→workflows/*, schedule→workflows/*, batch→skills/**, pipeline-docs→skills/**, skills-deployment→skill-sync.*). All now 0 lint findings verified.",
+        "item_id": "update-scope-rules",
+        "notes": null,
+        "started_at": null,
+        "started_branch": null,
+        "started_worktree": null,
+        "status": "done",
+        "summary": "Backfill scope rules onto the review-backlog items",
+        "wid": "w1"
+      }
+    ]
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "description": "Config discovery walks to filesystem root: a ~/.todo-db/config.json or ~/Developer ancestor config hijacks every unscaffolded repo beneath it, and a malformed ancestor config bricks descendants. Stop at HOME or the git toplevel. Separately the generated wrapper hardcodes ../.. for REPO_ROOT regardless of --wrapper PATH depth.",
+  "legacy": {
+    "item_meta": {
+      "completed_at": "2026-08-18T21:29:43Z",
+      "created_at": "2026-07-26T13:01:31Z",
+      "worktree": "todo-db"
+    },
+    "verifications": [
+      {
+        "command": "uv run pytest tests/test_bootstrap.py -q",
+        "description": "Suite",
+        "expected": null,
+        "item_id": "bound-config-discovery",
+        "last_result": "pass",
+        "last_run": "2026-08-18T21:29:43Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "Bounded discovery stops at git root and home; wrapper REPO_ROOT derived from path depth",
+        "item_id": "bound-config-discovery",
+        "notes": null,
+        "started_at": "2026-08-18T21:29:40Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Discovery ceiling + wrapper REPO_ROOT derivation + tests",
+        "wid": "w0"
+      }
+    ]
+  }
+}

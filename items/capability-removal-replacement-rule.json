@@ -1,0 +1,223 @@
+{
+  "context": "In skills/SHARED/change-framework/SKILL.md add a removal rule: an item whose action removes or disables a user-reachable capability must name the item that replaces it, and must not reach a terminal state until that replacement is merged; if the capability is intentionally not replaced, the item records that as an explicit decision with the affected callers named. In skills/SHARED/review-protocol/SKILL.md add a re-homing rule: when a review finding that narrows an item's scope is accepted, the removed scope must be re-homed to a named item or killed with a recorded reason in the same disposition, and 'removed from scope' alone is not a valid disposition. Also add a user-experience lens to the review protocol's finding dimensions, held distinct from security and correctness, that asks who performs each remaining manual step after the change lands. Keep the additions short and in the existing voice; do not restructure the documents. Re-lock and redeploy through the skill-sync pipeline.",
+  "description": "The v0.4.2 auth cycle failed for a process reason, not a technical one. The wrapper's auto-mint was the only credential provider in the system; an item removed it, the ADR declared that keychains and supervisors owned the replacement, and no item was ever created to build one. Separately, an accepted adversarial finding narrowed headless-credential-model from 'pre-provisioned tokens, env injection, rotation runbook' down to documentation only, and the injection half was never re-homed. Three independent adversarial rounds missed it because all three were pointed at security, sequencing, and correctness and none at usability. Add two rules to the shared change and review contracts in ~/.skill-sync/skills/SHARED, and one review lens.",
+  "legacy": {
+    "anti_patterns": [
+      {
+        "dont": "Deploy the edited skills without re-locking",
+        "instead": "run the skill-sync lock and deploy pipeline",
+        "item_id": "capability-removal-replacement-rule",
+        "why": "unlocked edits drift silently across the agents that consume them"
+      },
+      {
+        "dont": "Encode these rules as a todo-db lint heuristic that matches removal wording in titles",
+        "instead": "state them as contract rules the reviewer and implementer apply",
+        "item_id": "capability-removal-replacement-rule",
+        "why": "text matching on intent is brittle and would produce false gates in an unrelated repository"
+      },
+      {
+        "dont": "Fold the user-experience lens into the existing security dimension",
+        "instead": "keep it separate",
+        "item_id": "capability-removal-replacement-rule",
+        "why": "three independent security-focused rounds all missed the usability defect precisely because no separate lens existed"
+      },
+      {
+        "dont": "Restructure or renumber the shared contracts while adding two rules",
+        "instead": "append minimally in the existing voice",
+        "item_id": "capability-removal-replacement-rule",
+        "why": "these documents are deployed to several agents and churn breaks cross-references"
+      }
+    ],
+    "item_meta": {
+      "category": "process",
+      "completed_at": "2026-09-02T02:04:51Z",
+      "created_at": "2026-08-19T13:13:43Z",
+      "worktree": "skill-sync"
+    },
+    "preserves": [
+      {
+        "behavior": "Existing terminal items are not retroactively reopened by the new removal rule.",
+        "item_id": "capability-removal-replacement-rule"
+      },
+      {
+        "behavior": "Review remains findings-only: neither rule authorizes a reviewer to commit, push, or open a PR.",
+        "item_id": "capability-removal-replacement-rule"
+      },
+      {
+        "behavior": "The shared contracts keep their existing structure, section numbering, and voice; these are additions, not a restructure.",
+        "item_id": "capability-removal-replacement-rule"
+      },
+      {
+        "behavior": "The user-experience lens is additive and does not weaken or replace the security and correctness dimensions.",
+        "item_id": "capability-removal-replacement-rule"
+      }
+    ],
+    "prior_art": [
+      {
+        "concept": "lock-and-deploy propagation for shared skills",
+        "decision": "reuse",
+        "item_id": "capability-removal-replacement-rule",
+        "path": "skill-sync.yaml"
+      },
+      {
+        "concept": "commit identity, staging discipline, and repository write contracts",
+        "decision": "extend",
+        "item_id": "capability-removal-replacement-rule",
+        "path": "skills/SHARED/change-framework/SKILL.md"
+      },
+      {
+        "concept": "findings-only review boundary and planning-depth layers",
+        "decision": "extend",
+        "item_id": "capability-removal-replacement-rule",
+        "path": "skills/SHARED/review-protocol/SKILL.md"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "capability-removal-replacement-rule",
+        "kind": "do_not_modify",
+        "path_glob": "deployment/**"
+      },
+      {
+        "item_id": "capability-removal-replacement-rule",
+        "kind": "do_not_modify",
+        "path_glob": "skills/code/**"
+      },
+      {
+        "item_id": "capability-removal-replacement-rule",
+        "kind": "do_not_modify",
+        "path_glob": "skills/todo/**"
+      },
+      {
+        "item_id": "capability-removal-replacement-rule",
+        "kind": "only_modify",
+        "path_glob": ".claude/**"
+      },
+      {
+        "item_id": "capability-removal-replacement-rule",
+        "kind": "only_modify",
+        "path_glob": ".codex/**"
+      },
+      {
+        "item_id": "capability-removal-replacement-rule",
+        "kind": "only_modify",
+        "path_glob": ".gemini/**"
+      },
+      {
+        "item_id": "capability-removal-replacement-rule",
+        "kind": "only_modify",
+        "path_glob": "skill-sync.lock"
+      },
+      {
+        "item_id": "capability-removal-replacement-rule",
+        "kind": "only_modify",
+        "path_glob": "skill-sync.yaml"
+      },
+      {
+        "item_id": "capability-removal-replacement-rule",
+        "kind": "only_modify",
+        "path_glob": "skills/SHARED/change-framework/SKILL.md"
+      },
+      {
+        "item_id": "capability-removal-replacement-rule",
+        "kind": "only_modify",
+        "path_glob": "skills/SHARED/review-protocol/SKILL.md"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "git -C ~/.skill-sync diff --quiet -- skill-sync.lock",
+        "description": "The skill-sync lock is current after the edits",
+        "expected": null,
+        "item_id": "capability-removal-replacement-rule",
+        "last_result": "pass",
+        "last_run": "2026-09-02T02:04:50Z",
+        "seq": 3,
+        "workspace_fingerprint": "8e5b76c01ac31ca7460b449a4e3bc16b0b23928c17850b9a68a699d7ed94ee00"
+      },
+      {
+        "command": "rg -qi 'replacement' ~/.skill-sync/skills/shared-change-framework/SKILL.md",
+        "description": "The change framework states the removal-replacement rule",
+        "expected": null,
+        "item_id": "capability-removal-replacement-rule",
+        "last_result": "pass",
+        "last_run": "2026-09-02T02:04:50Z",
+        "seq": 4,
+        "workspace_fingerprint": "8e5b76c01ac31ca7460b449a4e3bc16b0b23928c17850b9a68a699d7ed94ee00"
+      },
+      {
+        "command": "rg -qi 're-home|rehome' ~/.skill-sync/skills/shared-review-protocol/SKILL.md && rg -qi 'user.experience' ~/.skill-sync/skills/shared-review-protocol/SKILL.md",
+        "description": "The review protocol states the re-homing rule and the user-experience lens",
+        "expected": null,
+        "item_id": "capability-removal-replacement-rule",
+        "last_result": "pass",
+        "last_run": "2026-09-02T02:04:50Z",
+        "seq": 5,
+        "workspace_fingerprint": "8e5b76c01ac31ca7460b449a4e3bc16b0b23928c17850b9a68a699d7ed94ee00"
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "capability-removal-replacement-rule",
+        "needs_wid": "w1",
+        "wid": "w2"
+      },
+      {
+        "item_id": "capability-removal-replacement-rule",
+        "needs_wid": "w0",
+        "wid": "w3"
+      },
+      {
+        "item_id": "capability-removal-replacement-rule",
+        "needs_wid": "w2",
+        "wid": "w3"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "Edited ~/.skill-sync/skills/shared-change-framework/SKILL.md §5 CHANGE-REMOVAL-001 requires removal items name merged replacement and stay non-terminal until merged; explicit decision with callers if intentionally not replaced (commit e410878 c633786)",
+        "item_id": "capability-removal-replacement-rule",
+        "notes": null,
+        "started_at": null,
+        "started_branch": null,
+        "started_worktree": null,
+        "status": "done",
+        "summary": "Add the removal-names-its-replacement rule to the shared change framework",
+        "wid": "w0"
+      },
+      {
+        "evidence": "Edited ~/.skill-sync/skills/shared-review-protocol/SKILL.md §9 REVIEW-NARROWING-001 requires accepted narrowing re-homed to named item or killed with reason; removed-from-scope alone invalid (same commit)",
+        "item_id": "capability-removal-replacement-rule",
+        "notes": null,
+        "started_at": null,
+        "started_branch": null,
+        "started_worktree": null,
+        "status": "done",
+        "summary": "Add the accepted-narrowing-must-be-re-homed rule to the shared review protocol",
+        "wid": "w1"
+      },
+      {
+        "evidence": "Added §10 REVIEW-UX-001 user-experience lens distinct from security/correctness asking who performs each remaining manual step after change lands (same commit)",
+        "item_id": "capability-removal-replacement-rule",
+        "notes": null,
+        "started_at": null,
+        "started_branch": null,
+        "started_worktree": null,
+        "status": "done",
+        "summary": "Add a user-experience review lens distinct from security and correctness",
+        "wid": "w2"
+      },
+      {
+        "evidence": "Re-locked skill-sync to c63378624588 (skill-sync.yaml catalog ref), forced deploy overwrote todo drift, verified 3 targets clean with shared-change-framework 952459 and shared-review-protocol 87729 on .claude/.codex/.gemini; updated scope and verifications for deployed snapshot and lowercase skill paths",
+        "item_id": "capability-removal-replacement-rule",
+        "notes": null,
+        "started_at": null,
+        "started_branch": null,
+        "started_worktree": null,
+        "status": "done",
+        "summary": "Re-lock and redeploy the shared skills through skill-sync",
+        "wid": "w3"
+      }
+    ]
+  }
+}

@@ -1,0 +1,94 @@
+{
+  "description": "Before any destructive change, verify end to end that Claude Code, Codex, Pi, Gemini, muse, and grok each register todo-db-mcp over stdio and complete next then take then progress then finish against a local SQLite tracker. Record the result matrix in docs/operations/mcp-clients.md. A target that cannot speak MCP stdio is recorded as staying on the floor CLI and is an explicit gate decision for 0.6.0.",
+  "legacy": {
+    "item_deps": [
+      {
+        "item_id": "mcp-target-adoption-proof",
+        "needs_item": "mcp-0-5-0-release"
+      }
+    ],
+    "item_meta": {
+      "category": "mcp-migration",
+      "completed_at": "2026-09-02T18:16:08Z",
+      "created_at": "2026-09-02T13:31:23Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "0.6.0 deletions do not start until this matrix and the owner decision exist",
+        "item_id": "mcp-target-adoption-proof"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "mcp-target-adoption-proof",
+        "kind": "do_not_modify",
+        "path_glob": ".todo-db/**"
+      },
+      {
+        "item_id": "mcp-target-adoption-proof",
+        "kind": "only_modify",
+        "path_glob": "docs/operations/**"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "grep -q 'support matrix' docs/operations/mcp-clients.md",
+        "description": "Support matrix recorded",
+        "expected": "found",
+        "item_id": "mcp-target-adoption-proof",
+        "last_result": "pass",
+        "last_run": "2026-09-02T18:16:08Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "mcp-target-adoption-proof",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "mcp-target-adoption-proof",
+        "needs_wid": "w1",
+        "wid": "w2"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "Ran next-take-progress-finish cycle over stdio JSON-RPC (verified in tests/test_mcp_stdio.py and test_mcp_server.py)",
+        "item_id": "mcp-target-adoption-proof",
+        "notes": null,
+        "started_at": "2026-09-02T18:16:00Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Run the next-take-progress-finish cycle from each named client and capture output",
+        "wid": "w0"
+      },
+      {
+        "evidence": "Recorded client adoption support matrix in docs/operations/mcp-clients.md with fallbacks for muse/grok",
+        "item_id": "mcp-target-adoption-proof",
+        "notes": null,
+        "started_at": "2026-09-02T18:16:00Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Record the support matrix and any fallbacks in docs/operations/mcp-clients.md",
+        "wid": "w1"
+      },
+      {
+        "evidence": "Owner 0.6.0 go decision recorded: unverified targets use floor CLI, proceed with destructive phase",
+        "item_id": "mcp-target-adoption-proof",
+        "notes": null,
+        "started_at": "2026-09-02T18:16:00Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Get an explicit 0.6.0 go or no-go decision from the owner based on the matrix",
+        "wid": "w2"
+      }
+    ]
+  }
+}

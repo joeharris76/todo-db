@@ -1,0 +1,211 @@
+{
+  "description": "Wire the service into a compact agent namespace with next, take, context, progress, finish, claims, adopt, release, and offline instructions. Extend global fields rather than adding include, define section cursor/limit, preserve exit-code semantics, and distinguish known committed state from unknown hosted mutation outcomes.",
+  "legacy": {
+    "anti_patterns": [
+      {
+        "dont": "Add a second output envelope",
+        "instead": "serialize through the landed compact contract",
+        "item_id": "agent-cli-namespace",
+        "why": "clients and token budgets drift"
+      },
+      {
+        "dont": "Add context --include",
+        "instead": "extend fields and add cursor/limit only",
+        "item_id": "agent-cli-namespace",
+        "why": "global --fields already owns projection"
+      },
+      {
+        "dont": "Treat E_NOTHING_READY as a tool failure",
+        "instead": "exit zero with explicit empty payload",
+        "item_id": "agent-cli-namespace",
+        "why": "empty queue is valid state"
+      }
+    ],
+    "item_deps": [
+      {
+        "item_id": "agent-cli-namespace",
+        "needs_item": "agent-finish-gates"
+      },
+      {
+        "item_id": "agent-cli-namespace",
+        "needs_item": "agent-project-boundary"
+      }
+    ],
+    "item_meta": {
+      "category": "agent-workflow",
+      "completed_at": "2026-08-18T21:40:07Z",
+      "created_at": "2026-08-18T21:15:34Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "E_LINT_GATE/E_SCOPE_GATE exit 1 with structured content, generic/protocol errors exit 2, auth exits 4",
+        "item_id": "agent-cli-namespace"
+      },
+      {
+        "behavior": "E_NOTHING_READY is a successful empty result",
+        "item_id": "agent-cli-namespace"
+      },
+      {
+        "behavior": "Unknown mutation outcomes mandate claims/context reconciliation and are never auto-retried",
+        "item_id": "agent-cli-namespace"
+      },
+      {
+        "behavior": "agent instructions copies the zero-credential finding-offline dispatch pattern and never opens a database",
+        "item_id": "agent-cli-namespace"
+      }
+    ],
+    "prior_art": [
+      {
+        "concept": "atomic audit event envelope",
+        "decision": "reuse",
+        "item_id": "agent-cli-namespace",
+        "path": "src/todo_db/database.py"
+      },
+      {
+        "concept": "transactional lifecycle and claims",
+        "decision": "extend",
+        "item_id": "agent-cli-namespace",
+        "path": "src/todo_db/tracker.py"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "agent-cli-namespace",
+        "kind": "do_not_modify",
+        "path_glob": ".todo-db/**"
+      },
+      {
+        "item_id": "agent-cli-namespace",
+        "kind": "do_not_modify",
+        "path_glob": "dist/**"
+      },
+      {
+        "item_id": "agent-cli-namespace",
+        "kind": "only_modify",
+        "path_glob": "README.md"
+      },
+      {
+        "item_id": "agent-cli-namespace",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/agent.py"
+      },
+      {
+        "item_id": "agent-cli-namespace",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/cli.py"
+      },
+      {
+        "item_id": "agent-cli-namespace",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/errors.py"
+      },
+      {
+        "item_id": "agent-cli-namespace",
+        "kind": "only_modify",
+        "path_glob": "tests/test_cli_agent.py"
+      },
+      {
+        "item_id": "agent-cli-namespace",
+        "kind": "only_modify",
+        "path_glob": "tests/test_cli_parity.py"
+      },
+      {
+        "item_id": "agent-cli-namespace",
+        "kind": "only_modify",
+        "path_glob": "tests/test_query_budget.py"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest -q tests/test_cli_agent.py tests/test_cli_parity.py tests/test_query_budget.py",
+        "description": "Agent CLI tests",
+        "expected": "all selected tests pass",
+        "item_id": "agent-cli-namespace",
+        "last_result": "pass",
+        "last_run": "2026-08-18T21:40:07Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "agent-cli-namespace",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "agent-cli-namespace",
+        "needs_wid": "w1",
+        "wid": "w2"
+      },
+      {
+        "item_id": "agent-cli-namespace",
+        "needs_wid": "w2",
+        "wid": "w3"
+      },
+      {
+        "item_id": "agent-cli-namespace",
+        "needs_wid": "w3",
+        "wid": "w4"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "Nested parser and credential mode classification implemented in cli.py",
+        "item_id": "agent-cli-namespace",
+        "notes": null,
+        "started_at": "2026-08-18T21:40:05Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Add nested parser and read-only/read-write/offline credential classification",
+        "wid": "w0"
+      },
+      {
+        "evidence": "Mapped service start/done to progress command with required evidence",
+        "item_id": "agent-cli-namespace",
+        "notes": null,
+        "started_at": "2026-08-18T21:40:05Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Map service start/done to progress status and define every signature/default",
+        "wid": "w1"
+      },
+      {
+        "evidence": "Global fields and section unit limit serialization boundary implemented",
+        "item_id": "agent-cli-namespace",
+        "notes": null,
+        "started_at": "2026-08-18T21:40:05Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Implement global fields plus section cursor/limit serialization boundary",
+        "wid": "w2"
+      },
+      {
+        "evidence": "Exit code and gate code mapping (E_LINT_GATE, E_SCOPE_GATE, E_VERIFY_GATE) implemented",
+        "item_id": "agent-cli-namespace",
+        "notes": null,
+        "started_at": "2026-08-18T21:40:06Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Implement exit-code and unknown-outcome recovery mapping",
+        "wid": "w3"
+      },
+      {
+        "evidence": "Full end-to-end coverage in test_cli_agent.py",
+        "item_id": "agent-cli-namespace",
+        "notes": null,
+        "started_at": "2026-08-18T21:40:06Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Add CLI parity, stdout purity, no-project, and offline short-circuit tests",
+        "wid": "w4"
+      }
+    ]
+  }
+}

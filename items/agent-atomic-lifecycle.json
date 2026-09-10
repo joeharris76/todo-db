@@ -1,0 +1,217 @@
+{
+  "description": "Add transaction-internal claim/start/done primitives and an AgentWorkflow take/progress/release surface. Take must return an existing one claim or atomically select a new item, progress must require the current claim generation, idempotent replay must be a pure read, and ambiguous hosted commit outcomes must require read-only reconciliation rather than retry.",
+  "legacy": {
+    "anti_patterns": [
+      {
+        "dont": "Call Git while BEGIN IMMEDIATE is held",
+        "instead": "capture GitState before the transaction",
+        "item_id": "agent-atomic-lifecycle",
+        "why": "process latency inflates lock contention"
+      },
+      {
+        "dont": "Refresh a lease on exact replay without an event",
+        "instead": "make replay read-only",
+        "item_id": "agent-atomic-lifecycle",
+        "why": "state changes outside the audit envelope"
+      },
+      {
+        "dont": "Reuse ready_items self-holder predicate for take",
+        "instead": "first return the existing claim, otherwise exclude self-held rows",
+        "item_id": "agent-atomic-lifecycle",
+        "why": "retries re-claim the same item and duplicate events"
+      },
+      {
+        "dont": "Use ready_items()[0] then public claim",
+        "instead": "select and claim inside one caller-owned transaction",
+        "item_id": "agent-atomic-lifecycle",
+        "why": "another process can win between operations"
+      }
+    ],
+    "item_deps": [
+      {
+        "item_id": "agent-atomic-lifecycle",
+        "needs_item": "agent-claim-coordination"
+      },
+      {
+        "item_id": "agent-atomic-lifecycle",
+        "needs_item": "agent-projection-service"
+      }
+    ],
+    "item_meta": {
+      "category": "agent-workflow",
+      "completed_at": "2026-08-18T21:35:35Z",
+      "created_at": "2026-08-18T21:15:34Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "BEGIN IMMEDIATE covers selection, claim update, and claim event as one transaction",
+        "item_id": "agent-atomic-lifecycle"
+      },
+      {
+        "behavior": "Existing direct claim/start/done behavior changes only through explicit refactoring parity tests",
+        "item_id": "agent-atomic-lifecycle"
+      },
+      {
+        "behavior": "Git subprocesses run before the write transaction and their snapshot is passed in",
+        "item_id": "agent-atomic-lifecycle"
+      },
+      {
+        "behavior": "Mutating calls are never automatically retried after timeout or unknown commit outcome",
+        "item_id": "agent-atomic-lifecycle"
+      }
+    ],
+    "prior_art": [
+      {
+        "concept": "atomic audit event envelope",
+        "decision": "reuse",
+        "item_id": "agent-atomic-lifecycle",
+        "path": "src/todo_db/database.py"
+      },
+      {
+        "concept": "transactional lifecycle and claims",
+        "decision": "extend",
+        "item_id": "agent-atomic-lifecycle",
+        "path": "src/todo_db/tracker.py"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "agent-atomic-lifecycle",
+        "kind": "do_not_modify",
+        "path_glob": ".todo-db/**"
+      },
+      {
+        "item_id": "agent-atomic-lifecycle",
+        "kind": "do_not_modify",
+        "path_glob": "dist/**"
+      },
+      {
+        "item_id": "agent-atomic-lifecycle",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/agent.py"
+      },
+      {
+        "item_id": "agent-atomic-lifecycle",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/backends.py"
+      },
+      {
+        "item_id": "agent-atomic-lifecycle",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/database.py"
+      },
+      {
+        "item_id": "agent-atomic-lifecycle",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/tracker.py"
+      },
+      {
+        "item_id": "agent-atomic-lifecycle",
+        "kind": "only_modify",
+        "path_glob": "tests/test_agent_service.py"
+      },
+      {
+        "item_id": "agent-atomic-lifecycle",
+        "kind": "only_modify",
+        "path_glob": "tests/test_concurrency.py"
+      },
+      {
+        "item_id": "agent-atomic-lifecycle",
+        "kind": "only_modify",
+        "path_glob": "tests/test_hosted_backend.py"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest -q tests/test_agent_service.py tests/test_concurrency.py tests/test_hosted_backend.py",
+        "description": "Atomic lifecycle tests",
+        "expected": "all selected tests pass",
+        "item_id": "agent-atomic-lifecycle",
+        "last_result": "pass",
+        "last_run": "2026-08-18T21:35:35Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "agent-atomic-lifecycle",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "agent-atomic-lifecycle",
+        "needs_wid": "w1",
+        "wid": "w2"
+      },
+      {
+        "item_id": "agent-atomic-lifecycle",
+        "needs_wid": "w2",
+        "wid": "w3"
+      },
+      {
+        "item_id": "agent-atomic-lifecycle",
+        "needs_wid": "w3",
+        "wid": "w4"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "Internal locked claim and lifecycle primitives refactored in tracker.py",
+        "item_id": "agent-atomic-lifecycle",
+        "notes": null,
+        "started_at": "2026-08-18T21:35:32Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Refactor locked lifecycle primitives without changing legacy command defaults",
+        "wid": "w0"
+      },
+      {
+        "evidence": "One-transaction atomic take with existing-claim adoption implemented",
+        "item_id": "agent-atomic-lifecycle",
+        "notes": null,
+        "started_at": "2026-08-18T21:35:32Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Implement one-transaction take with distinct held-item predicates",
+        "wid": "w1"
+      },
+      {
+        "evidence": "Claim-token checked progress and read-only replay receipts implemented",
+        "item_id": "agent-atomic-lifecycle",
+        "notes": null,
+        "started_at": "2026-08-18T21:35:32Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Implement claim-token checked start/done and pure replay receipts",
+        "wid": "w2"
+      },
+      {
+        "evidence": "Unknown commit reconciliation mapped through agent claims/context",
+        "item_id": "agent-atomic-lifecycle",
+        "notes": null,
+        "started_at": "2026-08-18T21:35:33Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Map unknown commit outcomes to reconciliation through agent claims/context",
+        "wid": "w3"
+      },
+      {
+        "evidence": "Local process and adapter concurrency tests verified",
+        "item_id": "agent-atomic-lifecycle",
+        "notes": null,
+        "started_at": "2026-08-18T21:35:33Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Run local process races and hosted-adapter-layer races with honest test names",
+        "wid": "w4"
+      }
+    ]
+  }
+}

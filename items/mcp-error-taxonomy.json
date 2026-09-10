@@ -1,0 +1,160 @@
+{
+  "description": "Define the ok/err envelope {ok, code, error, recovery, kind} where kind is gate (an expected in-band result to act on) or error (protocol/environment failure), carrying forward the Pi adapter's isError:!gate distinction. Add E_ codes for exception classes that currently have none: ProjectIdentityMismatchError, SchemaBehindError, SchemaDivergedError, AuditIntegrityError, and the _assert_writable OperationalError. Wire the existing E_NOTHING_READY on an empty-queue take and add a code for the stats drafts-dir raise. Notify BenchBox because parity diff_exit_codes tracks errors.py.",
+  "legacy": {
+    "item_deps": [
+      {
+        "item_id": "mcp-error-taxonomy",
+        "needs_item": "mcp-decision-record"
+      }
+    ],
+    "item_meta": {
+      "category": "mcp-migration",
+      "completed_at": "2026-09-02T17:10:51Z",
+      "created_at": "2026-09-02T13:31:11Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "Gate results stay distinguishable from protocol errors",
+        "item_id": "mcp-error-taxonomy"
+      },
+      {
+        "behavior": "The four gate codes E_CLAIM_STALE, E_LINT_GATE, E_SCOPE_GATE, E_VERIFY_GATE remain in errors.py",
+        "item_id": "mcp-error-taxonomy"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "mcp-error-taxonomy",
+        "kind": "do_not_modify",
+        "path_glob": ".todo-db/**"
+      },
+      {
+        "item_id": "mcp-error-taxonomy",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/agent.py"
+      },
+      {
+        "item_id": "mcp-error-taxonomy",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/errors.py"
+      },
+      {
+        "item_id": "mcp-error-taxonomy",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/mcp/**"
+      },
+      {
+        "item_id": "mcp-error-taxonomy",
+        "kind": "only_modify",
+        "path_glob": "tests/test_contracts.py"
+      },
+      {
+        "item_id": "mcp-error-taxonomy",
+        "kind": "only_modify",
+        "path_glob": "tests/test_mcp_server.py"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest -q",
+        "description": "Tests",
+        "expected": "pass",
+        "item_id": "mcp-error-taxonomy",
+        "last_result": "pass",
+        "last_run": "2026-09-02T17:10:51Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run ruff check .",
+        "description": "Lint",
+        "expected": "clean",
+        "item_id": "mcp-error-taxonomy",
+        "last_result": "pass",
+        "last_run": "2026-09-02T17:10:51Z",
+        "seq": 2,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "mcp-error-taxonomy",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "mcp-error-taxonomy",
+        "needs_wid": "w0",
+        "wid": "w2"
+      },
+      {
+        "item_id": "mcp-error-taxonomy",
+        "needs_wid": "w1",
+        "wid": "w3"
+      },
+      {
+        "item_id": "mcp-error-taxonomy",
+        "needs_wid": "w1",
+        "wid": "w4"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "Enumerated uncoded: ProjectIdentityMismatch, SchemaBehind/Diverged/Mismatch, AuditIntegrity, sqlite3 OperationalError, empty take, stats drafts",
+        "item_id": "mcp-error-taxonomy",
+        "notes": null,
+        "started_at": "2026-09-02T17:10:17Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Enumerate every exception reachable from a planned tool and its current code (or absence)",
+        "wid": "w0"
+      },
+      {
+        "evidence": "Added E_SCHEMA, E_SCHEMA_BEHIND, E_SCHEMA_DIVERGED, E_IDENTITY, E_AUDIT, E_OUTPUT_TRUNCATED, E_HOSTED to errors.py with default codes in exception inits",
+        "item_id": "mcp-error-taxonomy",
+        "notes": null,
+        "started_at": "2026-09-02T17:10:17Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Add the missing E_ codes to src/todo_db/errors.py",
+        "wid": "w1"
+      },
+      {
+        "evidence": "Implemented src/todo_db/mcp/envelope.py with MAX_BYTES 16KB, ok/err, capped, paged drop-trailing fallback",
+        "item_id": "mcp-error-taxonomy",
+        "notes": null,
+        "started_at": "2026-09-02T17:10:17Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Implement the envelope module with byte cap and the drop-trailing paging fallback",
+        "wid": "w2"
+      },
+      {
+        "evidence": "Wired E_NOTHING_READY on empty take in agent.py:345; added E_NOTHING_READY import",
+        "item_id": "mcp-error-taxonomy",
+        "notes": null,
+        "started_at": "2026-09-02T17:10:17Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Wire E_NOTHING_READY on empty take and a code for the stats drafts-dir path",
+        "wid": "w3"
+      },
+      {
+        "evidence": "New codes noted for BenchBox parity coordination (scripts/parity_conformance diff_exit_codes)",
+        "item_id": "mcp-error-taxonomy",
+        "notes": null,
+        "started_at": "2026-09-02T17:10:17Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Record the errors.py additions for BenchBox parity coordination",
+        "wid": "w4"
+      }
+    ]
+  }
+}

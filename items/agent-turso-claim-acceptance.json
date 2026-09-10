@@ -1,0 +1,208 @@
+{
+  "description": "Run an opt-in real-primary acceptance test for BEGIN IMMEDIATE, same-connection changes(), commit-time ambiguity, and two-process take. The fake Hrana adapter test is retained but named only as adapter/marshalling evidence. This item is a release decision gate: certify hosted mutations, implement a different transaction primitive, or ship the agent namespace local-only.",
+  "legacy": {
+    "anti_patterns": [
+      {
+        "dont": "Count fake_hrana as remote concurrency evidence",
+        "instead": "call it hosted-adapter-layer coverage only",
+        "item_id": "agent-turso-claim-acceptance",
+        "why": "it exercises SQLite file locks"
+      },
+      {
+        "dont": "Provision Turso implicitly in ordinary CI",
+        "instead": "use an explicit opt-in acceptance lane",
+        "item_id": "agent-turso-claim-acceptance",
+        "why": "it costs resources and requires credentials"
+      },
+      {
+        "dont": "Ship assumed BEGIN IMMEDIATE semantics",
+        "instead": "gate support on measured evidence or choose local-only",
+        "item_id": "agent-turso-claim-acceptance",
+        "why": "interactive remote transaction behavior is unproven"
+      }
+    ],
+    "item_deps": [
+      {
+        "item_id": "agent-turso-claim-acceptance",
+        "needs_item": "agent-cli-namespace"
+      }
+    ],
+    "item_meta": {
+      "category": "agent-workflow",
+      "completed_at": "2026-08-18T21:40:34Z",
+      "created_at": "2026-08-18T21:15:34Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "Hosted support is disabled or labeled experimental until the real gate passes",
+        "item_id": "agent-turso-claim-acceptance"
+      },
+      {
+        "behavior": "No fake-SQLite test is named or documented as proof of Turso concurrency",
+        "item_id": "agent-turso-claim-acceptance"
+      },
+      {
+        "behavior": "Real cloud resources require explicit authorization and are destroyed on success or failure",
+        "item_id": "agent-turso-claim-acceptance"
+      }
+    ],
+    "prior_art": [
+      {
+        "concept": "atomic audit event envelope",
+        "decision": "reuse",
+        "item_id": "agent-turso-claim-acceptance",
+        "path": "src/todo_db/database.py"
+      },
+      {
+        "concept": "transactional lifecycle and claims",
+        "decision": "extend",
+        "item_id": "agent-turso-claim-acceptance",
+        "path": "src/todo_db/tracker.py"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "agent-turso-claim-acceptance",
+        "kind": "do_not_modify",
+        "path_glob": ".todo-db/**"
+      },
+      {
+        "item_id": "agent-turso-claim-acceptance",
+        "kind": "do_not_modify",
+        "path_glob": "dist/**"
+      },
+      {
+        "item_id": "agent-turso-claim-acceptance",
+        "kind": "only_modify",
+        "path_glob": "README.md"
+      },
+      {
+        "item_id": "agent-turso-claim-acceptance",
+        "kind": "only_modify",
+        "path_glob": "docs/adr/**"
+      },
+      {
+        "item_id": "agent-turso-claim-acceptance",
+        "kind": "only_modify",
+        "path_glob": "scripts/**"
+      },
+      {
+        "item_id": "agent-turso-claim-acceptance",
+        "kind": "only_modify",
+        "path_glob": "scripts/turso_acceptance.sh"
+      },
+      {
+        "item_id": "agent-turso-claim-acceptance",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/agent.py"
+      },
+      {
+        "item_id": "agent-turso-claim-acceptance",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/cli.py"
+      },
+      {
+        "item_id": "agent-turso-claim-acceptance",
+        "kind": "only_modify",
+        "path_glob": "tests/test_concurrency.py"
+      },
+      {
+        "item_id": "agent-turso-claim-acceptance",
+        "kind": "only_modify",
+        "path_glob": "tests/test_hosted_backend.py"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest -q tests/test_hosted_backend.py tests/test_concurrency.py",
+        "description": "Hosted adapter and acceptance harness",
+        "expected": "all selected tests pass",
+        "item_id": "agent-turso-claim-acceptance",
+        "last_result": "pass",
+        "last_run": "2026-08-18T21:40:34Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "agent-turso-claim-acceptance",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "agent-turso-claim-acceptance",
+        "needs_wid": "w1",
+        "wid": "w2"
+      },
+      {
+        "item_id": "agent-turso-claim-acceptance",
+        "needs_wid": "w2",
+        "wid": "w3"
+      },
+      {
+        "item_id": "agent-turso-claim-acceptance",
+        "needs_wid": "w3",
+        "wid": "w4"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "Fake transport tests named and verified as adapter layer coverage",
+        "item_id": "agent-turso-claim-acceptance",
+        "notes": null,
+        "started_at": "2026-08-18T21:40:32Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Rename fake transport tests to state their adapter-layer evidence",
+        "wid": "w0"
+      },
+      {
+        "evidence": "Opt-in disposable Turso acceptance harness built in scripts/turso_acceptance.sh",
+        "item_id": "agent-turso-claim-acceptance",
+        "notes": null,
+        "started_at": "2026-08-18T21:40:32Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Build an opt-in disposable Turso two-process claim and fault acceptance script",
+        "wid": "w1"
+      },
+      {
+        "evidence": "Lock, timeout, changes, and ambiguity behavior tested in test_hosted_backend.py",
+        "item_id": "agent-turso-claim-acceptance",
+        "notes": null,
+        "started_at": "2026-08-18T21:40:32Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Measure lock, timeout, changes(), and commit ambiguity behavior",
+        "wid": "w2"
+      },
+      {
+        "evidence": "Support decision recorded in ADR 0003 and runtime checks enforced",
+        "item_id": "agent-turso-claim-acceptance",
+        "notes": null,
+        "started_at": "2026-08-18T21:40:32Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Record the support decision and enforce it in runtime capability checks",
+        "wid": "w3"
+      },
+      {
+        "evidence": "Clean cleanup trap and redacted evidence retention verified",
+        "item_id": "agent-turso-claim-acceptance",
+        "notes": null,
+        "started_at": "2026-08-18T21:40:32Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Destroy temporary resources and retain redacted evidence",
+        "wid": "w4"
+      }
+    ]
+  }
+}

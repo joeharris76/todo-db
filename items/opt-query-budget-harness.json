@@ -1,0 +1,180 @@
+{
+  "context": "Local statement counts are necessary but not sufficient: the production path is a remote libsql connection where each statement is a round trip. Count both.",
+  "description": "Phase 0 of the approved tracker-optimization plan. Nothing else in the sequence may land without a way to prove it worked. Add a sql_trace fixture wrapping backends._connect_sqlite with set_trace_callback, a seeded multi-item database fixture, tests/test_query_budget.py pinning current statement counts, and a hosted transport counter wrapping HostedConnection.execute so budgets are assertable on the remote path where round trips (not rows) dominate.",
+  "legacy": {
+    "anti_patterns": [
+      {
+        "dont": "Quote a statement count without its seed cardinality",
+        "instead": "instead record items, work units, and dependency counts alongside every asserted budget",
+        "item_id": "opt-query-budget-harness",
+        "why": "a reviewer cannot tell a 20-item fixture figure from a 2224-item production figure, and this exact ambiguity produced two contradictory review findings"
+      },
+      {
+        "dont": "Seed the budget fixture with a single item",
+        "instead": "Seed >=20 items with dependencies and >=3 work units each so fan-out is visible by construction",
+        "item_id": "opt-query-budget-harness",
+        "why": "A one-item database hides every N+1; this is exactly how ready_items' 222-query fan-out was missed during review"
+      }
+    ],
+    "item_meta": {
+      "category": "performance",
+      "completed_at": "2026-08-18T15:56:15Z",
+      "created_at": "2026-08-18T14:27:56Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "Every asserted budget records the seed cardinality it was measured against",
+        "item_id": "opt-query-budget-harness"
+      },
+      {
+        "behavior": "No production code changes in this item",
+        "item_id": "opt-query-budget-harness"
+      },
+      {
+        "behavior": "The existing test suite passes unchanged",
+        "item_id": "opt-query-budget-harness"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "opt-query-budget-harness",
+        "kind": "do_not_modify",
+        "path_glob": "src/todo_db/**"
+      },
+      {
+        "item_id": "opt-query-budget-harness",
+        "kind": "only_modify",
+        "path_glob": "tests/**"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest tests/test_query_budget.py -q",
+        "description": "Budget suite runs",
+        "expected": null,
+        "item_id": "opt-query-budget-harness",
+        "last_result": "pass",
+        "last_run": "2026-08-18T15:56:11Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run pytest -q",
+        "description": "Full suite unchanged",
+        "expected": null,
+        "item_id": "opt-query-budget-harness",
+        "last_result": "pass",
+        "last_run": "2026-08-18T15:56:15Z",
+        "seq": 2,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run ruff check . && uv run ruff format --check .",
+        "description": "Lint",
+        "expected": null,
+        "item_id": "opt-query-budget-harness",
+        "last_result": "pass",
+        "last_run": "2026-08-18T15:56:15Z",
+        "seq": 3,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "opt-query-budget-harness",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "opt-query-budget-harness",
+        "needs_wid": "w1",
+        "wid": "w2"
+      },
+      {
+        "item_id": "opt-query-budget-harness",
+        "needs_wid": "w0",
+        "wid": "w3"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "tests/conftest.py:sql_trace",
+        "item_id": "opt-query-budget-harness",
+        "notes": null,
+        "started_at": "2026-08-18T15:54:03Z",
+        "started_branch": "perf/query-budget-harness",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "sql_trace fixture in tests/conftest.py wrapping backends._connect_sqlite",
+        "wid": "w0"
+      },
+      {
+        "evidence": "tests/conftest.py:seeded_db",
+        "item_id": "opt-query-budget-harness",
+        "notes": null,
+        "started_at": "2026-08-18T15:55:55Z",
+        "started_branch": "perf/query-budget-harness",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Seeded fixture: >=20 items, dependencies, >=3 work units each",
+        "wid": "w1"
+      },
+      {
+        "evidence": "tests/test_query_budget.py",
+        "item_id": "opt-query-budget-harness",
+        "notes": null,
+        "started_at": "2026-08-18T15:55:55Z",
+        "started_branch": "perf/query-budget-harness",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "tests/test_query_budget.py pinning baseline counts per command",
+        "wid": "w2"
+      },
+      {
+        "evidence": "tests/conftest.py:traced_hosted_execute",
+        "item_id": "opt-query-budget-harness",
+        "notes": null,
+        "started_at": "2026-08-18T15:55:55Z",
+        "started_branch": "perf/query-budget-harness",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Hosted transport counter wrapping HostedConnection.execute",
+        "wid": "w3"
+      },
+      {
+        "evidence": "tests/conftest.py:record_output",
+        "item_id": "opt-query-budget-harness",
+        "notes": null,
+        "started_at": "2026-08-18T15:55:55Z",
+        "started_branch": "perf/query-budget-harness",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Record stdout and stderr bytes and estimated output tokens",
+        "wid": "w4"
+      },
+      {
+        "evidence": "tests/conftest.py:phase",
+        "item_id": "opt-query-budget-harness",
+        "notes": null,
+        "started_at": "2026-08-18T15:55:55Z",
+        "started_branch": "perf/query-budget-harness",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Split counts into database open, command operation, and render",
+        "wid": "w5"
+      },
+      {
+        "evidence": "tests/conftest.py:record_tool_invocation",
+        "item_id": "opt-query-budget-harness",
+        "notes": null,
+        "started_at": "2026-08-18T15:55:55Z",
+        "started_branch": "perf/query-budget-harness",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Count tool invocations per full item lifecycle",
+        "wid": "w6"
+      }
+    ]
+  }
+}

@@ -1,0 +1,225 @@
+{
+  "context": "Replica removal was justified by row volume. If per-statement round-trip latency rather than row volume dominates write commands, the replica still earns its keep and the removal must not proceed.",
+  "description": "Decision gate for the replica architecture; produces evidence only. Measure against the live primary: p50 and p95 latency, request and response bytes, behaviour with large audit histories, concurrent claims, read-your-write consistency, sync failure and retry, temporary network interruption, auth refresh, full-audit cost, and two-process correctness. Cover list, ready, show, create, claim, start, done, complete, release, and update, plus read-write open overhead alone since _migrate becomes remote work without a replica. Compare three arms, not two: embedded replica as today, direct primary, and the replica extended to read-only commands. Change no connection behaviour in this item.",
+  "legacy": {
+    "anti_patterns": [
+      {
+        "dont": "Benchmark before the round-trip reductions land",
+        "instead": "instead run this after the N+1 and compact-output work so the measurement reflects the real workload",
+        "item_id": "opt-hosted-latency-measurement",
+        "why": "fewer CLI opens and fewer statements per open change which architecture wins"
+      },
+      {
+        "dont": "Benchmark only list and show",
+        "instead": "Measure every write verb plus open overhead in isolation",
+        "item_id": "opt-hosted-latency-measurement",
+        "why": "Write commands carry the read-write open path and the delegated transaction, which is where removing the replica actually costs"
+      },
+      {
+        "dont": "Reuse the in-process fake libsql monkeypatch for the subprocess concurrency test",
+        "instead": "Build an importable fake transport the child selects by environment variable, or run a controlled real-hosted integration test",
+        "item_id": "opt-hosted-latency-measurement",
+        "why": "test_concurrency.py spawns separate uv subprocesses which cannot inherit test_hosted_backend.py's monkeypatched module"
+      }
+    ],
+    "item_deps": [
+      {
+        "item_id": "opt-hosted-latency-measurement",
+        "needs_item": "opt-audit-head-check-on-open"
+      },
+      {
+        "item_id": "opt-hosted-latency-measurement",
+        "needs_item": "opt-get-item-bulk-work-needs"
+      },
+      {
+        "item_id": "opt-hosted-latency-measurement",
+        "needs_item": "opt-lint-all-bulk-load"
+      },
+      {
+        "item_id": "opt-hosted-latency-measurement",
+        "needs_item": "opt-ready-items-single-query"
+      }
+    ],
+    "item_meta": {
+      "category": "measurement",
+      "completed_at": "2026-08-18T16:14:42Z",
+      "created_at": "2026-08-18T14:27:57Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "No production connection behaviour changes in this item",
+        "item_id": "opt-hosted-latency-measurement"
+      },
+      {
+        "behavior": "The existing replica path keeps working throughout",
+        "item_id": "opt-hosted-latency-measurement"
+      },
+      {
+        "behavior": "Three arms are measured, not two: replica as today, direct primary, and replica extended to read-only commands",
+        "item_id": "opt-hosted-latency-measurement"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "opt-hosted-latency-measurement",
+        "kind": "do_not_modify",
+        "path_glob": "src/todo_db/backends.py"
+      },
+      {
+        "item_id": "opt-hosted-latency-measurement",
+        "kind": "do_not_modify",
+        "path_glob": "src/todo_db/models.py"
+      },
+      {
+        "item_id": "opt-hosted-latency-measurement",
+        "kind": "only_modify",
+        "path_glob": "_project/**"
+      },
+      {
+        "item_id": "opt-hosted-latency-measurement",
+        "kind": "only_modify",
+        "path_glob": "scripts/**"
+      },
+      {
+        "item_id": "opt-hosted-latency-measurement",
+        "kind": "only_modify",
+        "path_glob": "tests/**"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest tests/test_hosted_backend.py tests/test_concurrency.py -q",
+        "description": "Hosted suite",
+        "expected": null,
+        "item_id": "opt-hosted-latency-measurement",
+        "last_result": "pass",
+        "last_run": "2026-08-18T16:14:38Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run pytest -q",
+        "description": "Full suite",
+        "expected": null,
+        "item_id": "opt-hosted-latency-measurement",
+        "last_result": "pass",
+        "last_run": "2026-08-18T16:14:42Z",
+        "seq": 2,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "opt-hosted-latency-measurement",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "opt-hosted-latency-measurement",
+        "needs_wid": "w2",
+        "wid": "w3"
+      },
+      {
+        "item_id": "opt-hosted-latency-measurement",
+        "needs_wid": "w2",
+        "wid": "w4"
+      },
+      {
+        "item_id": "opt-hosted-latency-measurement",
+        "needs_wid": "w3",
+        "wid": "w4"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "tests/fake_hrana.py",
+        "item_id": "opt-hosted-latency-measurement",
+        "notes": null,
+        "started_at": "2026-08-18T16:12:28Z",
+        "started_branch": "perf/hosted-latency-measurement",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Importable fake Hrana transport a subprocess can load by env var",
+        "wid": "w0"
+      },
+      {
+        "evidence": "tests/test_hosted_latency.py:test_two_process_hosted_claim_race",
+        "item_id": "opt-hosted-latency-measurement",
+        "notes": null,
+        "started_at": "2026-08-18T16:12:48Z",
+        "started_branch": "perf/hosted-latency-measurement",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Two-process hosted claim race test using that transport",
+        "wid": "w1"
+      },
+      {
+        "evidence": "tests/test_hosted_latency.py:test_latency_harness_replica_vs_direct_and_third_arm",
+        "item_id": "opt-hosted-latency-measurement",
+        "notes": null,
+        "started_at": "2026-08-18T16:12:28Z",
+        "started_branch": "perf/hosted-latency-measurement",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Latency harness: p50/p95 per command, replica versus direct",
+        "wid": "w2"
+      },
+      {
+        "evidence": "tests/test_hosted_latency.py:test_read_write_open_overhead_in_isolation",
+        "item_id": "opt-hosted-latency-measurement",
+        "notes": null,
+        "started_at": "2026-08-18T16:12:48Z",
+        "started_branch": "perf/hosted-latency-measurement",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Measure read-write open overhead in isolation",
+        "wid": "w3"
+      },
+      {
+        "evidence": "_project/decisions/0002-hosted-replica-measurement.md",
+        "item_id": "opt-hosted-latency-measurement",
+        "notes": null,
+        "started_at": "2026-08-18T16:12:51Z",
+        "started_branch": "perf/hosted-latency-measurement",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Write the audit note recording the gate outcome",
+        "wid": "w4"
+      },
+      {
+        "evidence": "tests/test_hosted_latency.py:test_latency_harness_replica_vs_direct_and_third_arm",
+        "item_id": "opt-hosted-latency-measurement",
+        "notes": null,
+        "started_at": "2026-08-18T16:12:29Z",
+        "started_branch": "perf/hosted-latency-measurement",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Third arm",
+        "wid": "w5"
+      },
+      {
+        "evidence": "tests/test_hosted_latency.py:test_latency_harness_replica_vs_direct_and_third_arm",
+        "item_id": "opt-hosted-latency-measurement",
+        "notes": null,
+        "started_at": "2026-08-18T16:12:29Z",
+        "started_branch": "perf/hosted-latency-measurement",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Record request and response bytes alongside latency",
+        "wid": "w6"
+      },
+      {
+        "evidence": "tests/test_hosted_latency.py:test_sync_failure_retry_interruption_and_auth_refresh",
+        "item_id": "opt-hosted-latency-measurement",
+        "notes": null,
+        "started_at": "2026-08-18T16:12:29Z",
+        "started_branch": "perf/hosted-latency-measurement",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Measure sync failure, retry, interruption, and auth refresh behaviour",
+        "wid": "w7"
+      }
+    ]
+  }
+}

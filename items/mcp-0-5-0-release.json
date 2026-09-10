@@ -1,0 +1,177 @@
+{
+  "description": "Ship 0.5.0 with the MCP server present and the agent CLI and Pi adapter deprecated but functional. Add the additive CHANGELOG entry, deprecation notices in the Pi adapter README, the agent instructions output, and the todo skill, bump the version to 0.5.0, and confirm the mcp SDK Python floor against requires-python and the CI matrix. Run the release gates that a server-plus-allowlist change triggers.",
+  "legacy": {
+    "item_deps": [
+      {
+        "item_id": "mcp-0-5-0-release",
+        "needs_item": "mcp-connection-model"
+      },
+      {
+        "item_id": "mcp-0-5-0-release",
+        "needs_item": "mcp-cross-agent-enablement"
+      },
+      {
+        "item_id": "mcp-0-5-0-release",
+        "needs_item": "mcp-stdio-conformance"
+      }
+    ],
+    "item_meta": {
+      "category": "mcp-migration",
+      "completed_at": "2026-09-02T18:10:43Z",
+      "created_at": "2026-09-02T13:31:23Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "0.5.0 removes nothing; the agent CLI and Pi adapter still work",
+        "item_id": "mcp-0-5-0-release"
+      },
+      {
+        "behavior": "The floor CLI still has zero new runtime dependencies",
+        "item_id": "mcp-0-5-0-release"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "mcp-0-5-0-release",
+        "kind": "do_not_modify",
+        "path_glob": ".todo-db/**"
+      },
+      {
+        "item_id": "mcp-0-5-0-release",
+        "kind": "do_not_modify",
+        "path_glob": "dist/**"
+      },
+      {
+        "item_id": "mcp-0-5-0-release",
+        "kind": "only_modify",
+        "path_glob": ".github/workflows/**"
+      },
+      {
+        "item_id": "mcp-0-5-0-release",
+        "kind": "only_modify",
+        "path_glob": "CHANGELOG.md"
+      },
+      {
+        "item_id": "mcp-0-5-0-release",
+        "kind": "only_modify",
+        "path_glob": "docs/**"
+      },
+      {
+        "item_id": "mcp-0-5-0-release",
+        "kind": "only_modify",
+        "path_glob": "integrations/pi/README.md"
+      },
+      {
+        "item_id": "mcp-0-5-0-release",
+        "kind": "only_modify",
+        "path_glob": "pyproject.toml"
+      },
+      {
+        "item_id": "mcp-0-5-0-release",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/cli.py"
+      },
+      {
+        "item_id": "mcp-0-5-0-release",
+        "kind": "only_modify",
+        "path_glob": "uv.lock"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest -q",
+        "description": "Tests",
+        "expected": "pass",
+        "item_id": "mcp-0-5-0-release",
+        "last_result": "pass",
+        "last_run": "2026-09-02T18:10:41Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run ruff check .",
+        "description": "Lint",
+        "expected": "clean",
+        "item_id": "mcp-0-5-0-release",
+        "last_result": "pass",
+        "last_run": "2026-09-02T18:10:41Z",
+        "seq": 2,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run pytest -q tests/test_packaging_smoke.py",
+        "description": "Packaging smoke",
+        "expected": "pass",
+        "item_id": "mcp-0-5-0-release",
+        "last_result": "pass",
+        "last_run": "2026-09-02T18:10:43Z",
+        "seq": 3,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "mcp-0-5-0-release",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "mcp-0-5-0-release",
+        "needs_wid": "w0",
+        "wid": "w2"
+      },
+      {
+        "item_id": "mcp-0-5-0-release",
+        "needs_wid": "w1",
+        "wid": "w3"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "Re-ran full test suite (270 passed), ruff clean, packaging smoke (1 passed)",
+        "item_id": "mcp-0-5-0-release",
+        "notes": null,
+        "started_at": "2026-09-02T17:26:51Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Re-run the full test suite and the packaging smoke test",
+        "wid": "w0"
+      },
+      {
+        "evidence": "Added CHANGELOG 0.5.0 entry, deprecation notices in pi README and cli instructions",
+        "item_id": "mcp-0-5-0-release",
+        "notes": null,
+        "started_at": "2026-09-02T17:26:52Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Add the additive CHANGELOG entry and deprecation notices",
+        "wid": "w1"
+      },
+      {
+        "evidence": "Bumped pyproject version to 0.5.0; mcp SDK floor >=3.10 confirmed, no requires-python or CI matrix move",
+        "item_id": "mcp-0-5-0-release",
+        "notes": null,
+        "started_at": "2026-09-02T17:26:52Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Bump version to 0.5.0 and reconcile requires-python and the CI matrix with the mcp SDK floor",
+        "wid": "w2"
+      },
+      {
+        "evidence": "Release-gate checklist for wrapper/allowlist-adjacent change: tests, smoke, ruff, and snapshot drift all passed",
+        "item_id": "mcp-0-5-0-release",
+        "notes": null,
+        "started_at": "2026-09-02T17:26:52Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Run the release-gate checklist for a wrapper-and-allowlist-adjacent change",
+        "wid": "w3"
+      }
+    ]
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "description": "One malformed draft raises TodoError and aborts the entire finding sync, blocking every valid draft behind it; the create-time template's placeholder body fails the sync validator if landed unedited. Sync should skip+report malformed drafts and exit nonzero without blocking the rest; template should validate or create should warn.",
+  "legacy": {
+    "item_meta": {
+      "completed_at": "2026-09-02T01:52:36Z",
+      "created_at": "2026-07-26T13:01:31Z",
+      "worktree": "todo-db"
+    },
+    "scope_rules": [
+      {
+        "item_id": "finding-sync-robustness",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/findings.py"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest tests/test_findings.py -q",
+        "description": "Suite",
+        "expected": null,
+        "item_id": "finding-sync-robustness",
+        "last_result": "pass",
+        "last_run": "2026-09-02T01:52:36Z",
+        "seq": 1,
+        "workspace_fingerprint": "b60c5bea4ee18b6d818cb7d1fb2562e6c99559069c07ab77d54a31377afd59cd"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "per-draft isolation in sync_drafts (skip invalid with warning, exit 2, land valids), create_draft warns on placeholder via stderr; tests 15 pass",
+        "item_id": "finding-sync-robustness",
+        "notes": null,
+        "started_at": null,
+        "started_branch": null,
+        "started_worktree": null,
+        "status": "done",
+        "summary": "Isolate per-draft failures + template/validator coherence + tests",
+        "wid": "w0"
+      }
+    ]
+  }
+}

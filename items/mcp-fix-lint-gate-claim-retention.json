@@ -1,0 +1,118 @@
+{
+  "description": "AgentWorkflow.finish releases the claim and its token before raising E_LINT_GATE, contradicting ADR 0003 2.5 which classifies lint findings as a code failure for which the claim is retained. Fix finish to retain the claim on a lint-gate failure so a model can repair the plan and retry within its lease. Structural failures (missing dependencies, malformed definitions) still release immediately.",
+  "legacy": {
+    "item_deps": [
+      {
+        "item_id": "mcp-fix-lint-gate-claim-retention",
+        "needs_item": "mcp-decision-record"
+      }
+    ],
+    "item_meta": {
+      "category": "mcp-migration",
+      "completed_at": "2026-09-02T17:08:45Z",
+      "created_at": "2026-09-02T13:31:11Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "A failed gate never completes the item",
+        "item_id": "mcp-fix-lint-gate-claim-retention"
+      },
+      {
+        "behavior": "Structural planning failures still release the claim with exact remediation (ADR 0003 2.5)",
+        "item_id": "mcp-fix-lint-gate-claim-retention"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "mcp-fix-lint-gate-claim-retention",
+        "kind": "do_not_modify",
+        "path_glob": ".todo-db/**"
+      },
+      {
+        "item_id": "mcp-fix-lint-gate-claim-retention",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/agent.py"
+      },
+      {
+        "item_id": "mcp-fix-lint-gate-claim-retention",
+        "kind": "only_modify",
+        "path_glob": "tests/test_agent_service.py"
+      },
+      {
+        "item_id": "mcp-fix-lint-gate-claim-retention",
+        "kind": "only_modify",
+        "path_glob": "tests/test_cli_agent.py"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest -q",
+        "description": "Tests",
+        "expected": "pass",
+        "item_id": "mcp-fix-lint-gate-claim-retention",
+        "last_result": "pass",
+        "last_run": "2026-09-02T17:08:45Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run ruff check .",
+        "description": "Lint",
+        "expected": "clean",
+        "item_id": "mcp-fix-lint-gate-claim-retention",
+        "last_result": "pass",
+        "last_run": "2026-09-02T17:08:45Z",
+        "seq": 2,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "mcp-fix-lint-gate-claim-retention",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "mcp-fix-lint-gate-claim-retention",
+        "needs_wid": "w1",
+        "wid": "w2"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "Confirmed release-before-raise at agent.py:646 and test_structural_finish_gate expecting release",
+        "item_id": "mcp-fix-lint-gate-claim-retention",
+        "notes": null,
+        "started_at": "2026-09-02T17:08:03Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Confirm the release-before-raise path in AgentWorkflow.finish and its test coverage",
+        "wid": "w0"
+      },
+      {
+        "evidence": "Split lint-only (retain claim) vs structural (release) in AgentWorkflow.finish, message claim retained vs streamlined claim released",
+        "item_id": "mcp-fix-lint-gate-claim-retention",
+        "notes": null,
+        "started_at": "2026-09-02T17:08:03Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Retain the claim on E_LINT_GATE while keeping structural-failure release",
+        "wid": "w1"
+      },
+      {
+        "evidence": "Updated test_structural_finish_gate to expect retained on lint and released on block, added structural block case",
+        "item_id": "mcp-fix-lint-gate-claim-retention",
+        "notes": null,
+        "started_at": "2026-09-02T17:08:03Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Update tests/test_agent_service.py and tests/test_cli_agent.py for the new behavior",
+        "wid": "w2"
+      }
+    ]
+  }
+}

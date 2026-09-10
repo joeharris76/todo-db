@@ -1,0 +1,165 @@
+{
+  "description": "tracker.py:1430-1448 runs one dependency-count query per candidate item. BenchBox has 222 candidates, so todo ready costs ~222 remote round trips. Replace with a single query using NOT EXISTS, and replace SELECT * with the columns actually rendered. Target: 222 statements to 1.",
+  "legacy": {
+    "anti_patterns": [
+      {
+        "dont": "Change which items ready returns while optimizing how they are found",
+        "instead": "Pin the returned id set against the seeded fixture before and after the rewrite",
+        "item_id": "opt-ready-items-single-query",
+        "why": "ready drives claim selection across worktrees; a silent set change misroutes concurrent agents"
+      },
+      {
+        "dont": "Narrow the ready --json field set while optimizing the query",
+        "instead": "instead keep the default shape byte-identical and expose projection separately through --fields",
+        "item_id": "opt-ready-items-single-query",
+        "why": "ready --json is a machine interface that existing callers parse, and dropping 8 of its 14 fields is a silent breaking change"
+      }
+    ],
+    "item_deps": [
+      {
+        "item_id": "opt-ready-items-single-query",
+        "needs_item": "opt-query-budget-harness"
+      }
+    ],
+    "item_meta": {
+      "category": "performance",
+      "completed_at": "2026-08-18T15:57:48Z",
+      "created_at": "2026-08-18T14:27:56Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "Default ready --json keeps all 14 fields it emits today: approach, blocked_reason, category, claimed_at, claimed_by, completed_at, completed_pr, created_at, description, id, priority, state, title, worktree",
+        "item_id": "opt-ready-items-single-query"
+      },
+      {
+        "behavior": "Ordering stays priority rank then id",
+        "item_id": "opt-ready-items-single-query"
+      },
+      {
+        "behavior": "ready excludes blocked items",
+        "item_id": "opt-ready-items-single-query"
+      },
+      {
+        "behavior": "ready excludes items claimed by another actor under a live lease",
+        "item_id": "opt-ready-items-single-query"
+      },
+      {
+        "behavior": "ready excludes items with unmet dependencies",
+        "item_id": "opt-ready-items-single-query"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "opt-ready-items-single-query",
+        "kind": "do_not_modify",
+        "path_glob": "src/todo_db/backends.py"
+      },
+      {
+        "item_id": "opt-ready-items-single-query",
+        "kind": "do_not_modify",
+        "path_glob": "src/todo_db/migrations/**"
+      },
+      {
+        "item_id": "opt-ready-items-single-query",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/tracker.py"
+      },
+      {
+        "item_id": "opt-ready-items-single-query",
+        "kind": "only_modify",
+        "path_glob": "tests/**"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest tests/test_tracker.py tests/test_cli_tracker.py -q",
+        "description": "Tracker suite",
+        "expected": null,
+        "item_id": "opt-ready-items-single-query",
+        "last_result": "pass",
+        "last_run": "2026-08-18T15:57:44Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run pytest tests/test_query_budget.py -q",
+        "description": "Budget improved",
+        "expected": null,
+        "item_id": "opt-ready-items-single-query",
+        "last_result": "pass",
+        "last_run": "2026-08-18T15:57:44Z",
+        "seq": 2,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run pytest -q",
+        "description": "Full suite",
+        "expected": null,
+        "item_id": "opt-ready-items-single-query",
+        "last_result": "pass",
+        "last_run": "2026-08-18T15:57:48Z",
+        "seq": 3,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "opt-ready-items-single-query",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "opt-ready-items-single-query",
+        "needs_wid": "w0",
+        "wid": "w2"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "src/todo_db/tracker.py:ready_items",
+        "item_id": "opt-ready-items-single-query",
+        "notes": null,
+        "started_at": "2026-08-18T15:57:11Z",
+        "started_branch": "perf/ready-items-single-query",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Rewrite ready_items as one query with a NOT EXISTS dependency predicate",
+        "wid": "w0"
+      },
+      {
+        "evidence": "src/todo_db/tracker.py:ready_items:SELECT",
+        "item_id": "opt-ready-items-single-query",
+        "notes": null,
+        "started_at": "2026-08-18T15:57:31Z",
+        "started_branch": "perf/ready-items-single-query",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Replace SELECT * with the rendered column projection",
+        "wid": "w1"
+      },
+      {
+        "evidence": "tests/test_query_budget.py:test_baseline_counts_per_command",
+        "item_id": "opt-ready-items-single-query",
+        "notes": null,
+        "started_at": "2026-08-18T15:57:31Z",
+        "started_branch": "perf/ready-items-single-query",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Assert the new statement budget in test_query_budget.py",
+        "wid": "w2"
+      },
+      {
+        "evidence": "src/todo_db/tracker.py:ready_items:ORDER BY",
+        "item_id": "opt-ready-items-single-query",
+        "notes": null,
+        "started_at": "2026-08-18T15:57:11Z",
+        "started_branch": "perf/ready-items-single-query",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Push claim lease and priority ordering into the same single query",
+        "wid": "w3"
+      }
+    ]
+  }
+}

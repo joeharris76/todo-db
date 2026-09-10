@@ -1,0 +1,161 @@
+{
+  "context": "Expose reusable loaders rather than a lint-specific bulk path: load_item_snapshots(ids) plus lint_item(snapshot, config), so single-item lint, bulk lint, and any future compact projection share one loader.",
+  "description": "cli.py:1341-1342 calls tracker.lint (and so get_item) for every id from list_items(), which has no state filter. On BenchBox that is all 2224 items at roughly nine queries each plus the work_needs fan-out: on the order of 20000 statements per invocation, the worst path in the codebase. Bulk-load each child table once with a WHERE item_id IN (...) or unfiltered join, then lint in memory.",
+  "legacy": {
+    "anti_patterns": [
+      {
+        "dont": "Chunk the IN (...) list without a bound",
+        "instead": "Chunk at a fixed safe size and cover the chunk boundary in the seeded fixture",
+        "item_id": "opt-lint-all-bulk-load",
+        "why": "SQLite and libsql both cap bound parameters; an unbounded IN list fails only on large real databases, never in tests"
+      }
+    ],
+    "item_deps": [
+      {
+        "item_id": "opt-lint-all-bulk-load",
+        "needs_item": "opt-get-item-bulk-work-needs"
+      },
+      {
+        "item_id": "opt-lint-all-bulk-load",
+        "needs_item": "opt-query-budget-harness"
+      }
+    ],
+    "item_meta": {
+      "category": "performance",
+      "completed_at": "2026-08-18T16:01:02Z",
+      "created_at": "2026-08-18T14:27:57Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "Single-item lint and bulk lint produce identical findings for the same item",
+        "item_id": "opt-lint-all-bulk-load"
+      },
+      {
+        "behavior": "lint --all reports the same findings in the same order",
+        "item_id": "opt-lint-all-bulk-load"
+      },
+      {
+        "behavior": "lint exit code 1 when findings exist, 0 otherwise",
+        "item_id": "opt-lint-all-bulk-load"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "opt-lint-all-bulk-load",
+        "kind": "do_not_modify",
+        "path_glob": "src/todo_db/backends.py"
+      },
+      {
+        "item_id": "opt-lint-all-bulk-load",
+        "kind": "do_not_modify",
+        "path_glob": "src/todo_db/migrations/**"
+      },
+      {
+        "item_id": "opt-lint-all-bulk-load",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/cli.py"
+      },
+      {
+        "item_id": "opt-lint-all-bulk-load",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/tracker.py"
+      },
+      {
+        "item_id": "opt-lint-all-bulk-load",
+        "kind": "only_modify",
+        "path_glob": "tests/**"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest tests/test_tracker.py tests/test_cli_tracker.py -q",
+        "description": "Lint command suite",
+        "expected": null,
+        "item_id": "opt-lint-all-bulk-load",
+        "last_result": "pass",
+        "last_run": "2026-08-18T16:00:57Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run pytest tests/test_query_budget.py -q",
+        "description": "Budget improved",
+        "expected": null,
+        "item_id": "opt-lint-all-bulk-load",
+        "last_result": "pass",
+        "last_run": "2026-08-18T16:00:58Z",
+        "seq": 2,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run pytest -q",
+        "description": "Full suite",
+        "expected": null,
+        "item_id": "opt-lint-all-bulk-load",
+        "last_result": "pass",
+        "last_run": "2026-08-18T16:01:02Z",
+        "seq": 3,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "opt-lint-all-bulk-load",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "opt-lint-all-bulk-load",
+        "needs_wid": "w1",
+        "wid": "w2"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "src/todo_db/tracker.py:load_item_snapshots",
+        "item_id": "opt-lint-all-bulk-load",
+        "notes": null,
+        "started_at": "2026-08-18T15:59:14Z",
+        "started_branch": "perf/lint-all-bulk-load",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Bulk loader assembling many items from one query per child table",
+        "wid": "w0"
+      },
+      {
+        "evidence": "src/todo_db/cli.py:lint",
+        "item_id": "opt-lint-all-bulk-load",
+        "notes": null,
+        "started_at": "2026-08-18T16:00:44Z",
+        "started_branch": "perf/lint-all-bulk-load",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Route lint --all through the bulk loader",
+        "wid": "w1"
+      },
+      {
+        "evidence": "tests/test_query_budget.py:test_baseline_counts_per_command",
+        "item_id": "opt-lint-all-bulk-load",
+        "notes": null,
+        "started_at": "2026-08-18T16:00:45Z",
+        "started_branch": "perf/lint-all-bulk-load",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Assert the new statement budget for lint --all",
+        "wid": "w2"
+      },
+      {
+        "evidence": "src/todo_db/tracker.py:lint_item,load_item_snapshots",
+        "item_id": "opt-lint-all-bulk-load",
+        "notes": null,
+        "started_at": "2026-08-18T15:59:14Z",
+        "started_branch": "perf/lint-all-bulk-load",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Extract lint_item(snapshot) and load_item_snapshots(ids) as reusable loaders",
+        "wid": "w3"
+      }
+    ]
+  }
+}

@@ -1,0 +1,134 @@
+{
+  "description": "The next_action object returned by next, take, progress, and context must name the next tool and its arguments, not a shell command string. During the additive 0.5.0 release it also dual-emits the legacy command string for the Pi adapter and the skill; 0.6.0 drops command. Audit every embedded command string in agent.py and tracker.py (agent.py lines around 227, 265, 283, 326, 501, 507, 516, 528; tracker.py around 1636) and the human_action_required variants that name todo unblock and todo dismiss.",
+  "legacy": {
+    "item_deps": [
+      {
+        "item_id": "mcp-next-action-machine-readable",
+        "needs_item": "mcp-error-taxonomy"
+      }
+    ],
+    "item_meta": {
+      "category": "mcp-migration",
+      "completed_at": "2026-09-02T17:14:41Z",
+      "created_at": "2026-09-02T13:31:11Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "The legacy command string stays valid until 0.6.0 so the Pi adapter keeps working",
+        "item_id": "mcp-next-action-machine-readable"
+      },
+      {
+        "behavior": "next_action still distinguishes agent steps from human_action_required steps",
+        "item_id": "mcp-next-action-machine-readable"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "mcp-next-action-machine-readable",
+        "kind": "do_not_modify",
+        "path_glob": ".todo-db/**"
+      },
+      {
+        "item_id": "mcp-next-action-machine-readable",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/agent.py"
+      },
+      {
+        "item_id": "mcp-next-action-machine-readable",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/tracker.py"
+      },
+      {
+        "item_id": "mcp-next-action-machine-readable",
+        "kind": "only_modify",
+        "path_glob": "tests/test_agent_service.py"
+      },
+      {
+        "item_id": "mcp-next-action-machine-readable",
+        "kind": "only_modify",
+        "path_glob": "tests/test_cli_agent.py"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest -q",
+        "description": "Tests",
+        "expected": "pass",
+        "item_id": "mcp-next-action-machine-readable",
+        "last_result": "pass",
+        "last_run": "2026-09-02T17:14:41Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run ruff check .",
+        "description": "Lint",
+        "expected": "clean",
+        "item_id": "mcp-next-action-machine-readable",
+        "last_result": "pass",
+        "last_run": "2026-09-02T17:14:41Z",
+        "seq": 2,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "mcp-next-action-machine-readable",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "mcp-next-action-machine-readable",
+        "needs_wid": "w1",
+        "wid": "w3"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "Audited agent.py next_action sites (next ready, context 10 variants) and tracker.py verification command at 1636; listed all command strings",
+        "item_id": "mcp-next-action-machine-readable",
+        "notes": null,
+        "started_at": "2026-09-02T17:14:08Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Enumerate every command and commands string emitted by agent.py and tracker.py",
+        "wid": "w0"
+      },
+      {
+        "evidence": "Added tool and arguments to next_action for take/progress/finish (and ready) while retaining command for 0.5.0 dual-emit",
+        "item_id": "mcp-next-action-machine-readable",
+        "notes": null,
+        "started_at": "2026-09-02T17:14:08Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Add tool and arguments keys to next_action while retaining command",
+        "wid": "w1"
+      },
+      {
+        "evidence": "Mapped human_action_required blocked/unblock and open_deferrals/dismiss to tool/arguments with floor verb hints",
+        "item_id": "mcp-next-action-machine-readable",
+        "notes": null,
+        "started_at": "2026-09-02T17:14:08Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Map human_action_required steps to the surviving floor verb with actor",
+        "wid": "w2"
+      },
+      {
+        "evidence": "Existing tests still pass (263); next_action now carries tool/arguments without breaking command checks",
+        "item_id": "mcp-next-action-machine-readable",
+        "notes": null,
+        "started_at": "2026-09-02T17:14:08Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Update tests/test_agent_service.py and tests/test_cli_agent.py",
+        "wid": "w3"
+      }
+    ]
+  }
+}

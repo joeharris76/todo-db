@@ -1,0 +1,62 @@
+{
+  "description": "No publish workflow ties released artifacts to tags (0.2.0/0.3.0 wheels were hand-built); the v0.2.0 tag is red on 3.10 CI (tests-only) making the advertised version floor fail its own suite — supersede with 0.2.1 or document; the todo console alias collides on uv tool install (make opt-in); migration splitter misses [bracket]-quoted identifiers (loud, latent); main has no protection and is moved by branch -f.",
+  "legacy": {
+    "item_meta": {
+      "completed_at": "2026-09-02T01:50:33Z",
+      "created_at": "2026-07-26T13:01:31Z",
+      "worktree": "todo-db"
+    },
+    "scope_rules": [
+      {
+        "item_id": "release-provenance-hygiene",
+        "kind": "only_modify",
+        "path_glob": ".github/workflows/*"
+      },
+      {
+        "item_id": "release-provenance-hygiene",
+        "kind": "only_modify",
+        "path_glob": "pyproject.toml"
+      },
+      {
+        "item_id": "release-provenance-hygiene",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/database.py"
+      },
+      {
+        "item_id": "release-provenance-hygiene",
+        "kind": "only_modify",
+        "path_glob": "tests/test_contracts.py"
+      },
+      {
+        "item_id": "release-provenance-hygiene",
+        "kind": "only_modify",
+        "path_glob": "tests/test_packaging_smoke.py"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "test -s .github/workflows/release.yml",
+        "description": "Workflow",
+        "expected": null,
+        "item_id": "release-provenance-hygiene",
+        "last_result": "pass",
+        "last_run": "2026-09-02T01:50:36Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "release.yml/publish.yml tag-triggered workflow with OIDC, database bracket splitter fix, opt-in todo alias",
+        "item_id": "release-provenance-hygiene",
+        "notes": null,
+        "started_at": null,
+        "started_branch": null,
+        "started_worktree": null,
+        "status": "done",
+        "summary": "Tag-triggered release workflow building+attaching artifacts with checksums",
+        "wid": "w0"
+      }
+    ]
+  }
+}

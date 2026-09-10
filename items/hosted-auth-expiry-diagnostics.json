@@ -1,0 +1,140 @@
+{
+  "context": "First read the completed ADR and sanitized fixture evidence. Stop if there is no explicit go decision. On go, decode only the JWT payload locally without verification for advisory exp/iat timing; label it unverified, bound input and decode failures, print no header/payload/signature or non-timing claims, make no network or Turso CLI calls, and never change connect behavior or exit status. Add tests for future, near-expiry, expired, no-exp, opaque, malformed, oversized and adversarial claims. Any expired-token warning remains advisory because only the server establishes validity.",
+  "description": "Decision-gated implementation item for the expiry-diagnostics outcome in docs/adr/0004-hosted-credential-lifecycle.md. Do not decode tokens unless that ADR explicitly approves the feature and sanitized Turso evidence confirms stable JWT shape and exp semantics. If rejected or unsupported, record the evidence and drop this item without source changes. If approved, doctor may report safe timing metadata and warn inside the chosen rotation window, but opaque, malformed, signed-with-unknown-key, or no-exp tokens remain usable and never alter authentication or authorization decisions.",
+  "legacy": {
+    "anti_patterns": [
+      {
+        "dont": "Implement JWT parsing before the ADR records go",
+        "instead": "record a stop and drop this item when evidence or value is insufficient",
+        "item_id": "hosted-auth-expiry-diagnostics",
+        "why": "it mixes policy with speculative runtime code and creates a parser with no approved product requirement"
+      },
+      {
+        "dont": "Treat decoded exp as verified token validity",
+        "instead": "label timing as advisory and leave authentication to Turso",
+        "item_id": "hosted-auth-expiry-diagnostics",
+        "why": "the payload is attacker-controlled until the server verifies signature and policy"
+      }
+    ],
+    "item_deps": [
+      {
+        "item_id": "hosted-auth-expiry-diagnostics",
+        "needs_item": "headless-credential-model"
+      }
+    ],
+    "item_meta": {
+      "category": "security",
+      "created_at": "2026-08-18T23:20:40Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "No token segment or non-timing claim is printed or persisted.",
+        "item_id": "hosted-auth-expiry-diagnostics"
+      },
+      {
+        "behavior": "Opaque, malformed, oversized, and no-exp tokens remain eligible for normal server authentication.",
+        "item_id": "hosted-auth-expiry-diagnostics"
+      },
+      {
+        "behavior": "Unverified JWT claims never influence authorization, credential selection, network access, or process exit status.",
+        "item_id": "hosted-auth-expiry-diagnostics"
+      }
+    ],
+    "prior_art": [
+      {
+        "concept": "binding go/no-go decision and diagnostic constraints",
+        "decision": "extend",
+        "item_id": "hosted-auth-expiry-diagnostics",
+        "path": "docs/adr/0004-hosted-credential-lifecycle.md"
+      },
+      {
+        "concept": "doctor local checks and JSON output",
+        "decision": "extend",
+        "item_id": "hosted-auth-expiry-diagnostics",
+        "path": "src/todo_db/cli.py"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "hosted-auth-expiry-diagnostics",
+        "kind": "only_modify",
+        "path_glob": "CHANGELOG.md"
+      },
+      {
+        "item_id": "hosted-auth-expiry-diagnostics",
+        "kind": "only_modify",
+        "path_glob": "README.md"
+      },
+      {
+        "item_id": "hosted-auth-expiry-diagnostics",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/cli.py"
+      },
+      {
+        "item_id": "hosted-auth-expiry-diagnostics",
+        "kind": "only_modify",
+        "path_glob": "tests/test_doctor.py"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest tests/test_doctor.py -q -k 'expiry or exp or opaque or malformed'",
+        "description": "Expiry diagnostics suite when ADR says go",
+        "expected": null,
+        "item_id": "hosted-auth-expiry-diagnostics",
+        "last_result": null,
+        "last_run": null,
+        "seq": 2,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "hosted-auth-expiry-diagnostics",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "hosted-auth-expiry-diagnostics",
+        "needs_wid": "w1",
+        "wid": "w2"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": null,
+        "item_id": "hosted-auth-expiry-diagnostics",
+        "notes": null,
+        "started_at": null,
+        "started_branch": null,
+        "started_worktree": null,
+        "status": "pending",
+        "summary": "Read ADR evidence and record go or stop decision",
+        "wid": "w0"
+      },
+      {
+        "evidence": null,
+        "item_id": "hosted-auth-expiry-diagnostics",
+        "notes": null,
+        "started_at": null,
+        "started_branch": null,
+        "started_worktree": null,
+        "status": "pending",
+        "summary": "Implement bounded timing-only advisory decode after explicit go",
+        "wid": "w1"
+      },
+      {
+        "evidence": null,
+        "item_id": "hosted-auth-expiry-diagnostics",
+        "notes": null,
+        "started_at": null,
+        "started_branch": null,
+        "started_worktree": null,
+        "status": "pending",
+        "summary": "Test malformed, opaque, no-exp, oversized, and timing-boundary tokens",
+        "wid": "w2"
+      }
+    ]
+  }
+}

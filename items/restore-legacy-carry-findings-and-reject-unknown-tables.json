@@ -1,0 +1,135 @@
+{
+  "context": "1. Add migration 005 bringing findings storage to BenchBox v4: findings.related_paths, findings.suggested_sweep, and finding_sections(id, finding_id, position, heading, text, UNIQUE(finding_id, position)). Compare against _project/scripts/todo_findings.py finding_schema_statements() + finding_migration_v4_statements() in the BenchBox checkout rather than guessing. 2. Extend restore_legacy to load findings, finding_evidence, finding_links, finding_events and finding_sections. 3. Make the importer REJECT unknown tables instead of ignoring them - this is the part that matters most and is worth doing even if the rest slips, because silent discard means any future table vanishes on migration while reporting success. Keep it a hard error naming the unexpected tables. 4. Round-trip a real BenchBox snapshot into a scratch DB and confirm findings survive with audit verify still clean.",
+  "description": "Joe chose option A on 2026-07-30: carry findings across a legacy migration rather than migrate them separately or accept the loss. Two problems today. (1) restore_legacy (src/todo_db/database.py:463) validates only its 12 required tracker tables and IGNORES every other key, then rebuilds from base=self.export() with items/events/tracker_tables overwritten. Findings never transfer, and a snapshot that DID carry them would be accepted while silently discarding them - a migration that reports success and loses a domain. (2) Carrying them is not just an importer change: this package's findings STORAGE is a version behind BenchBox's. Migrations stop at 004_findings.sql (the v3 shape); related_paths and suggested_sweep appear only as recognized draft-payload keys in findings.py:51, not as columns; and finding_sections does not exist. BenchBox's v4 (todo_findings.finding_migration_v4_statements) adds findings.related_paths, findings.suggested_sweep and the finding_sections table, and recreates finding_links. So a migration must land here before the importer can be lossless. Upstream context: BenchBox PR #1354 added 'todo export --snapshot FILE' producing the 12-table normalized dump restore-legacy consumes; this item is what lets that dump also carry findings.",
+  "legacy": {
+    "item_meta": {
+      "category": "correctness",
+      "completed_at": "2026-07-30T18:22:34Z",
+      "completed_pr": 1,
+      "created_at": "2026-07-30T16:53:34Z",
+      "worktree": "main"
+    },
+    "preserves": [
+      {
+        "behavior": "audit verify stays clean after a restore that includes findings",
+        "item_id": "restore-legacy-carry-findings-and-reject-unknown-tables"
+      },
+      {
+        "behavior": "existing 12-table snapshots keep restoring (the added findings tables must be optional, not newly required)",
+        "item_id": "restore-legacy-carry-findings-and-reject-unknown-tables"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "restore-legacy-carry-findings-and-reject-unknown-tables",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/database.py"
+      },
+      {
+        "item_id": "restore-legacy-carry-findings-and-reject-unknown-tables",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/findings.py"
+      },
+      {
+        "item_id": "restore-legacy-carry-findings-and-reject-unknown-tables",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/migrations/**"
+      },
+      {
+        "item_id": "restore-legacy-carry-findings-and-reject-unknown-tables",
+        "kind": "only_modify",
+        "path_glob": "tests/**"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run -- python -c \"import json,pathlib,tempfile,sys; from todo_db.database import Database; sys.exit(0)\"",
+        "description": "A snapshot carrying an unexpected table is rejected, not silently ignored",
+        "expected": "exit 0 - replace with a real rejection test once implemented",
+        "item_id": "restore-legacy-carry-findings-and-reject-unknown-tables",
+        "last_result": null,
+        "last_run": null,
+        "seq": 1,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run -- pytest tests -q -k 'restore_legacy and finding'",
+        "description": "Findings survive a legacy restore round-trip",
+        "expected": "exit 0",
+        "item_id": "restore-legacy-carry-findings-and-reject-unknown-tables",
+        "last_result": null,
+        "last_run": null,
+        "seq": 2,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run -- pytest -q",
+        "description": "Full suite passes",
+        "expected": "exit 0",
+        "item_id": "restore-legacy-carry-findings-and-reject-unknown-tables",
+        "last_result": null,
+        "last_run": null,
+        "seq": 3,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "restore-legacy-carry-findings-and-reject-unknown-tables",
+        "needs_wid": "w1",
+        "wid": "w3"
+      },
+      {
+        "item_id": "restore-legacy-carry-findings-and-reject-unknown-tables",
+        "needs_wid": "w3",
+        "wid": "w4"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "Added migrations/005_findings_lossless.sql mirroring BenchBox's finding_migration_v4_statements(): findings.related_paths, findings.suggested_sweep, the finding_sections table with UNIQUE(finding_id, position) and its index, and a finding_links rebuild so target_item's FK to items(id) is DEFERRABLE INITIALLY DEFERRED - a restore loads tables one at a time, so a finding can reference an item that does not exist yet. Bumped SCHEMA_VERSION 4 -> 5. Verified on a fresh DB: 'schema v5 ready', findings has both new columns, all five finding tables exist, finding_links target_item is deferrable.",
+        "item_id": "restore-legacy-carry-findings-and-reject-unknown-tables",
+        "notes": null,
+        "started_at": "2026-07-30T18:21:25Z",
+        "started_branch": "feat/todo-db-standalone-parity",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Add migration 005 bringing findings storage to BenchBox v4 (related_paths, suggested_sweep, finding_sections)",
+        "wid": "w1"
+      },
+      {
+        "evidence": "restore_legacy now rejects tables it cannot load instead of ignoring them. Added OPTIONAL_LEGACY_TABLES (the five findings tables) and a check that anything in neither the required nor optional set raises SchemaMismatchError naming the offenders. Verified against a real 1683-item BenchBox snapshot: the unmodified snapshot still restores, and the same snapshot with an injected 'some_future_table' is refused with 'legacy snapshot carries tables this importer cannot load: some_future_table'. A test also asserts the refusal leaves the destination byte-identical (export() before == after).",
+        "item_id": "restore-legacy-carry-findings-and-reject-unknown-tables",
+        "notes": null,
+        "started_at": "2026-07-30T18:12:35Z",
+        "started_branch": "feat/todo-db-standalone-parity",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Make restore_legacy reject unknown tables instead of ignoring them",
+        "wid": "w2"
+      },
+      {
+        "evidence": "restore_legacy now copies the five findings tables from the snapshot, using the same .get(table, []) semantics as the required tables so --replace means replace: an absent findings table becomes empty rather than leaving destination rows, which would otherwise produce a hybrid of two trackers. Adding a table turned out to need FOUR independent lists, not one - and the first attempt missed two of them. finding_sections restored 0 rows while the other four restored 1, despite the restore reporting success and audit verify passing; only counting rows caught it. The four places: restore_legacy's copy loop, restore()'s table_columns (needed related_paths/suggested_sweep on findings plus a finding_sections entry), restore()'s insert_order and delete_order, and export()'s per-table SELECT map - which also lacked finding_sections, so sections would have silently vanished on any re-export.",
+        "item_id": "restore-legacy-carry-findings-and-reject-unknown-tables",
+        "notes": null,
+        "started_at": "2026-07-30T18:21:25Z",
+        "started_branch": "feat/todo-db-standalone-parity",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Extend restore_legacy to load the five findings tables",
+        "wid": "w3"
+      },
+      {
+        "evidence": "Round-tripped a real snapshot of the live BenchBox tracker (1683 items, 4187 events) with findings injected into all five tables, restored into a scratch SQLite DB - never the hosted DB. All five tables land with the expected row counts, related_paths and suggested_sweep survive verbatim, the finding_sections body survives, and audit verify still returns a valid chain of 4187 events. Three unit tests pin it: findings carried (all five tables + lossless fields + section text + chain intact), unknown table rejected with the destination untouched, and a 12-table snapshot without findings still restoring (findings optional, not newly required). Suite 102 passed, ruff clean. Kept the diff isolated: 'ruff format src tests' reformatted five files I never touched, so those were reverted and only my own long line was wrapped.",
+        "item_id": "restore-legacy-carry-findings-and-reject-unknown-tables",
+        "notes": null,
+        "started_at": "2026-07-30T18:21:43Z",
+        "started_branch": "feat/todo-db-standalone-parity",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Round-trip a real BenchBox snapshot and confirm findings survive with audit verify clean",
+        "wid": "w4"
+      }
+    ]
+  }
+}

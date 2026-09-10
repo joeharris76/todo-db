@@ -1,0 +1,208 @@
+{
+  "context": "Introduce ResolvedCredential(token, source, capability) or equivalent and carry it through connect/HostedConnection/doctor without copying token values into output. Public callers' DatabaseConfig.auth_token remains highest precedence but has unknown external provenance and generic remediation; CLI doctor must not resolve env and then erase provenance by passing it as an explicit token. Use E_AUTH_MISSING and E_AUTH_REJECTED via TodoDBError.code, with additive doctor JSON code/source fields. Do not invent E_AUTH_CAPABILITY from an ambiguous 403: normal RW mode never selects RO env, while explicit-token capability is unknowable. Narrow classification to 401 or explicit unauthorized/forbidden/invalid-token/JWT-expired evidence; do not classify bare 403, authority, auth*, or token* text alone. Build sanitized fixtures including the observed Turso 400 JWT InvalidToken, expiry, network/TLS/proxy authority text, quota/suspension, and attempted RO-write behavior; if upstream evidence cannot distinguish a case, keep exit 2 and document best effort. Land only after wrapper-token-hygiene.",
+  "description": "After v2 wrappers no longer auto-mint, make runtime and doctor use one provenance-aware hosted credential resolver. RW requires TODO_DB_AUTH_TOKEN. RO prefers TODO_DB_RO_AUTH_TOKEN and falls back to TODO_DB_AUTH_TOKEN only when RO is absent/empty; a present rejected RO token must never trigger RW retry. Missing credentials and confidently classified server rejection become HostedAuthError exit 4 with stable .code values; network, quota/suspension, protocol and ambiguous 403 failures remain generic exit 2. Preserve exact redaction and expose only source variable/capability metadata. Narrow today's broad auth/token regex using a reviewed fixture corpus and describe classification as best-effort where upstream errors are ambiguous.",
+  "legacy": {
+    "anti_patterns": [
+      {
+        "dont": "Classify any message containing auth*, token*, or bare 403 as authentication",
+        "instead": "INSTEAD require high-confidence status/phrases and keep ambiguous failures exit 2",
+        "item_id": "auth-token-fallback-exit4",
+        "why": "authority/network and quota/suspension errors would receive destructive credential remediation"
+      },
+      {
+        "dont": "Retry rejected RO credentials with RW",
+        "instead": "INSTEAD fail exit 4 and require explicit operator correction",
+        "item_id": "auth-token-fallback-exit4",
+        "why": "it hides bad permissions or accidental writes and silently escalates capability"
+      }
+    ],
+    "item_deps": [
+      {
+        "item_id": "auth-token-fallback-exit4",
+        "needs_item": "wrapper-token-hygiene"
+      }
+    ],
+    "item_meta": {
+      "blocked_reason": "Release gate: do not ship missing-token exit 4 until wrapper-token-hygiene has removed implicit minting and provided a safe stale-wrapper migration; then explicitly unblock after reviewing that migration evidence.",
+      "category": "security",
+      "created_at": "2026-07-26T13:01:29Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "A present TODO_DB_RO_AUTH_TOKEN is never replaced by RW after rejection; fallback occurs only when RO is absent or empty.",
+        "item_id": "auth-token-fallback-exit4"
+      },
+      {
+        "behavior": "Hosted URL and every token value remain absent from exceptions, tracebacks, doctor output, JSON, logs, and tests.",
+        "item_id": "auth-token-fallback-exit4"
+      },
+      {
+        "behavior": "HostedAuthError remains a TodoDBError subclass; existing library callers catching TodoDBError continue to work.",
+        "item_id": "auth-token-fallback-exit4"
+      }
+    ],
+    "prior_art": [
+      {
+        "concept": "_doctor_hosted_probe manual env fallback",
+        "decision": "supersede",
+        "item_id": "auth-token-fallback-exit4",
+        "path": "src/todo_db/cli.py"
+      },
+      {
+        "concept": "TodoDBError.code machine-readable errors",
+        "decision": "extend",
+        "item_id": "auth-token-fallback-exit4",
+        "path": "src/todo_db/errors.py"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "auth-token-fallback-exit4",
+        "kind": "only_modify",
+        "path_glob": "CHANGELOG.md"
+      },
+      {
+        "item_id": "auth-token-fallback-exit4",
+        "kind": "only_modify",
+        "path_glob": "README.md"
+      },
+      {
+        "item_id": "auth-token-fallback-exit4",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/__init__.py"
+      },
+      {
+        "item_id": "auth-token-fallback-exit4",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/backends.py"
+      },
+      {
+        "item_id": "auth-token-fallback-exit4",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/cli.py"
+      },
+      {
+        "item_id": "auth-token-fallback-exit4",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/errors.py"
+      },
+      {
+        "item_id": "auth-token-fallback-exit4",
+        "kind": "only_modify",
+        "path_glob": "tests/test_doctor.py"
+      },
+      {
+        "item_id": "auth-token-fallback-exit4",
+        "kind": "only_modify",
+        "path_glob": "tests/test_hosted_backend.py"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest tests/test_hosted_backend.py tests/test_doctor.py -q",
+        "description": "Suite",
+        "expected": null,
+        "item_id": "auth-token-fallback-exit4",
+        "last_result": null,
+        "last_run": null,
+        "seq": 1,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run pytest tests/test_hosted_backend.py -q -k 'auth or outage or network or quota or authority'",
+        "description": "No auth-shaped network false positives",
+        "expected": null,
+        "item_id": "auth-token-fallback-exit4",
+        "last_result": null,
+        "last_run": null,
+        "seq": 3,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "auth-token-fallback-exit4",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "auth-token-fallback-exit4",
+        "needs_wid": "w1",
+        "wid": "w2"
+      },
+      {
+        "item_id": "auth-token-fallback-exit4",
+        "needs_wid": "w1",
+        "wid": "w3"
+      },
+      {
+        "item_id": "auth-token-fallback-exit4",
+        "needs_wid": "w2",
+        "wid": "w4"
+      },
+      {
+        "item_id": "auth-token-fallback-exit4",
+        "needs_wid": "w3",
+        "wid": "w4"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": null,
+        "item_id": "auth-token-fallback-exit4",
+        "notes": null,
+        "started_at": "2026-07-26T13:09:52Z",
+        "started_branch": "feat/todo-db-standalone-parity",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "in_progress",
+        "summary": "Implement fallback + missing-token classification + doctor/runtime parity",
+        "wid": "w0"
+      },
+      {
+        "evidence": null,
+        "item_id": "auth-token-fallback-exit4",
+        "notes": null,
+        "started_at": null,
+        "started_branch": null,
+        "started_worktree": null,
+        "status": "pending",
+        "summary": "Add ResolvedCredential precedence/provenance and missing-token E_AUTH_MISSING",
+        "wid": "w1"
+      },
+      {
+        "evidence": null,
+        "item_id": "auth-token-fallback-exit4",
+        "notes": null,
+        "started_at": null,
+        "started_branch": null,
+        "started_worktree": null,
+        "status": "pending",
+        "summary": "Unify doctor/runtime resolution and additive JSON code/source metadata",
+        "wid": "w2"
+      },
+      {
+        "evidence": null,
+        "item_id": "auth-token-fallback-exit4",
+        "notes": null,
+        "started_at": null,
+        "started_branch": null,
+        "started_worktree": null,
+        "status": "pending",
+        "summary": "Narrow auth classifier from a sanitized Turso/libsql fixture corpus",
+        "wid": "w3"
+      },
+      {
+        "evidence": null,
+        "item_id": "auth-token-fallback-exit4",
+        "notes": null,
+        "started_at": null,
+        "started_branch": null,
+        "started_worktree": null,
+        "status": "pending",
+        "summary": "Test no rejected-RO escalation, redaction, explicit-token behavior, and exit parity",
+        "wid": "w4"
+      }
+    ]
+  }
+}

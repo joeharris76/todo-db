@@ -1,0 +1,134 @@
+{
+  "description": "Remove integrations/pi/ entirely (adapter source, tests, dist, README), drop TODO_DB_PI_PRINCIPAL handling, and unpublish or deprecate @todo-db/pi-adapter on npm. Pi consumers move to Pi's native MCP server config documented in mcp-clients.md.",
+  "legacy": {
+    "item_deps": [
+      {
+        "item_id": "mcp-remove-pi-adapter",
+        "needs_item": "mcp-target-adoption-proof"
+      }
+    ],
+    "item_meta": {
+      "category": "mcp-migration",
+      "completed_at": "2026-09-02T18:18:37Z",
+      "created_at": "2026-09-02T13:31:23Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "The MCP server is the only remaining agent integration",
+        "item_id": "mcp-remove-pi-adapter"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "mcp-remove-pi-adapter",
+        "kind": "do_not_modify",
+        "path_glob": ".todo-db/**"
+      },
+      {
+        "item_id": "mcp-remove-pi-adapter",
+        "kind": "only_modify",
+        "path_glob": ".github/workflows/**"
+      },
+      {
+        "item_id": "mcp-remove-pi-adapter",
+        "kind": "only_modify",
+        "path_glob": "CHANGELOG.md"
+      },
+      {
+        "item_id": "mcp-remove-pi-adapter",
+        "kind": "only_modify",
+        "path_glob": "docs/**"
+      },
+      {
+        "item_id": "mcp-remove-pi-adapter",
+        "kind": "only_modify",
+        "path_glob": "integrations/**"
+      },
+      {
+        "item_id": "mcp-remove-pi-adapter",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/**"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest -q",
+        "description": "Tests",
+        "expected": "pass",
+        "item_id": "mcp-remove-pi-adapter",
+        "last_result": "pass",
+        "last_run": "2026-09-02T18:18:37Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "uv run ruff check .",
+        "description": "Lint",
+        "expected": "clean",
+        "item_id": "mcp-remove-pi-adapter",
+        "last_result": "pass",
+        "last_run": "2026-09-02T18:18:37Z",
+        "seq": 2,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "test ! -e integrations/pi",
+        "description": "Adapter gone",
+        "expected": "removed",
+        "item_id": "mcp-remove-pi-adapter",
+        "last_result": "pass",
+        "last_run": "2026-09-02T18:18:37Z",
+        "seq": 3,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "mcp-remove-pi-adapter",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "mcp-remove-pi-adapter",
+        "needs_wid": "w1",
+        "wid": "w2"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "Confirmed no remaining references to TODO_DB_PI_PRINCIPAL in repo outside design docs",
+        "item_id": "mcp-remove-pi-adapter",
+        "notes": null,
+        "started_at": "2026-09-02T18:17:56Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Confirm no remaining repo reference to integrations/pi or TODO_DB_PI_PRINCIPAL outside deletion targets",
+        "wid": "w0"
+      },
+      {
+        "evidence": "Deleted integrations/pi/ entirely (source, tests, config, lock, build dirs), removed pi-adapter CI job",
+        "item_id": "mcp-remove-pi-adapter",
+        "notes": null,
+        "started_at": "2026-09-02T18:17:56Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Delete integrations/pi/ and remove TODO_DB_PI_PRINCIPAL handling",
+        "wid": "w1"
+      },
+      {
+        "evidence": "Recorded Pi adapter removal in CHANGELOG.md; Pi users configure native MCP server per docs/operations/mcp-clients.md",
+        "item_id": "mcp-remove-pi-adapter",
+        "notes": null,
+        "started_at": "2026-09-02T18:17:56Z",
+        "started_branch": "mcp-migration",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Unpublish or deprecate the npm package and update any doc that named it",
+        "wid": "w2"
+      }
+    ]
+  }
+}

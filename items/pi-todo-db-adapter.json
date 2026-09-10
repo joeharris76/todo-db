@@ -1,0 +1,209 @@
+{
+  "description": "Create an installable Pi package with one todo_db tool, no duplicate state, trusted project discovery, sanitized no-shell subprocess execution, serialized mutations, fields/cursor recovery, compact rendering, and protocol/version checks. The tool supports next/take/context/progress/require-verified finish/release only.",
+  "legacy": {
+    "anti_patterns": [
+      {
+        "dont": "Auto-retry unknown mutation outcomes",
+        "instead": "query claims/context before any new mutation",
+        "item_id": "pi-todo-db-adapter",
+        "why": "the first commit may have landed"
+      },
+      {
+        "dont": "Register the tool outside a discovered trusted project",
+        "instead": "discover config first or register no tool",
+        "item_id": "pi-todo-db-adapter",
+        "why": "wrong cwd can target/create an empty tracker"
+      },
+      {
+        "dont": "Run sibling mutations concurrently",
+        "instead": "queue take/progress/finish/release in source arrival order",
+        "item_id": "pi-todo-db-adapter",
+        "why": "Pi executes sibling tool calls in parallel"
+      },
+      {
+        "dont": "Use pi.exec for subprocesses",
+        "instead": "use node child_process.spawn with shell false",
+        "item_id": "pi-todo-db-adapter",
+        "why": "its ExecOptions cannot provide a sanitized environment"
+      }
+    ],
+    "item_deps": [
+      {
+        "item_id": "pi-todo-db-adapter",
+        "needs_item": "agent-cli-namespace"
+      },
+      {
+        "item_id": "pi-todo-db-adapter",
+        "needs_item": "agent-turso-claim-acceptance"
+      }
+    ],
+    "item_meta": {
+      "category": "pi-integration",
+      "completed_at": "2026-08-18T21:41:55Z",
+      "created_at": "2026-08-18T21:15:34Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "Exactly one model-callable tool is registered",
+        "item_id": "pi-todo-db-adapter"
+      },
+      {
+        "behavior": "No full backlog or automatic tracker text is injected into model context",
+        "item_id": "pi-todo-db-adapter"
+      },
+      {
+        "behavior": "No tool parameter exposes verification execution/override, env passthrough, takeover, rebaseline, restore, migration, or destructive administration",
+        "item_id": "pi-todo-db-adapter"
+      },
+      {
+        "behavior": "The database remains the sole tracker state; Pi session entries store no todo state",
+        "item_id": "pi-todo-db-adapter"
+      }
+    ],
+    "prior_art": [
+      {
+        "concept": "custom tool and lifecycle API",
+        "decision": "reuse",
+        "item_id": "pi-todo-db-adapter",
+        "path": "/opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/docs/extensions.md"
+      },
+      {
+        "concept": "compact custom rendering without external state authority",
+        "decision": "extend",
+        "item_id": "pi-todo-db-adapter",
+        "path": "/opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/examples/extensions/todo.ts"
+      },
+      {
+        "concept": "atomic audit event envelope",
+        "decision": "reuse",
+        "item_id": "pi-todo-db-adapter",
+        "path": "src/todo_db/database.py"
+      },
+      {
+        "concept": "transactional lifecycle and claims",
+        "decision": "extend",
+        "item_id": "pi-todo-db-adapter",
+        "path": "src/todo_db/tracker.py"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "pi-todo-db-adapter",
+        "kind": "do_not_modify",
+        "path_glob": ".todo-db/**"
+      },
+      {
+        "item_id": "pi-todo-db-adapter",
+        "kind": "do_not_modify",
+        "path_glob": "dist/**"
+      },
+      {
+        "item_id": "pi-todo-db-adapter",
+        "kind": "only_modify",
+        "path_glob": ".github/workflows/**"
+      },
+      {
+        "item_id": "pi-todo-db-adapter",
+        "kind": "only_modify",
+        "path_glob": "README.md"
+      },
+      {
+        "item_id": "pi-todo-db-adapter",
+        "kind": "only_modify",
+        "path_glob": "integrations/pi/**"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "cd integrations/pi && npm test && npm run typecheck && npm pack --dry-run",
+        "description": "Pi adapter checks",
+        "expected": "all commands pass",
+        "item_id": "pi-todo-db-adapter",
+        "last_result": "pass",
+        "last_run": "2026-08-18T21:41:55Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "pi-todo-db-adapter",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "pi-todo-db-adapter",
+        "needs_wid": "w1",
+        "wid": "w2"
+      },
+      {
+        "item_id": "pi-todo-db-adapter",
+        "needs_wid": "w2",
+        "wid": "w3"
+      },
+      {
+        "item_id": "pi-todo-db-adapter",
+        "needs_wid": "w3",
+        "wid": "w4"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "Package manifest, types, tool schema, and action validation created",
+        "item_id": "pi-todo-db-adapter",
+        "notes": null,
+        "started_at": "2026-08-18T21:41:51Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Create package manifest, protocol client, schema, and strict action validation",
+        "wid": "w0"
+      },
+      {
+        "evidence": "child_process.spawn with sanitized env, timeout, and bounded output implemented in client.ts",
+        "item_id": "pi-todo-db-adapter",
+        "notes": null,
+        "started_at": "2026-08-18T21:41:51Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Implement child_process.spawn with sanitized env, timeout, abort, and bounded output",
+        "wid": "w1"
+      },
+      {
+        "evidence": "Serialized mutation queue implemented in queue.ts",
+        "item_id": "pi-todo-db-adapter",
+        "notes": null,
+        "started_at": "2026-08-18T21:41:51Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Serialize mutations and reconcile unknown outcomes without automatic retry",
+        "wid": "w2"
+      },
+      {
+        "evidence": "Compact renderer and structured error handling implemented in render.ts",
+        "item_id": "pi-todo-db-adapter",
+        "notes": null,
+        "started_at": "2026-08-18T21:41:51Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Implement compact renderer and structured exit-code handling",
+        "wid": "w3"
+      },
+      {
+        "evidence": "Full TypeScript test suite and pack checks pass in adapter.test.ts",
+        "item_id": "pi-todo-db-adapter",
+        "notes": null,
+        "started_at": "2026-08-18T21:41:52Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Add package, schema-byte-budget, unit, and isolated Pi smoke tests",
+        "wid": "w4"
+      }
+    ]
+  }
+}

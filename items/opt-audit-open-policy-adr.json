@@ -1,0 +1,174 @@
+{
+  "context": "A fourth option emerged from review that neither earlier pass proposed: read-write commands already walk the chain locally because they hold an embedded replica, while read-only commands are pure-remote and so pay 4.7 MB per invocation. Extending the replica to read-only commands would remove that cost while preserving the full guarantee, so it must be evaluated before any weakening.",
+  "description": "README states the audit chain is checked on open and export. Any weakening changes a headline product property and needs an explicit decision, not a performance patch. Compare five options against the attacker model, detection latency, local versus hosted behaviour, opt-in versus default, and signed-export compatibility. Deliver a decision record; implementation belongs to opt-audit-head-check-on-open.",
+  "legacy": {
+    "anti_patterns": [
+      {
+        "dont": "Treat a scheduled full verify as equivalent to open-time verification",
+        "instead": "Record it as defence in depth and evaluate it as an operational monitor, never as the replacement control",
+        "item_id": "opt-audit-open-policy-adr",
+        "why": "it delays detection by up to a day, accepts tampering between runs, and adds production credential exposure"
+      }
+    ],
+    "item_meta": {
+      "category": "architecture",
+      "completed_at": "2026-08-18T16:09:44Z",
+      "created_at": "2026-08-18T14:56:34Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "No behaviour changes in this item",
+        "item_id": "opt-audit-open-policy-adr"
+      },
+      {
+        "behavior": "Signed export manifests keep verifying against the full chain",
+        "item_id": "opt-audit-open-policy-adr"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "opt-audit-open-policy-adr",
+        "kind": "do_not_modify",
+        "path_glob": "src/todo_db/**"
+      },
+      {
+        "item_id": "opt-audit-open-policy-adr",
+        "kind": "do_not_modify",
+        "path_glob": "tests/**"
+      },
+      {
+        "item_id": "opt-audit-open-policy-adr",
+        "kind": "only_modify",
+        "path_glob": "_project/**"
+      },
+      {
+        "item_id": "opt-audit-open-policy-adr",
+        "kind": "only_modify",
+        "path_glob": "docs/**"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "ls _project/decisions/",
+        "description": "Decision record exists and names the chosen option",
+        "expected": null,
+        "item_id": "opt-audit-open-policy-adr",
+        "last_result": "pass",
+        "last_run": "2026-08-18T16:09:44Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "opt-audit-open-policy-adr",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "opt-audit-open-policy-adr",
+        "needs_wid": "w0",
+        "wid": "w2"
+      },
+      {
+        "item_id": "opt-audit-open-policy-adr",
+        "needs_wid": "w0",
+        "wid": "w3"
+      },
+      {
+        "item_id": "opt-audit-open-policy-adr",
+        "needs_wid": "w0",
+        "wid": "w4"
+      },
+      {
+        "item_id": "opt-audit-open-policy-adr",
+        "needs_wid": "w1",
+        "wid": "w5"
+      },
+      {
+        "item_id": "opt-audit-open-policy-adr",
+        "needs_wid": "w2",
+        "wid": "w5"
+      },
+      {
+        "item_id": "opt-audit-open-policy-adr",
+        "needs_wid": "w3",
+        "wid": "w5"
+      },
+      {
+        "item_id": "opt-audit-open-policy-adr",
+        "needs_wid": "w4",
+        "wid": "w5"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "_project/decisions/0001-audit-open-policy.md",
+        "item_id": "opt-audit-open-policy-adr",
+        "notes": null,
+        "started_at": "2026-08-18T16:09:24Z",
+        "started_branch": "docs/audit-open-policy-adr",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "State the attacker model and what tamper evident must mean here",
+        "wid": "w0"
+      },
+      {
+        "evidence": "_project/decisions/0001-audit-open-policy.md",
+        "item_id": "opt-audit-open-policy-adr",
+        "notes": null,
+        "started_at": "2026-08-18T16:09:36Z",
+        "started_branch": "docs/audit-open-policy-adr",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Option A: keep full verification on open (status quo baseline)",
+        "wid": "w1"
+      },
+      {
+        "evidence": "_project/decisions/0001-audit-open-policy.md",
+        "item_id": "opt-audit-open-policy-adr",
+        "notes": null,
+        "started_at": "2026-08-18T16:09:36Z",
+        "started_branch": "docs/audit-open-policy-adr",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Option B: head-only check with documented detection gaps",
+        "wid": "w2"
+      },
+      {
+        "evidence": "_project/decisions/0001-audit-open-policy.md",
+        "item_id": "opt-audit-open-policy-adr",
+        "notes": null,
+        "started_at": "2026-08-18T16:09:36Z",
+        "started_branch": "docs/audit-open-policy-adr",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Option C: extend the replica to read-only commands, keeping the full walk local",
+        "wid": "w3"
+      },
+      {
+        "evidence": "_project/decisions/0001-audit-open-policy.md",
+        "item_id": "opt-audit-open-policy-adr",
+        "notes": null,
+        "started_at": "2026-08-18T16:09:36Z",
+        "started_branch": "docs/audit-open-policy-adr",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Option D and E: persistent process, and signed or Merkle checkpoints",
+        "wid": "w4"
+      },
+      {
+        "evidence": "_project/decisions/0001-audit-open-policy.md",
+        "item_id": "opt-audit-open-policy-adr",
+        "notes": null,
+        "started_at": "2026-08-18T16:09:36Z",
+        "started_branch": "docs/audit-open-policy-adr",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Recommend an option and say whether it is default or opt-in",
+        "wid": "w5"
+      }
+    ]
+  }
+}

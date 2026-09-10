@@ -1,0 +1,176 @@
+{
+  "description": "After the streamlined workflow ships, measure whether update flag construction remains a material token and error cost. Decide to stop, add one-item versioned patch input with parity, or open a separate batch-atomicity design; do not presume implementation.",
+  "legacy": {
+    "anti_patterns": [
+      {
+        "dont": "Accept duplicate JSON keys silently",
+        "instead": "use strict duplicate-key rejection",
+        "item_id": "agent-json-patch-decision",
+        "why": "later values hide contradictory intent"
+      },
+      {
+        "dont": "Implement apply before measuring the streamlined workflow",
+        "instead": "measure first",
+        "item_id": "agent-json-patch-decision",
+        "why": "the agent namespace may remove the cost entirely"
+      }
+    ],
+    "item_deps": [
+      {
+        "item_id": "agent-json-patch-decision",
+        "needs_item": "agent-workflow-release-gate"
+      }
+    ],
+    "item_meta": {
+      "category": "decision",
+      "completed_at": "2026-08-18T21:43:43Z",
+      "created_at": "2026-08-18T21:15:34Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "Existing flag behavior and audit details remain canonical",
+        "item_id": "agent-json-patch-decision"
+      },
+      {
+        "behavior": "Multi-item batch support requires a separate atomicity and partial-failure design",
+        "item_id": "agent-json-patch-decision"
+      },
+      {
+        "behavior": "This item may complete with a documented stop decision and no code",
+        "item_id": "agent-json-patch-decision"
+      }
+    ],
+    "prior_art": [
+      {
+        "concept": "atomic audit event envelope",
+        "decision": "reuse",
+        "item_id": "agent-json-patch-decision",
+        "path": "src/todo_db/database.py"
+      },
+      {
+        "concept": "transactional lifecycle and claims",
+        "decision": "extend",
+        "item_id": "agent-json-patch-decision",
+        "path": "src/todo_db/tracker.py"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "agent-json-patch-decision",
+        "kind": "do_not_modify",
+        "path_glob": ".todo-db/**"
+      },
+      {
+        "item_id": "agent-json-patch-decision",
+        "kind": "do_not_modify",
+        "path_glob": "dist/**"
+      },
+      {
+        "item_id": "agent-json-patch-decision",
+        "kind": "only_modify",
+        "path_glob": "README.md"
+      },
+      {
+        "item_id": "agent-json-patch-decision",
+        "kind": "only_modify",
+        "path_glob": "docs/adr/**"
+      },
+      {
+        "item_id": "agent-json-patch-decision",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/cli.py"
+      },
+      {
+        "item_id": "agent-json-patch-decision",
+        "kind": "only_modify",
+        "path_glob": "src/todo_db/tracker.py"
+      },
+      {
+        "item_id": "agent-json-patch-decision",
+        "kind": "only_modify",
+        "path_glob": "tests/test_query_budget.py"
+      },
+      {
+        "item_id": "agent-json-patch-decision",
+        "kind": "only_modify",
+        "path_glob": "tests/test_update.py"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run pytest -q tests/test_query_budget.py tests/test_update.py",
+        "description": "Decision evidence",
+        "expected": "all selected tests pass",
+        "item_id": "agent-json-patch-decision",
+        "last_result": "pass",
+        "last_run": "2026-08-18T21:43:43Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_needs": [
+      {
+        "item_id": "agent-json-patch-decision",
+        "needs_wid": "w0",
+        "wid": "w1"
+      },
+      {
+        "item_id": "agent-json-patch-decision",
+        "needs_wid": "w1",
+        "wid": "w2"
+      },
+      {
+        "item_id": "agent-json-patch-decision",
+        "needs_wid": "w2",
+        "wid": "w3"
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "Token and syntax measurements confirm agent progress eliminates update flag overhead",
+        "item_id": "agent-json-patch-decision",
+        "notes": null,
+        "started_at": "2026-08-18T21:43:41Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Measure update call tokens, parse failures, and frequency after workflow adoption",
+        "wid": "w0"
+      },
+      {
+        "evidence": "Stop decision recorded in ADR 0003 section 2.10",
+        "item_id": "agent-json-patch-decision",
+        "notes": null,
+        "started_at": "2026-08-18T21:43:41Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Record stop/single-patch/batch-design decision with thresholds",
+        "wid": "w1"
+      },
+      {
+        "evidence": "Stop decision selected; no duplicate patch mutation surface created",
+        "item_id": "agent-json-patch-decision",
+        "notes": null,
+        "started_at": "2026-08-18T21:43:41Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "If approved, implement one-item strict patch with duplicate-key and unknown-field rejection",
+        "wid": "w2"
+      },
+      {
+        "evidence": "Flag behavior and audit parity preserved",
+        "item_id": "agent-json-patch-decision",
+        "notes": null,
+        "started_at": "2026-08-18T21:43:41Z",
+        "started_branch": "main",
+        "started_worktree": "/Users/joe/Developer/todo-db",
+        "status": "done",
+        "summary": "Prove flag/document audit-detail parity and no partial writes",
+        "wid": "w3"
+      }
+    ]
+  }
+}

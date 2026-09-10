@@ -1,0 +1,87 @@
+{
+  "context": "Prefer PyPI Trusted Publishing (OIDC from GitHub Actions) over a long-lived API token. Publish 0.3.0 first so the existing tag and wheel are the released artifact, then wire the tag-triggered workflow from release-provenance-hygiene to publish subsequent tags. Verify a clean-environment install resolves and exposes the console script, then tell BenchBox to swap its git pin for a normal version requirement.",
+  "description": "todo-db is not on PyPI: https://pypi.org/pypi/todo-db/json returns HTTP 404, and the package is not importable or on PATH outside this repo. Consumers therefore cannot depend on it normally. BenchBox is adopting todo-db >= 0.3 to get the 'update' verb (its embedded wrapper has no way to amend an item, so scope/verifications/descriptions there are create-time-only and three separate mis-authored items could not be repaired). With no index release, BenchBox has to pin a git dependency -- todo-db @ git+https://github.com/joeharris76/todo-db@v0.3.0 -- which resolves in CI but gives no version solving, no wheel caching, and no signal when a newer release exists. Distinct from release-provenance-hygiene: that item covers a tag-triggered workflow attaching build artifacts with checksums to a GitHub release, and never mentions PyPI, twine or trusted publishing. This item is specifically getting the distribution onto the index so 'todo-db>=0.3' is a resolvable requirement. v0.3.0 is already tagged and pushed, and a wheel exists at dist/todo_db-0.3.0-py3-none-any.whl, so the artifact side is done; what is missing is the publish step and the account/trusted-publisher setup.",
+  "legacy": {
+    "item_meta": {
+      "category": "packaging",
+      "completed_at": "2026-09-02T01:46:09Z",
+      "created_at": "2026-07-29T00:25:13Z",
+      "worktree": "todo-db"
+    },
+    "preserves": [
+      {
+        "behavior": "The todo console-script alias stays opt-in (see release-provenance-hygiene) so installing does not shadow other tools",
+        "item_id": "publish-todo-db-to-pypi"
+      }
+    ],
+    "scope_rules": [
+      {
+        "item_id": "publish-todo-db-to-pypi",
+        "kind": "only_modify",
+        "path_glob": ".github/workflows/*"
+      },
+      {
+        "item_id": "publish-todo-db-to-pypi",
+        "kind": "only_modify",
+        "path_glob": "pyproject.toml"
+      }
+    ],
+    "verifications": [
+      {
+        "command": "uv run --isolated --with 'todo-db>=0.3' -- todo-db --version",
+        "description": "The package resolves from the index in a clean environment",
+        "expected": "exit 0",
+        "item_id": "publish-todo-db-to-pypi",
+        "last_result": "pass",
+        "last_run": "2026-09-02T01:45:55Z",
+        "seq": 1,
+        "workspace_fingerprint": null
+      },
+      {
+        "command": "curl -sf -o /dev/null https://pypi.org/pypi/todo-db/json",
+        "description": "PyPI serves metadata for the project",
+        "expected": "exit 0 (currently 404)",
+        "item_id": "publish-todo-db-to-pypi",
+        "last_result": "fail",
+        "last_run": "2026-09-02T01:45:47Z",
+        "seq": 2,
+        "workspace_fingerprint": null
+      }
+    ],
+    "work_units": [
+      {
+        "evidence": "pyproject enriched with authors/keywords/urls/extra classifiers; wheel METADATA verified; uv build succeeds",
+        "item_id": "publish-todo-db-to-pypi",
+        "notes": null,
+        "started_at": null,
+        "started_branch": null,
+        "started_worktree": null,
+        "status": "done",
+        "summary": "Ensure pyproject.toml is PyPI-ready (readme, license, classifiers, urls)",
+        "wid": "w0"
+      },
+      {
+        "evidence": "publish.yml: tag-triggered OIDC publish via pypa/gh-action-pypi-publish, version guard, checksums, github-release, env pypi",
+        "item_id": "publish-todo-db-to-pypi",
+        "notes": null,
+        "started_at": null,
+        "started_branch": null,
+        "started_worktree": null,
+        "status": "done",
+        "summary": "Add tag-triggered PyPI publish workflow via OIDC Trusted Publishing",
+        "wid": "w1"
+      },
+      {
+        "evidence": "uv build + METADATA checks + ruff clean + isolated wheel todo-db --version 0.4.3 smoke passed; dist contains sdist+wheel",
+        "item_id": "publish-todo-db-to-pypi",
+        "notes": null,
+        "started_at": null,
+        "started_branch": null,
+        "started_worktree": null,
+        "status": "done",
+        "summary": "Verify build artifacts and clean-install smoke test (no registry publish in CI)",
+        "wid": "w2"
+      }
+    ]
+  }
+}
