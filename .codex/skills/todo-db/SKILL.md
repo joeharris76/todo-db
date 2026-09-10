@@ -129,7 +129,7 @@ human the exact command:
 
 - `todo-db bootstrap --state-remote <url> [--write-config]` — create the state branch.
 - `todo-db validate` — check the accepted tip and report counts.
-- `todo-db migrate --from-export <file> [--dry-run]` — migrate a legacy v2 export.
+- `todo-db migrate --from-export <file> --backup-dir <dir> [--dry-run]` — migrate a legacy v2 export onto a freshly bootstrapped branch. Dry-run first; a real run requires `--backup-dir`.
 - `todo-db recover --op-id <id>` / `--restore-rev <sha>` / `--limit N` — reconcile, restore, history.
 
 Details: `references/recovery.md` and `references/bootstrap.md`.

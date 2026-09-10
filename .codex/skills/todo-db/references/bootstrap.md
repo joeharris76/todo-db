@@ -15,6 +15,28 @@ todo-db bootstrap --state-remote <git-url-or-path> [--state-branch todo-state] -
 in the repo root for server discovery. Bootstrap refuses to overwrite an
 existing state branch.
 
+## Migrate from a 0.6.x export
+
+To carry an existing SQLite-era tracker onto the new state branch:
+
+1. With the old `todo-db`, write a lossless export:
+   `todo-db --db <old>.sqlite export --output <export>.json` (the envelope
+   must be `format_version` 2).
+2. `todo-db bootstrap ...` to create the empty state branch.
+3. `todo-db migrate --from-export <export>.json --dry-run` and read the
+   mapping report: item count, status breakdown, dropped-claim warnings,
+   and preserved row counts.
+4. `todo-db migrate --from-export <export>.json --backup-dir <dir> --actor
+   <name>` for the real run. `--backup-dir` is required — the export is the
+   only archive of events, findings, and audit history, none of which
+   migrate.
+5. `todo-db validate`, then spot-check a few items with `todo-db show <id>`.
+
+The migration refuses a non-empty state branch and refuses cutover while
+any claim lease is still live. To roll back before any consumer adopts the
+new tracker, delete the state branch and re-bootstrap; the old database is
+untouched.
+
 ## Point the agent at it
 
 - MCP server: `--state-remote` / `--state-branch` / `--cache-dir` flags,
