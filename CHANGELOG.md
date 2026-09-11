@@ -12,6 +12,13 @@ adheres to [Semantic Versioning](https://semver.org/).
   into the canonical `todo` skill (v3.0.0) owned by the `skill-sync-skills`
   catalog and pinned in `skill-sync.conf`.
 
+## [0.7.2] - 2026-09-11
+
+### Fixed
+
+- Legacy item IDs up to 128 characters now migrate without being renamed or
+  dropped.
+
 ## [0.7.1] - 2026-09-10
 
 ### Fixed

@@ -60,7 +60,9 @@ PRIORITY_RANK = {name: rank for rank, name in enumerate(PRIORITIES)}
 TERMINAL_STATUSES = ("done", "dropped")
 
 ID_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
-MAX_ID_LEN = 64
+# Keep the slug safe for the item filename while accepting IDs from the
+# legacy tracker, whose longest existing IDs are 82 characters.
+MAX_ID_LEN = 128
 MAX_TITLE_LEN = 200
 MAX_WORKER_LEN = 128
 DEFAULT_TTL_HOURS = 24.0

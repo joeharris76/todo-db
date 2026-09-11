@@ -104,6 +104,27 @@ def test_migration_wires_forward_referenced_dependencies() -> None:
     assert snapshot.index["items"]["beta"]["needs"] == ["alpha"]
 
 
+def test_migration_preserves_legacy_ids_longer_than_64_characters() -> None:
+    export = _export()
+    long_id = "adversarial-review-cost-framework-enhancement-warnings-metadata-timing-storage"
+    export["tables"]["items"] = [dict(export["tables"]["items"][0], id=long_id)]
+    export["tables"]["item_deps"] = []
+    for table, key in {
+        "work_units": "item_id",
+        "scope_rules": "item_id",
+        "verifications": "item_id",
+        "deferrals": "from_item",
+    }.items():
+        for row in export["tables"][table]:
+            if row[key] == "alpha":
+                row[key] = long_id
+
+    snapshot, _ = migrate_export(export)
+
+    assert set(snapshot.index["items"]) == {long_id}
+    assert snapshot.details[long_id]["description"] == "Do alpha"
+
+
 def test_migration_refuses_live_claim_cutover() -> None:
     export = _export()
     export["tables"]["items"][0]["claimed_by"] = "someone"
