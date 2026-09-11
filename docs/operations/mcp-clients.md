@@ -152,13 +152,12 @@ Then drive the workflow through the client:
 4. `renew` — extend a long-running claim.
 5. `finish` — close the task.
 
-## The bundled `todo-db` skill
+## The `todo` skill
 
-This repository ships a `todo-db` agent skill that teaches the workflow above,
-mirrored into `.claude/skills/`, `.codex/skills/`, and `.gemini/skills/` so it
-is available to anyone who clones the repository without installing anything
-else. See [`skill-deployment.md`](skill-deployment.md) for how those mirrors
-are generated and verified.
+The canonical `todo` skill in `skill-sync-skills` teaches the workflow above,
+mirrored into `.claude/skills/`, `.codex/skills/`, and `.gemini/skills/`. See
+[`skill-deployment.md`](skill-deployment.md) for how those mirrors are
+generated and verified.
 
 ## State remotes
 
