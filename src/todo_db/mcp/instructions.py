@@ -19,17 +19,23 @@ acknowledgement; lists return brief rows (id/title/priority/status).
 2. `show_item` -- one task with needs, readiness, and sections.
    Large fields arrive as section reads: field/offset/budget.
 3. `create_item` -- id, title, priority (default medium),
-   description, needs, acceptance, links, context.
+   description, needs, acceptance, links, context, and optional batch
+   metadata (`batch_id`, `member_id`, `implementation_dependencies`).
 4. `take` -- claim a task; returns the claim generation plus enough
    context to begin work. One live claim per worker.
-5. `release` -- hand the claim back (needs the generation from take).
-6. `finish` -- close the task (needs the generation from take).
+5. `prepare` -- persist a member receipt and release its claim without
+   marking it done. It requires an explicit same-batch edge, a clean exact
+   source checkout, and passed bounded-suite evidence.
+6. `release` -- hand the claim back (needs the generation from take).
+7. `finish` -- close the task (needs the generation from take). Prepared
+   tasks additionally require current combined-tree evidence.
    `drop` abandons a task; a live claim needs its generation.
 7. `renew` -- extend a long-running claim (same generation, no
    progress milestones required).
 
 `update_item` edits title/priority/description/needs/sections/status
-(open/blocked moves only; closing goes through finish/drop).
+(open/blocked moves only; closing goes through finish/drop). Batch metadata
+is explicit and never inferred from an ordinary dependency.
 
 ## Responses
 

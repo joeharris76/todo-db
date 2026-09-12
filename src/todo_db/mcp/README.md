@@ -2,7 +2,7 @@
 
 This package is the agent interface for the tracker (ADR 0007). It builds the
 server, resolves the state branch target, pins the worker identity, and
-registers nine tools over shared service operations.
+registers ten tools over shared service operations.
 
 ## Layout
 
@@ -13,7 +13,7 @@ registers nine tools over shared service operations.
 | `server.py` | Launch args, stderr logging, `LaunchConfig`, `build_server`, lifespan, `startup_check`, `main`. |
 | `target.py` | State target resolution (flag > env > upward discovery), pinned for the process lifetime. |
 | `identity.py` | Worker identity (`--actor` → `TODO_DB_ACTOR` → `mcp:<clientInfo.name>:<user>@<host>`) and the per-process session id. |
-| `tools.py` | The nine task tools: `list_items`, `show_item`, `create_item`, `update_item`, `take`, `release`, `finish`, `renew`, `drop`. |
+| `tools.py` | The ten task tools: `list_items`, `show_item`, `create_item`, `update_item`, `take`, `prepare`, `release`, `finish`, `renew`, `drop`. |
 | `resources.py` | `todo://instructions` resource, `get_instructions` tool, and `todo/workflow` prompt — all the same text. |
 | `instructions.py` | The workflow protocol text. |
 

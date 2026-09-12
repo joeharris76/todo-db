@@ -14,6 +14,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -271,6 +272,32 @@ class TrackerService:
                     data[f"{key}_continuation"] = {
                         "field": key, "offset": 0, "budget": SECTION_BUDGET, "rev": outcome.rev,
                     }
+            if detail.get("batch") is not None:
+                data["batch"] = detail["batch"]
+            if detail.get("prepared") is not None:
+                prepared = detail["prepared"]
+                data["prepared"] = {
+                    "batch_id": prepared["batch_id"],
+                    "member_id": prepared["member_id"],
+                    "source_worktree": prepared["source_worktree"],
+                    "source_revision": prepared["source_revision"],
+                    "verification": {
+                        "status": prepared["verification"]["status"],
+                        "revision": prepared["verification"]["revision"],
+                        "clean": prepared["verification"]["clean"],
+                        "suite": prepared["verification"]["suite"],
+                    },
+                }
+            if detail.get("final_evidence") is not None:
+                final = detail["final_evidence"]
+                data["final_evidence"] = {
+                    "status": final["status"],
+                    "tree_worktree": final["tree_worktree"],
+                    "tree_revision": final["tree_revision"],
+                    "scope_digest": final["scope_digest"],
+                    "suite": final["suite"],
+                    "clean": final["clean"],
+                }
             env = ok(data)
             if _fits(env):
                 return env
@@ -422,6 +449,36 @@ class TrackerService:
                 return item_id
         return None
 
+    @staticmethod
+    def _validate_source_checkout(source_worktree: str, source_revision: str) -> str:
+        """Prove the receipt names a clean checkout at the recorded revision."""
+        path = Path(source_worktree).expanduser()
+        if not path.is_absolute() or not path.is_dir():
+            raise TodoError("source_worktree must be an existing absolute directory", code=E_STATE)
+        path = path.resolve()
+        try:
+            root = subprocess.run(
+                ["git", "rev-parse", "--show-toplevel"], cwd=path, check=True,
+                capture_output=True, text=True, timeout=30,
+            ).stdout.strip()
+            head = subprocess.run(
+                ["git", "rev-parse", "HEAD"], cwd=path, check=True,
+                capture_output=True, text=True, timeout=30,
+            ).stdout.strip()
+            dirty = subprocess.run(
+                ["git", "status", "--porcelain=v1", "--untracked-files=all"], cwd=path,
+                check=True, capture_output=True, text=True, timeout=30,
+            ).stdout.strip()
+        except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+            raise TodoError(f"source_worktree is not a usable Git checkout: {exc}", code=E_STATE) from exc
+        if Path(root).resolve() != path:
+            raise TodoError("source_worktree does not resolve to the checkout root", code=E_STATE)
+        if head != source_revision:
+            raise TodoError("source checkout HEAD differs from source_revision", code=E_STATE)
+        if dirty:
+            raise TodoError("source checkout is dirty; prepare requires a clean exact checkout", code=E_STATE)
+        return str(path)
+
     def create_item(self, item_id: str, title: str, **kwargs: Any) -> dict[str, Any]:
         def apply(snap: S.Snapshot) -> dict[str, Any]:
             S.op_create(snap, item_id=item_id, title=title, **kwargs)
@@ -433,7 +490,11 @@ class TrackerService:
 
     def update_item(self, item_id: str, **kwargs: Any) -> dict[str, Any]:
         guarded = {key: kwargs[key] for key in self.UPDATE_GUARDED_FIELDS if key in kwargs}
-        detail_guarded = {key: kwargs[key] for key in ("description", "acceptance", "links", "context") if key in kwargs}
+        detail_guarded = {
+            key: kwargs[key]
+            for key in ("description", "acceptance", "links", "context", "batch")
+            if key in kwargs
+        }
         pre_image: dict[str, Any] | None = None
 
         def snapshot_pre_image(snap: S.Snapshot) -> dict[str, Any]:
@@ -551,11 +612,54 @@ class TrackerService:
 
         return self._mutate("release", f"{worker} releases {item_id}", apply)
 
-    def finish(self, item_id: str, generation: str) -> dict[str, Any]:
+    def prepare(
+        self,
+        item_id: str,
+        generation: str,
+        *,
+        batch_id: str,
+        member_id: str,
+        source_worktree: str,
+        source_revision: str,
+        verification: dict[str, Any],
+        implementation_dependencies: list[str] | None = None,
+    ) -> dict[str, Any]:
+        # Validate the external checkout before entering the Git publication
+        # loop.  The pure operation repeats all shape/authority checks on any
+        # retry, while this path rejects a caller-supplied stale or dirty path.
+        try:
+            clean_worktree = self._validate_source_checkout(source_worktree, source_revision)
+        except TodoError as exc:
+            return err(exc.code or E_STATE, str(exc))
+
         worker = self.worker
 
         def apply(snap: S.Snapshot) -> dict[str, Any]:
-            return S.op_finish(snap, item_id, worker, generation)
+            return S.op_prepare(
+                snap, item_id, worker, generation,
+                batch_id=batch_id,
+                member_id=member_id,
+                source_worktree=clean_worktree,
+                source_revision=source_revision,
+                verification=verification,
+                implementation_dependencies=implementation_dependencies or [],
+            )
+
+        return self._mutate("prepare", f"{worker} prepares {item_id}", apply)
+
+    def finish(self, item_id: str, generation: str, final_evidence: dict[str, Any] | None = None) -> dict[str, Any]:
+        worker = self.worker
+        if final_evidence is not None:
+            try:
+                self._validate_source_checkout(
+                    str(final_evidence.get("tree_worktree", "")),
+                    str(final_evidence.get("tree_revision", "")),
+                )
+            except TodoError as exc:
+                return err(exc.code or E_STATE, str(exc))
+
+        def apply(snap: S.Snapshot) -> dict[str, Any]:
+            return S.op_finish(snap, item_id, worker, generation, final_evidence)
 
         return self._mutate("finish", f"{worker} finishes {item_id}", apply)
 

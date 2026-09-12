@@ -14,6 +14,7 @@ EXPECTED_TOOLS = {
     "finish",
     "get_instructions",
     "list_items",
+    "prepare",
     "release",
     "renew",
     "show_item",

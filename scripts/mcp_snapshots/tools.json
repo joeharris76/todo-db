@@ -1,6 +1,6 @@
 [
   {
-    "description": "Create a task: id, title, priority (default medium), description, needs, acceptance, links, context.",
+    "description": "Create a task: id, title, priority (default medium), description, needs, acceptance, links, context, optional batch metadata.",
     "inputSchema": {
       "properties": {
         "acceptance": {
@@ -17,6 +17,19 @@
           ],
           "default": null,
           "title": "Acceptance"
+        },
+        "batch": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Batch"
         },
         "context": {
           "default": "",
@@ -121,9 +134,22 @@
     }
   },
   {
-    "description": "Close a task. Needs the generation returned by take. No work breakdown or attestation required.",
+    "description": "Close a task. Prepared tasks additionally require current final-tree evidence.",
     "inputSchema": {
       "properties": {
+        "final_evidence": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Final Evidence"
+        },
         "generation": {
           "title": "Generation",
           "type": "string"
@@ -239,6 +265,74 @@
     "outputSchema": {
       "additionalProperties": true,
       "title": "list_items_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Record verified member work and release its claim without marking it done. Requires an explicit batch member, clean exact source checkout, and passed bounded suite evidence.",
+    "inputSchema": {
+      "properties": {
+        "batch_id": {
+          "title": "Batch Id",
+          "type": "string"
+        },
+        "generation": {
+          "title": "Generation",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "implementation_dependencies": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Implementation Dependencies"
+        },
+        "member_id": {
+          "title": "Member Id",
+          "type": "string"
+        },
+        "source_revision": {
+          "title": "Source Revision",
+          "type": "string"
+        },
+        "source_worktree": {
+          "title": "Source Worktree",
+          "type": "string"
+        },
+        "verification": {
+          "additionalProperties": true,
+          "title": "Verification",
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "generation",
+        "batch_id",
+        "member_id",
+        "source_worktree",
+        "source_revision",
+        "verification"
+      ],
+      "title": "prepare_toolArguments",
+      "type": "object"
+    },
+    "name": "prepare",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "prepare_toolDictOutput",
       "type": "object"
     }
   },
@@ -375,7 +469,7 @@
     }
   },
   {
-    "description": "Edit a task: title/priority/description/needs/sections, or open/blocked moves. Closing goes through finish.",
+    "description": "Edit a task: title/priority/description/needs/sections, optional batch metadata, or open/blocked moves. Closing goes through finish.",
     "inputSchema": {
       "properties": {
         "acceptance": {
@@ -392,6 +486,19 @@
           ],
           "default": null,
           "title": "Acceptance"
+        },
+        "batch": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Batch"
         },
         "context": {
           "anyOf": [

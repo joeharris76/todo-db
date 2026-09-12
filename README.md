@@ -77,18 +77,25 @@ is mirrored into `.claude/`, `.codex/`, and `.gemini/` to teach the workflow.
 
 ## Concepts
 
+State schema 2 adds prepared receipts while remaining able to read schema 1
+state. Ordinary items keep the original serial lifecycle. A prepared member
+must name an existing same-batch implementation edge; ordinary dependencies
+remain done-only.
+
 | Term | Meaning |
 | --- | --- |
 | **Item** | One unit of tracked work: an id, title, priority, status, claim, and optional `needs` IDs in the index; description and context in its detail file. |
 | **Status** | `open`, `active`, `blocked`, `done`, or `dropped`. Only `active` holds a live claim; `done`/`dropped` carry none. |
 | **Claim** | A cooperative hold: worker identity, expiry, and a unique generation. Ownership plus generation checks protect renew, release, and finish from stale writers. |
 | **Generation** | The token proving you hold the claim; returned by `take`, required by `renew`/`finish`/`release`. |
+| **Prepared receipt** | Detail-owned evidence binding a member to a batch, owner generation, clean exact source worktree/revision, and a passed bounded suite. It can unlock only an explicit same-batch implementation edge; it is not completion. |
 | **State branch** | The authoritative task store (`todo-state` by default). One commit per operation; fast-forward pushes only. |
 
 ## The agent loop
 
 ```
 list_items  ──▶  take  ──▶  show_item  ──▶  renew ×N  ──▶  finish
+                              └──▶  prepare (release claim; preserve receipt)
                                             │
                                             └──▶  release   (hand the claim back)
 ```

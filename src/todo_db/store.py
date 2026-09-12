@@ -5,7 +5,7 @@ State layout inside a checked-out state revision::
     index.json
     items/<id>.json
 
-``index.json`` is ``{"schema_version": 1, "items": {id: entry}}`` where each
+``index.json`` is ``{"schema_version": 2, "items": {id: entry}}`` where each
 entry owns exactly ``title``, ``priority``, ``status``, ``claim``, and optional
 ``needs`` IDs. Detail files carry descriptions, acceptance criteria, links,
 and retained task context. Detail files must not contain independently
@@ -48,12 +48,14 @@ from .errors import (
     E_ACTIVE_CLAIMS,
     E_CLAIM_STALE,
     E_CONFLICT,
+    E_FINAL_EVIDENCE,
     E_SCHEMA,
     E_STATE,
     TodoError,
 )
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+SUPPORTED_SCHEMA_VERSIONS = (1, SCHEMA_VERSION)
 STATUSES = ("open", "active", "blocked", "done", "dropped")
 PRIORITIES = ("critical", "high", "medium-high", "medium", "low")
 PRIORITY_RANK = {name: rank for rank, name in enumerate(PRIORITIES)}
@@ -74,6 +76,13 @@ ITEMS_DIRNAME = "items"
 #: Fields owned by the index. Detail files containing any of these are
 #: rejected so there is never an ambiguous second copy to merge.
 INDEX_OWNED_FIELDS = frozenset({"title", "priority", "status", "claim", "needs"})
+
+# Prepared receipts are detail-owned.  They deliberately do not add a second
+# status: an item is still open after its claim is handed back, while the
+# receipt records the work that is available to an explicitly registered
+# same-batch implementation edge.
+PREPARED_RECEIPT_SCHEMA = "prepared_work_v1"
+REVISION_RE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 
 #: Status moves allowed to plain ``update``. Entering ``active`` needs a claim
 #: (take); leaving ``active`` releases or closes it (release/finish);
@@ -188,6 +197,80 @@ def _check_entry_shape(item_id: str, entry: Any) -> dict[str, Any]:
     return entry
 
 
+def _validate_revision(value: Any, label: str) -> str:
+    revision = str(value) if isinstance(value, str) else ""
+    if not REVISION_RE.fullmatch(revision):
+        raise TodoError(f"{label} must be a full lowercase Git revision", code=E_STATE)
+    return revision
+
+
+def _validate_prepared_receipt(item_id: str, prepared: Any) -> dict[str, Any]:
+    if not isinstance(prepared, dict):
+        raise TodoError(f"prepared receipt for {item_id!r} must be an object", code=E_STATE)
+    if prepared.get("schema") != PREPARED_RECEIPT_SCHEMA:
+        raise TodoError(f"prepared receipt for {item_id!r} has an unknown schema", code=E_SCHEMA)
+    for key in ("batch_id", "member_id", "owner_generation", "source_worktree", "source_revision", "verification"):
+        if key not in prepared:
+            raise TodoError(f"prepared receipt for {item_id!r} is missing {key!r}", code=E_STATE)
+    validate_id(prepared["batch_id"])
+    validate_id(prepared["member_id"])
+    generation = prepared["owner_generation"]
+    if not isinstance(generation, str) or not re.fullmatch(r"[0-9a-f]{32}", generation):
+        raise TodoError(f"prepared receipt for {item_id!r} has an invalid owner generation", code=E_STATE)
+    worktree = prepared["source_worktree"]
+    if not isinstance(worktree, str) or not worktree or not os.path.isabs(worktree):
+        raise TodoError(f"prepared receipt for {item_id!r} requires an absolute source_worktree", code=E_STATE)
+    revision = _validate_revision(prepared["source_revision"], "source_revision")
+    verification = prepared["verification"]
+    if not isinstance(verification, dict):
+        raise TodoError(f"prepared receipt for {item_id!r} has invalid verification evidence", code=E_STATE)
+    if verification.get("status") != "passed":
+        raise TodoError(f"prepared receipt for {item_id!r} requires passed verification", code=E_STATE)
+    if verification.get("revision") != revision:
+        raise TodoError(f"prepared receipt for {item_id!r} verification drifted from source_revision", code=E_STATE)
+    if verification.get("clean") is not True:
+        raise TodoError(f"prepared receipt for {item_id!r} requires a clean source checkout", code=E_STATE)
+    suite = verification.get("suite")
+    command = verification.get("command")
+    if not isinstance(suite, str) or not suite.strip():
+        raise TodoError(f"prepared receipt for {item_id!r} requires a bounded verification suite", code=E_STATE)
+    if not isinstance(command, list) or not command or any(not isinstance(part, str) or not part for part in command):
+        raise TodoError(f"prepared receipt for {item_id!r} requires a non-empty verification command", code=E_STATE)
+    return prepared
+
+
+def _validate_final_evidence(item_id: str, evidence: Any) -> dict[str, Any]:
+    if not isinstance(evidence, dict) or evidence.get("status") != "passed":
+        raise TodoError(f"prepared task {item_id!r} requires passed final-tree evidence", code=E_FINAL_EVIDENCE)
+    for key in ("tree_worktree", "tree_revision", "scope_digest", "suite"):
+        if not isinstance(evidence.get(key), str) or not evidence[key].strip():
+            raise TodoError(f"final evidence for {item_id!r} requires {key}", code=E_FINAL_EVIDENCE)
+    if not os.path.isabs(evidence["tree_worktree"]):
+        raise TodoError(f"final evidence for {item_id!r} requires an absolute tree_worktree", code=E_FINAL_EVIDENCE)
+    _validate_revision(evidence["tree_revision"], "tree_revision")
+    if evidence.get("clean") is not True:
+        raise TodoError(f"final evidence for {item_id!r} requires a clean final tree", code=E_FINAL_EVIDENCE)
+    return evidence
+
+
+def _validate_batch_detail(item_id: str, detail: dict[str, Any], needs: list[str]) -> None:
+    batch = detail.get("batch")
+    if batch is None:
+        return
+    if not isinstance(batch, dict):
+        raise TodoError(f"batch metadata for {item_id!r} must be an object", code=E_STATE)
+    for key in ("batch_id", "member_id", "implementation_dependencies"):
+        if key not in batch:
+            raise TodoError(f"batch metadata for {item_id!r} is missing {key!r}", code=E_STATE)
+    validate_id(batch["batch_id"])
+    validate_id(batch["member_id"])
+    deps = batch["implementation_dependencies"]
+    if not isinstance(deps, list) or any(not isinstance(dep, str) for dep in deps):
+        raise TodoError(f"batch metadata for {item_id!r} has invalid implementation dependencies", code=E_STATE)
+    if len(set(deps)) != len(deps) or any(dep not in needs for dep in deps):
+        raise TodoError(f"batch metadata for {item_id!r} must name unique task dependencies", code=E_STATE)
+
+
 def _check_cycles(items: dict[str, Any]) -> None:
     visiting: set[str] = set()
     visited: set[str] = set()
@@ -213,9 +296,9 @@ def validate_snapshot(index: Any, details: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(index, dict):
         raise TodoError("index.json must contain a JSON object", code=E_STATE)
     version = index.get("schema_version")
-    if version != SCHEMA_VERSION:
+    if version not in SUPPORTED_SCHEMA_VERSIONS:
         raise TodoError(
-            f"unsupported index schema version {version!r}: this package reads {SCHEMA_VERSION}",
+            f"unsupported index schema version {version!r}: this package reads {SUPPORTED_SCHEMA_VERSIONS}",
             code=E_SCHEMA,
         )
     items = index.get("items")
@@ -265,6 +348,37 @@ def validate_snapshot(index: Any, details: dict[str, Any]) -> dict[str, Any]:
         for key in ("description", "context"):
             if key in detail and not isinstance(detail[key], str):
                 raise TodoError(f"detail for {item_id!r}: {key!r} must be a string", code=E_STATE)
+        if "prepared" in detail:
+            if version < 2:
+                raise TodoError("prepared receipts require index schema version 2", code=E_SCHEMA)
+            _validate_prepared_receipt(item_id, detail["prepared"])
+        if "batch" in detail and version < 2:
+            raise TodoError("batch metadata requires index schema version 2", code=E_SCHEMA)
+        if "final_evidence" in detail:
+            if version < 2:
+                raise TodoError("final evidence requires index schema version 2", code=E_SCHEMA)
+            _validate_final_evidence(item_id, detail["final_evidence"])
+        _validate_batch_detail(item_id, detail, list(items[item_id].get("needs", [])))
+
+    # A prepared receipt is useful only to an explicitly registered member of
+    # the same batch.  Reject duplicate member identities and cross-batch
+    # receipt/metadata pairs before they can affect readiness.
+    members: dict[tuple[str, str], str] = {}
+    for item_id, detail in details.items():
+        batch = detail.get("batch")
+        prepared = detail.get("prepared")
+        if batch is not None:
+            identity = (batch["batch_id"], batch["member_id"])
+            previous = members.get(identity)
+            if previous is not None and previous != item_id:
+                raise TodoError(f"duplicate batch member {identity!r}: {previous!r} and {item_id!r}", code=E_STATE)
+            members[identity] = item_id
+        if prepared is not None:
+            batch = detail.get("batch")
+            if batch is None or (batch["batch_id"], batch["member_id"]) != (
+                prepared["batch_id"], prepared["member_id"]
+            ):
+                raise TodoError(f"prepared receipt for {item_id!r} does not match batch metadata", code=E_STATE)
     return index
 
 
@@ -363,7 +477,24 @@ def is_ready(item_id: str, snapshot: Snapshot, now: datetime | None = None) -> b
         return False
     if claim_is_live(entry.get("claim"), now):
         return False
-    return all(snapshot.index["items"][dep]["status"] == "done" for dep in entry.get("needs", []))
+    detail = snapshot.details.get(item_id, {})
+    batch = detail.get("batch")
+    implementation_deps = set(batch.get("implementation_dependencies", [])) if isinstance(batch, dict) else set()
+    for dep in entry.get("needs", []):
+        dep_entry = snapshot.index["items"][dep]
+        if dep_entry["status"] == "done":
+            continue
+        if dep not in implementation_deps:
+            return False
+        dep_detail = snapshot.details.get(dep, {})
+        receipt = dep_detail.get("prepared")
+        if not isinstance(receipt, dict) or receipt.get("batch_id") != batch.get("batch_id"):
+            return False
+        if dep_detail.get("batch", {}).get("batch_id") != batch.get("batch_id"):
+            return False
+        if dep_entry.get("claim") is not None:
+            return False
+    return True
 
 
 def downstream_unlocks(item_id: str, snapshot: Snapshot) -> int:
@@ -422,6 +553,7 @@ def op_create(
     acceptance: list[str] | tuple[str, ...] = (),
     links: list[str] | tuple[str, ...] = (),
     context: str = "",
+    batch: dict[str, Any] | None = None,
 ) -> str:
     validate_id(item_id)
     items = snapshot.index["items"]
@@ -442,6 +574,9 @@ def op_create(
         if dep not in items:
             raise TodoError(f"task {item_id!r} needs unknown task {dep!r}", code=E_STATE)
     items[item_id] = entry
+    previous_version = snapshot.index["schema_version"]
+    if batch is not None and previous_version < SCHEMA_VERSION:
+        snapshot.index["schema_version"] = SCHEMA_VERSION
     detail: dict[str, Any] = {}
     if description:
         detail["description"] = description
@@ -451,12 +586,15 @@ def op_create(
         detail["links"] = list(links)
     if context:
         detail["context"] = context
+    if batch is not None:
+        detail["batch"] = json.loads(json.dumps(batch))
     snapshot.details[item_id] = detail
     try:
         validate_snapshot(snapshot.index, snapshot.details)
     except TodoError:
         del items[item_id]
         del snapshot.details[item_id]
+        snapshot.index["schema_version"] = previous_version
         raise
     return item_id
 
@@ -473,6 +611,7 @@ def op_update(
     links: list[str] | tuple[str, ...] | None = None,
     context: str | None = None,
     status: str | None = None,
+    batch: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     items = snapshot.index["items"]
     if item_id not in items:
@@ -480,6 +619,7 @@ def op_update(
     entry = items[item_id]
     previous = json.loads(json.dumps(entry))
     previous_detail = json.loads(json.dumps(snapshot.details[item_id]))
+    previous_version = snapshot.index["schema_version"]
     changed: list[str] = []
     if title is not None:
         entry["title"] = title
@@ -536,11 +676,24 @@ def op_update(
         else:
             detail.pop("context", None)
         changed.append("context")
+    if batch is not None:
+        if snapshot.index["schema_version"] < SCHEMA_VERSION:
+            snapshot.index["schema_version"] = SCHEMA_VERSION
+        detail["batch"] = json.loads(json.dumps(batch))
+        changed.append("batch")
+    if changed and "prepared" in detail:
+        # A prepared receipt binds the exact member content and declared
+        # edge. Any later edit invalidates it instead of allowing a stale
+        # receipt to unlock a dependent member.
+        detail.pop("prepared", None)
+        detail.pop("final_evidence", None)
+        changed.append("prepared_receipt")
     try:
         validate_snapshot(snapshot.index, snapshot.details)
     except TodoError:
         items[item_id] = previous
         snapshot.details[item_id] = previous_detail
+        snapshot.index["schema_version"] = previous_version
         raise
     return {"id": item_id, "changed": changed}
 
@@ -642,10 +795,98 @@ def op_release(
     return {"id": item_id, "status": entry["status"]}
 
 
-def op_finish(
-    snapshot: Snapshot, item_id: str, worker: str, generation: str
+def op_prepare(
+    snapshot: Snapshot,
+    item_id: str,
+    worker: str,
+    generation: str,
+    *,
+    batch_id: str,
+    member_id: str,
+    source_worktree: str,
+    source_revision: str,
+    verification: dict[str, Any],
+    implementation_dependencies: list[str] | tuple[str, ...] = (),
 ) -> dict[str, Any]:
-    """Close a task. No work breakdown, scope gate, or attestation required."""
+    """Persist prepared evidence and release the member claim.
+
+    Preparation is intentionally not completion.  The item returns to ``open``
+    with no claim, and only an explicitly registered same-batch implementation
+    edge may use its receipt for readiness.  The service validates the actual
+    Git checkout before calling this pure operation; this function validates
+    the durable shape and claim authority again on every publication retry.
+    """
+    worker = validate_worker(worker)
+    entry = _require_entry(snapshot, item_id)
+    claim = entry.get("claim")
+    if not claim or claim.get("worker") != worker or claim.get("generation") != generation:
+        raise TodoError(f"stale claim for {item_id!r}: only the holder can prepare", code=E_CLAIM_STALE)
+    if entry["status"] != "active":
+        raise TodoError(f"task {item_id!r} must be active before it can be prepared", code=E_STATE)
+    validate_id(batch_id)
+    validate_id(member_id)
+    validate_id(item_id)
+    source_worktree = str(source_worktree)
+    source_revision = _validate_revision(source_revision, "source_revision")
+    deps = list(implementation_dependencies)
+    if len(set(deps)) != len(deps) or any(dep not in entry.get("needs", []) for dep in deps):
+        raise TodoError(
+            f"prepared implementation dependencies for {item_id!r} must be unique members of needs",
+            code=E_STATE,
+        )
+    detail = snapshot.details[item_id]
+    batch = detail.get("batch")
+    if not isinstance(batch, dict) or (batch.get("batch_id"), batch.get("member_id")) != (batch_id, member_id):
+        raise TodoError(
+            f"task {item_id!r} must be explicitly registered as batch member {member_id!r} before prepare",
+            code=E_STATE,
+        )
+    registered_deps = list(batch.get("implementation_dependencies", []))
+    if registered_deps != deps:
+        raise TodoError("prepare dependencies differ from registered batch metadata", code=E_STATE)
+    previous_detail = json.loads(json.dumps(detail))
+    previous_index_version = snapshot.index["schema_version"]
+    if detail.get("prepared") is not None:
+        raise TodoError(f"task {item_id!r} already has prepared evidence", code=E_STATE)
+    if snapshot.index["schema_version"] < SCHEMA_VERSION:
+        snapshot.index["schema_version"] = SCHEMA_VERSION
+    detail["prepared"] = {
+        "schema": PREPARED_RECEIPT_SCHEMA,
+        "batch_id": batch_id,
+        "member_id": member_id,
+        "owner_generation": generation,
+        "source_worktree": source_worktree,
+        "source_revision": source_revision,
+        "verification": json.loads(json.dumps(verification)),
+    }
+    entry["claim"] = None
+    entry["status"] = "open"
+    try:
+        validate_snapshot(snapshot.index, snapshot.details)
+    except TodoError:
+        snapshot.index["schema_version"] = previous_index_version
+        snapshot.details[item_id] = previous_detail
+        raise
+    return {
+        "id": item_id,
+        "status": "open",
+        "prepared": {
+            "batch_id": batch_id,
+            "member_id": member_id,
+            "source_worktree": source_worktree,
+            "source_revision": source_revision,
+        },
+    }
+
+
+def op_finish(
+    snapshot: Snapshot,
+    item_id: str,
+    worker: str,
+    generation: str,
+    final_evidence: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Close a task, requiring final-tree evidence for prepared work."""
     worker = validate_worker(worker)
     entry = _require_entry(snapshot, item_id)
     claim = entry.get("claim")
@@ -655,6 +896,14 @@ def op_finish(
         or claim.get("generation") != generation
     ):
         raise TodoError(f"stale claim for {item_id!r}: only the holder can finish", code=E_CLAIM_STALE)
+    detail = snapshot.details[item_id]
+    if detail.get("prepared") is not None:
+        if final_evidence is None:
+            raise TodoError(
+                f"prepared task {item_id!r} needs final-tree evidence before finish",
+                code=E_FINAL_EVIDENCE,
+            )
+        detail["final_evidence"] = _validate_final_evidence(item_id, final_evidence)
     entry["claim"] = None
     entry["status"] = "done"
     validate_snapshot(snapshot.index, snapshot.details)

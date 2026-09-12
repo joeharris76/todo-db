@@ -1,7 +1,7 @@
-"""The small agent surface: eight tools over shared service operations.
+"""The small agent surface over shared service operations.
 
 ``list_items`` / ``show_item`` / ``create_item`` / ``update_item`` /
-``take`` / ``release`` / ``finish`` / ``renew`` are backed by
+``take`` / ``prepare`` / ``release`` / ``finish`` / ``renew`` are backed by
 :mod:`todo_db.service`, the same operations the human/CI CLI uses.
 Blocking Git work runs via ``asyncio.to_thread``; there is no shared
 mutable connection to guard.
@@ -89,7 +89,7 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
 
     @server.tool(
         name="create_item",
-        description="Create a task: id, title, priority (default medium), description, needs, acceptance, links, context.",
+        description="Create a task: id, title, priority (default medium), description, needs, acceptance, links, context, optional batch metadata.",
     )
     async def create_item_tool(
         id: str,
@@ -100,6 +100,7 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
         acceptance: list[str] | None = None,
         links: list[str] | None = None,
         context: str = "",
+        batch: dict[str, Any] | None = None,
         ctx: Context = None,  # type: ignore[assignment]
     ) -> dict[str, Any]:
         worker = _need_principal(holder, ctx)
@@ -108,12 +109,12 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
         svc = _service(target, worker)
         return await asyncio.to_thread(
             svc.create_item, id, title, priority=priority, description=description,
-            needs=needs or [], acceptance=acceptance or [], links=links or [], context=context,
+            needs=needs or [], acceptance=acceptance or [], links=links or [], context=context, batch=batch,
         )
 
     @server.tool(
         name="update_item",
-        description="Edit a task: title/priority/description/needs/sections, or open/blocked moves. Closing goes through finish.",
+        description="Edit a task: title/priority/description/needs/sections, optional batch metadata, or open/blocked moves. Closing goes through finish.",
     )
     async def update_item_tool(
         id: str,
@@ -124,6 +125,7 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
         acceptance: list[str] | None = None,
         links: list[str] | None = None,
         context: str | None = None,
+        batch: dict[str, Any] | None = None,
         status: str | None = None,
         ctx: Context = None,  # type: ignore[assignment]
     ) -> dict[str, Any]:
@@ -146,6 +148,8 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
             kwargs["links"] = links
         if context is not None:
             kwargs["context"] = context
+        if batch is not None:
+            kwargs["batch"] = batch
         if status is not None:
             kwargs["status"] = status
         return await asyncio.to_thread(svc.update_item, id, **kwargs)
@@ -180,19 +184,54 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
         return await asyncio.to_thread(svc.release, id, generation)
 
     @server.tool(
-        name="finish",
-        description="Close a task. Needs the generation returned by take. No work breakdown or attestation required.",
+        name="prepare",
+        description=(
+            "Record verified member work and release its claim without marking it done. "
+            "Requires an explicit batch member, clean exact source checkout, and passed bounded suite evidence."
+        ),
     )
-    async def finish_tool(
+    async def prepare_tool(
         id: str,
         generation: str,
+        batch_id: str,
+        member_id: str,
+        source_worktree: str,
+        source_revision: str,
+        verification: dict[str, Any],
+        implementation_dependencies: list[str] | None = None,
         ctx: Context = None,  # type: ignore[assignment]
     ) -> dict[str, Any]:
         worker = _need_principal(holder, ctx)
         if not isinstance(worker, str):
             return worker
         svc = _service(target, worker)
-        return await asyncio.to_thread(svc.finish, id, generation)
+        return await asyncio.to_thread(
+            svc.prepare,
+            id,
+            generation,
+            batch_id=batch_id,
+            member_id=member_id,
+            source_worktree=source_worktree,
+            source_revision=source_revision,
+            verification=verification,
+            implementation_dependencies=implementation_dependencies or [],
+        )
+
+    @server.tool(
+        name="finish",
+        description="Close a task. Prepared tasks additionally require current final-tree evidence.",
+    )
+    async def finish_tool(
+        id: str,
+        generation: str,
+        final_evidence: dict[str, Any] | None = None,
+        ctx: Context = None,  # type: ignore[assignment]
+    ) -> dict[str, Any]:
+        worker = _need_principal(holder, ctx)
+        if not isinstance(worker, str):
+            return worker
+        svc = _service(target, worker)
+        return await asyncio.to_thread(svc.finish, id, generation, final_evidence)
 
     @server.tool(
         name="renew",
