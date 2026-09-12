@@ -3,17 +3,18 @@
 ADR 0006 G5 / plan §8.3:
 
 - The principal (``claimed_by``) comes from ``--actor`` -> ``TODO_DB_ACTOR`` ->
-  ``mcp:<clientInfo.name>:<user>@<host>`` derived from the MCP ``initialize``
-  handshake. It is **never** ``default_actor()`` (which would treat a session id
-  as a stable principal, breaking ADR 0003 §2.1/§2.2).
+  an instance-scoped value derived from the MCP ``initialize`` client name,
+  local user/host, and server session. It is **never** ``default_actor()``.
 - The session id is a per-process ``uuid4().hex`` unless ``--session`` overrides
-  it. It is logged at startup on stderr and passed on every ``take`` so a
-  restarted server re-adopts its own claim via same-principal adoption.
+  it. It is logged at startup on stderr and contributes a bounded digest to the
+  fallback principal. Independent same-name clients therefore do not collide;
+  a deliberate restart can resume by reusing ``--session`` or an explicit actor.
 """
 
 from __future__ import annotations
 
 import getpass
+import hashlib
 import os
 import re
 import socket
@@ -22,7 +23,11 @@ from typing import Any
 from uuid import uuid4
 
 _UNSAFE_NAME_CHARS = re.compile(r"[^A-Za-z0-9._-]")
+_UNSAFE_USER_HOST_CHARS = re.compile(r"[^A-Za-z0-9._@-]")
 _MAX_NAME_LEN = 64
+_MAX_USER_HOST_LEN = 32
+_INSTANCE_TAG_LEN = 24
+_MAX_SESSION_LEN = 256
 
 
 def _sanitize_client_name(raw: Any) -> str:
@@ -38,14 +43,16 @@ def _user_host() -> str:
         user = getpass.getuser()
     except Exception:  # pragma: no cover - exotic environments without a username
         user = "unknown"
-    return f"{user}@{socket.gethostname()}"
+    value = _UNSAFE_USER_HOST_CHARS.sub("-", f"{user}@{socket.gethostname()}")
+    return value[:_MAX_USER_HOST_LEN] or "unknown@unknown"
 
 
-def principal_from_client_info(client_info: Any) -> str:
-    """Derive ``mcp:<clientInfo.name>:<user>@<host>`` from an ``initialize`` peer."""
+def principal_from_client_info(client_info: Any, session_id: str) -> str:
+    """Derive an instance-scoped fallback principal from an ``initialize`` peer."""
 
     name = _sanitize_client_name(getattr(client_info, "name", None))
-    return f"mcp:{name}:{_user_host()}"
+    instance = hashlib.sha256(session_id.encode("utf-8")).hexdigest()[:_INSTANCE_TAG_LEN]
+    return f"mcp:{name}:{_user_host()}:{instance}"
 
 
 @dataclass(frozen=True)
@@ -66,14 +73,17 @@ class Identity:
             return self.actor
         if client_info is None:
             return None
-        return principal_from_client_info(client_info)
+        return principal_from_client_info(client_info, self.session_id)
 
     def resolved(self, client_info: Any) -> "Identity":
         """Return a copy with the actor pinned from the handshake, if still unset."""
 
         if self.actor:
             return self
-        return Identity(session_id=self.session_id, actor=principal_from_client_info(client_info))
+        return Identity(
+            session_id=self.session_id,
+            actor=principal_from_client_info(client_info, self.session_id),
+        )
 
 
 class PrincipalHolder:
@@ -95,7 +105,7 @@ class PrincipalHolder:
 
     def ensure(self, client_info: Any | None) -> str | None:
         if self.principal is None and client_info is not None:
-            self.principal = principal_from_client_info(client_info)
+            self.principal = principal_from_client_info(client_info, self._identity.session_id)
         return self.principal
 
 
@@ -103,5 +113,8 @@ def resolve_identity(actor: str | None, session: str | None) -> Identity:
     """Build the launch-time identity. Does not touch ``default_actor()``."""
 
     resolved_actor = actor or os.environ.get("TODO_DB_ACTOR") or None
-    session_id = (session or "").strip() or uuid4().hex
+    supplied_session = (session or "").strip()
+    if len(supplied_session) > _MAX_SESSION_LEN or any(ord(char) < 32 for char in supplied_session):
+        raise ValueError(f"session id must be one line of at most {_MAX_SESSION_LEN} characters")
+    session_id = supplied_session or uuid4().hex
     return Identity(session_id=session_id, actor=resolved_actor)

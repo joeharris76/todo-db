@@ -55,8 +55,8 @@ from the first page).
 - `E_UNKNOWN` -- outcome undetermined; reconcile with the operation ID.
 - `E_NO_PRINCIPAL` -- call `get_instructions`, then retry.
 
-One server instance is one worker identity: concurrent workers run
-separate servers with different --actor values (or distinct client
-names when no --actor is set). Claims are cooperative, not access
-control.
+One server instance is one logical worker. Default identities are isolated per
+server, even for clients with the same name. Use a stable, unique --actor for
+restart continuity and do not run that actor concurrently. Claims are
+cooperative, not access control.
 """
