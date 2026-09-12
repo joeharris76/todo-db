@@ -635,11 +635,14 @@ class TrackerService:
         worker = self.worker
 
         def apply(snap: S.Snapshot) -> dict[str, Any]:
+            # Re-check on every publication retry: a concurrent state push
+            # must not turn a formerly clean checkout into a stale receipt.
+            current_worktree = self._validate_source_checkout(clean_worktree, source_revision)
             return S.op_prepare(
                 snap, item_id, worker, generation,
                 batch_id=batch_id,
                 member_id=member_id,
-                source_worktree=clean_worktree,
+                source_worktree=current_worktree,
                 source_revision=source_revision,
                 verification=verification,
                 implementation_dependencies=implementation_dependencies or [],
