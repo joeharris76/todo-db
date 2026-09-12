@@ -32,7 +32,7 @@ Every release ships a wheel on
 checksums:
 
 ```sh
-VERSION=0.7.2
+VERSION=0.7.3
 gh release download "v$VERSION" --repo joeharris76/todo-db \
   --pattern "todo_db-$VERSION-py3-none-any.whl"
 uv tool install "./todo_db-$VERSION-py3-none-any.whl[mcp]"
