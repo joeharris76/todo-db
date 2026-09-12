@@ -4,7 +4,15 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.7.3] - 2026-09-12
+
+### Fixed
+
+- The MCP initialization handshake now derives its reported version from the
+  installed package metadata instead of retaining the original 0.7.0 value;
+  publication now checks the built wheel for the same invariant.
+- Installation guidance and bug-report prompts now name the current release,
+  and the README identifies the catalog-owned `todo` skill correctly.
 
 ### Removed
 

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "todo-db"
-version = "0.7.2"
+version = "0.7.3"
 description = "A JSON/Git TODO tracker for coding agents"
 readme = "README.md"
 requires-python = ">=3.10"

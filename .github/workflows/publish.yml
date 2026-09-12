@@ -26,7 +26,12 @@ jobs:
       - name: Build sdist and wheel
         run: uv build
       - name: Check distributions
-        run: ls -lh dist/ && uv run --with build python -c "import pathlib; assert list(pathlib.Path('dist').glob('*.whl'))"
+        run: |
+          ls -lh dist/
+          WHEEL="$(find dist -maxdepth 1 -name '*.whl' -print -quit)"
+          test -n "$WHEEL"
+          uv run --isolated --with "$WHEEL[mcp]" python -c \
+            'from importlib.metadata import version; from todo_db import TOOL_VERSION; assert TOOL_VERSION == version("todo-db")'
       - name: Generate checksums
         run: (cd dist && sha256sum * > SHA256SUMS) && cat dist/SHA256SUMS
       - name: Upload dist artifact

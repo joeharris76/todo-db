@@ -31,7 +31,7 @@ body:
     id: version
     attributes:
       label: todo-db version
-      placeholder: 0.7.0
+      placeholder: 0.7.3
     validations:
       required: true
   - type: input

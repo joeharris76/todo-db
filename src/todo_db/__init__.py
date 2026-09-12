@@ -1,5 +1,7 @@
 """Public API for the JSON/Git TODO tracker."""
 
+from importlib.metadata import version
+
 from . import store
 from .errors import (
     E_ACTIVE_CLAIMS,
@@ -21,7 +23,7 @@ from .errors import (
 from .git_backend import ReconcileResult, StateRef, bootstrap, history, mutate, new_op_id, read, reconcile
 from .service import TrackerService, count_tokens
 
-TOOL_VERSION = "0.7.0"
+TOOL_VERSION = version("todo-db")
 
 __all__ = [
     "E_ACTIVE_CLAIMS",
