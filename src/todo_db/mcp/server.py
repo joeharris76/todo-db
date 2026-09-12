@@ -43,7 +43,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cache-dir", help="local snapshot cache (default: ~/.cache/todo-db-state)")
     parser.add_argument("--repo-root", help="project root for config discovery (default: cwd)")
     parser.add_argument("--actor", help="explicit worker identity (else TODO_DB_ACTOR, else derived at initialize)")
-    parser.add_argument("--session", help="session id override (default: per-process uuid4 hex)")
+    parser.add_argument(
+        "--session",
+        help="fallback-identity restart key (default: per-process uuid4 hex)",
+    )
     parser.add_argument("--log-level", choices=_LOG_LEVELS, default="info", help="stderr log level (default: info)")
     return parser
 

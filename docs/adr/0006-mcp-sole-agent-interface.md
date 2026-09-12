@@ -116,17 +116,25 @@ Pi adapter's `SerializedQueue`), keeps every SQLite object on one thread, and
 keeps stdio framing, pings, and cancellation responsive. Cross-process safety is
 unchanged and still rests on `BEGIN IMMEDIATE` + `PRAGMA busy_timeout`.
 
-### G5: Identity is explicit; the server never infers a principal from a session id
+### G5: Explicit actors are stable; generated fallback workers are instance-scoped
 
 `default_actor()` returns the first of `TODO_ACTOR`, `CLAUDE_SESSION_ID`,
 `CODEX_SESSION_ID`, `AGENT_SESSION_ID`, then `user@host` — i.e. it will use a
 *session* id as the stable *principal*, breaking ADR 0003 §2.1 and §2.2.
 
 The server resolves its principal from `--actor` / `TODO_DB_ACTOR`, or, when
-unset, derives `mcp:<clientInfo.name>:<user>@<host>` from the MCP `initialize`
-handshake — **unconditionally**. It never calls `default_actor()`. The session
-id is a per-process UUID (or `--session`), passed on every `take` so a restarted
-server re-adopts its own claim via same-principal adoption (ADR 0003 §2.2).
+unset, derives an instance-scoped fallback from the MCP `initialize` client
+name, user/host, and a digest of the server session. It never calls
+`default_actor()` or consumes ambient agent-session variables. A per-process
+UUID isolates independent default servers even when their client product names
+match. An explicit `--session` recreates the same fallback for deliberate
+restart recovery; a stable explicit actor is the normal continuity mechanism.
+
+This amends the original fallback rule. Product name plus user/host did not
+identify a logical worker: independent Codex processes could collide and one
+could re-adopt another's claim. Existing legacy fallback claims are not adopted
+automatically after upgrade. An operator may stop the old process and assert
+its exact persisted worker through `--actor`, or wait for lease expiry.
 
 stdio transport inherits the CLI's local-process trust model. The Pi adapter's
 client-side project-trust gate (`isProjectTrusted()`) is a client property and
@@ -291,4 +299,3 @@ with `E_VERIFY_GATE` and the human `verify-run` recovery command, and
 `TODO_DB_ALLOW_HOSTED_VERIFY_RUN=1`, which stays out of the server's
 environment. `rebaseline` and human `complete` are unchanged: they remain floor
 verbs with no tool at any profile.
-

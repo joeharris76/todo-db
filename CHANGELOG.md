@@ -4,6 +4,17 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- Independent MCP servers that report the same client product name now receive
+  separate fallback worker identities. A same-name process can no longer block,
+  re-adopt, renew, finish, or release another process's claim by accident.
+- Explicit actors retain stable restart behavior. Default workers can be
+  deliberately restored with `--session`; legacy fallback claims require an
+  explicit actor recovery or lease expiry after upgrade.
+
 ## [0.7.3] - 2026-09-12
 
 ### Fixed

@@ -326,8 +326,8 @@ Replaces the Pi `SerializedQueue`.
 
 | Concern | Design |
 | --- | --- |
-| Principal (`claimed_by`) | `--actor` / `TODO_DB_ACTOR` launch value. **If unset, derive `mcp:<clientInfo.name>:<user>@<host>` from `initialize` — unconditionally. The server never reaches `default_actor()`** (which wrongly treats a session id as a principal, breaking ADR 0003 §2.1/§2.2). |
-| Session (`claimed_session`) | UUID per server process; `--session` override. Logged at startup. Passed on every `take` so restart → auto-adopt (§S4). |
+| Principal (`claimed_by`) | Implemented amendment: `--actor` / `TODO_DB_ACTOR`, else an instance-scoped fallback from client name, user/host, and a bounded session digest. The original product-name-only fallback collided across independent servers. |
+| Session | UUID per server process; `--session` override. Logged at startup and folded into the fallback worker identity. Reusing it deliberately restores that identity; explicit actors remain the normal stable restart path. |
 | Claim token | Unchanged; required on `progress`/`finish`/`release`. |
 | One live claim | Enforced in `current_claim`; cleaner now that the principal is fixed. **But `E_MULTIPLE_CLAIMS` hard-fails `next` AND `take`** (`agent.py:225`) — deadlock. Fix: the `E_MULTIPLE_CLAIMS` envelope must carry every offending item id **and its claim token** in `recovery`, and `claims` stays in the default profile (§S4). |
 | Auth (stdio) | Trusted local process — inherits the CLI trust model. Documented. The client-side registration-approval step replaces the Pi `isProjectTrusted()` gate (§M9). |
@@ -335,8 +335,8 @@ Replaces the Pi `SerializedQueue`.
 
 ### 8.4 Subagents / forks
 
-A subagent or session fork that starts its own server inherits the same
-`--actor` → same principal → same-principal adoption (ADR 0003 §2.2). A fork
+A subagent or session fork that starts its own server with the same explicit
+`--actor` gets the same principal and same-principal adoption (ADR 0003 §2.2). A fork
 that keeps the parent's server connection is fine (one worker thread). Document
 that concurrent *distinct* principals on one project still race cooperatively
 via claim tokens, as today.
