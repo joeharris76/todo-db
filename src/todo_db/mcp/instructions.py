@@ -18,19 +18,30 @@ acknowledgement; lists return brief rows (id/title/priority/status).
    ready_only; paging: limit (default 5) + cursor.
 2. `show_item` -- one task with needs, readiness, and sections.
    Large fields arrive as section reads: field/offset/budget.
-3. `create_item` -- id, title, priority (default medium),
+3. `register_batch` -- register the immutable repository/integration contract
+   before any prepared member enrollment. Older servers or schemas do not
+   support prepared mode; use serial mode instead.
+4. `create_item` -- id, title, priority (default medium),
    description, needs, acceptance, links, context, and optional batch
    metadata (`batch_id`, `member_id`, `implementation_dependencies`).
-4. `take` -- claim a task; returns the claim generation plus enough
+5. `take` -- claim a task; returns the claim generation plus enough
    context to begin work. One live claim per worker.
-5. `prepare` -- persist a member receipt and release its claim without
-   marking it done. It requires an explicit same-batch edge, a clean exact
-   source checkout, and passed bounded-suite evidence.
-6. `release` -- hand the claim back (needs the generation from take).
-7. `finish` -- close the task (needs the generation from take). Prepared
-   tasks additionally require current combined-tree evidence.
+6. `prepare` -- persist a member receipt and release its claim without
+   marking it done. It requires the registered batch, explicit same-batch edge,
+   actual member base, accepted/current heads, frozen scope, clean exact source
+   checkout, and passed bounded-suite evidence.
+7. `bind_batch_pr` -- bind exactly one final PR identity after integration.
+8. `abort_batch` -- owner-authorized, resumable abort after all member claims
+   are released; invalidates prepared/final member evidence, retains any bound
+   final PR receipt, detaches non-terminal members from the archived batch,
+   and returns them to ordinary claim/finish. It refuses once a member is done
+   so partial closeout can resume without reopening it.
+9. `release` -- hand the claim back (needs the generation from take).
+10. `finish` -- close the task (needs the generation from take). Prepared
+   tasks additionally require current combined-tree evidence covering every
+   prepared member and the registered final PR.
    `drop` abandons a task; a live claim needs its generation.
-7. `renew` -- extend a long-running claim (same generation, no
+11. `renew` -- extend a long-running claim (same generation, no
    progress milestones required).
 
 `update_item` edits title/priority/description/needs/sections/status

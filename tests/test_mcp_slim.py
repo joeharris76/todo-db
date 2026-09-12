@@ -11,6 +11,7 @@ import mcp.types as types
 from mcp.shared.memory import create_connected_server_and_client_session as connect
 
 from todo_db import count_tokens
+from todo_db import store
 from todo_db.git_backend import StateRef, bootstrap
 from todo_db.mcp.instructions import INSTRUCTIONS
 from todo_db.mcp.server import build_parser, build_server, resolve_launch_config
@@ -47,6 +48,18 @@ def _text_len(result) -> int:
     return 0
 
 
+def _make_real_repo(tmp_path: Path) -> tuple[Path, str]:
+    repo = tmp_path / "delivery-repo"
+    subprocess.run(["git", "init", "--quiet", "-b", "main", str(repo)], check=True)
+    subprocess.run(["git", "-C", str(repo), "config", "user.name", "Test"], check=True)
+    subprocess.run(["git", "-C", str(repo), "config", "user.email", "test@example.invalid"], check=True)
+    (repo / "README").write_text("base\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(repo), "add", "README"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "--quiet", "-m", "base"], check=True)
+    revision = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
+    return repo, revision
+
+
 def test_lifecycle_over_tools(tmp_path: Path) -> None:
     async def go():
         server = build_server(_launch(tmp_path))
@@ -69,6 +82,126 @@ def test_lifecycle_over_tools(tmp_path: Path) -> None:
             assert dropped["ok"]
             gone = _payload(await session.call_tool("drop", {"id": "t2"}))
             assert gone["ok"] and gone["data"]["status"] == "dropped"
+
+    anyio.run(go)
+
+
+def test_registered_batch_contract_is_public_over_mcp(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    subprocess.run(["git", "init", "--quiet", "-b", "main", str(repo)], check=True)
+    subprocess.run(["git", "-C", str(repo), "config", "user.name", "Test"], check=True)
+    subprocess.run(["git", "-C", str(repo), "config", "user.email", "test@example.invalid"], check=True)
+    (repo / "README").write_text("batch\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(repo), "add", "README"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "--quiet", "-m", "base"], check=True)
+    revision = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
+    scope = {"a": ["src/**"]}
+
+    async def go():
+        server = build_server(_launch(tmp_path))
+        async with connect(server, client_info=types.Implementation(name="w1", version="0")) as session:
+            registered = _payload(await session.call_tool("register_batch", {
+                "batch_id": "batch-1", "project_id": "todo-db", "repository": str(repo),
+                "owner_generation": "1" * 32, "integration_branch": "main",
+                "integration_worktree": str(repo), "start_head": revision,
+                "members": ["a"], "scope": scope, "scope_hash": store.scope_digest(scope),
+                "delivery_boundary": "final-pr", "terminal_outcome": "merged",
+            }))
+            assert registered["ok"], registered
+            created = _payload(await session.call_tool("create_item", {
+                "id": "a", "title": "A",
+                "batch": {"batch_id": "batch-1", "member_id": "a", "implementation_dependencies": []},
+            }))
+            assert created["ok"], created
+            shown = _payload(await session.call_tool("show_item", {"id": "a"}))
+            assert shown["ok"] and shown["data"]["batch"]["batch_id"] == "batch-1"
+
+    anyio.run(go)
+
+
+def test_public_mcp_prepared_delivery_and_finish(tmp_path: Path) -> None:
+    repo, base = _make_real_repo(tmp_path)
+    worker = tmp_path / "worker-a"
+    subprocess.run(["git", "-C", str(repo), "worktree", "add", "-b", "worker-a", str(worker), base], check=True)
+    (worker / "a").mkdir()
+    (worker / "a" / "file").write_text("A\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(worker), "add", "a/file"], check=True)
+    subprocess.run(["git", "-C", str(worker), "commit", "--quiet", "-m", "A"], check=True)
+    ahead = subprocess.check_output(["git", "-C", str(worker), "rev-parse", "HEAD"], text=True).strip()
+    scope = {"a": ["a/**"]}
+
+    async def go():
+        server = build_server(_launch(tmp_path))
+        async with connect(server, client_info=types.Implementation(name="w1", version="0")) as session:
+            registered = _payload(await session.call_tool("register_batch", {
+                "batch_id": "delivery", "project_id": "todo-db", "repository": str(repo),
+                "owner_generation": "1" * 32, "integration_branch": "main",
+                "integration_worktree": str(repo), "start_head": base, "members": ["a"],
+                "scope": scope, "scope_hash": store.scope_digest(scope),
+                "delivery_boundary": "final-pr", "terminal_outcome": "merged",
+            }))
+            assert registered["ok"], registered
+            subprocess.run(["git", "-C", str(repo), "merge", "--ff-only", "worker-a"], check=True)
+            created = _payload(await session.call_tool("create_item", {
+                "id": "a", "title": "A",
+                "batch": {"batch_id": "delivery", "member_id": "a", "implementation_dependencies": []},
+            }))
+            assert created["ok"], created
+            taken = _payload(await session.call_tool("take", {"id": "a"}))
+            generation = taken["data"]["claim"]["generation"]
+            premature_finish = _payload(await session.call_tool("finish", {
+                "id": "a", "generation": generation,
+            }))
+            assert not premature_finish["ok"] and premature_finish["code"] == "E_FINAL_EVIDENCE"
+            stale = _payload(await session.call_tool("prepare", {
+                "id": "a", "generation": "0" * 32, "batch_id": "delivery", "member_id": "a",
+                "source_worktree": str(worker), "source_revision": ahead, "source_base": base,
+                "accepted_head": ahead, "integration_head": ahead,
+                "scope_hash": store.scope_digest(scope), "verification": {"status": "passed", "revision": ahead,
+                "clean": True, "suite": "bounded", "command": ["human-run"]},
+            }))
+            assert not stale["ok"] and stale["code"] == "E_CLAIM_STALE"
+            wrong_head = _payload(await session.call_tool("prepare", {
+                "id": "a", "generation": generation, "batch_id": "delivery", "member_id": "a",
+                "source_worktree": str(worker), "source_revision": ahead, "source_base": base,
+                "accepted_head": ahead, "integration_head": base,
+                "scope_hash": store.scope_digest(scope), "verification": {"status": "passed", "revision": ahead,
+                "clean": True, "suite": "bounded", "command": ["human-run"]},
+            }))
+            assert not wrong_head["ok"]
+            prepared = _payload(await session.call_tool("prepare", {
+                "id": "a", "generation": generation, "batch_id": "delivery", "member_id": "a",
+                "source_worktree": str(worker), "source_revision": ahead, "source_base": base,
+                "accepted_head": ahead, "integration_head": ahead,
+                "scope_hash": store.scope_digest(scope), "verification": {
+                    "status": "passed", "revision": ahead, "clean": True, "suite": "bounded",
+                    "command": ["uv", "run", "--", "pytest", "tests/test_batch_delivery.py", "-q"],
+                },
+            }))
+            assert prepared["ok"] and prepared["data"]["status"] == "open", prepared
+            taken = _payload(await session.call_tool("take", {"id": "a"}))
+            generation = taken["data"]["claim"]["generation"]
+            final_pr = {"number": 1, "node_id": "PR_delivery", "head": ahead}
+            assert _payload(await session.call_tool("bind_batch_pr", {
+                "batch_id": "delivery", "owner_generation": "1" * 32,
+                **final_pr,
+            }))["ok"]
+            finished = _payload(await session.call_tool("finish", {
+                "id": "a", "generation": generation, "final_evidence": {
+                    "status": "passed", "batch_id": "delivery", "project_id": "todo-db",
+                    "repository": str(repo), "tree_worktree": str(repo), "tree_revision": ahead,
+                    "integration_branch": "main", "integration_head": ahead,
+                    "scope_hash": store.scope_digest(scope), "member_heads": {"a": ahead},
+                    "member_ranges": {"a": {"base": base, "head": ahead}},
+                    "changed_files": ["a/file"], "final_pr": final_pr,
+                    "suite": "combined", "clean": True,
+                },
+            }))
+            assert finished["ok"] and finished["data"]["status"] == "done", finished
+            aborted = _payload(await session.call_tool("abort_batch", {
+                "batch_id": "delivery", "owner_generation": "1" * 32,
+            }))
+            assert not aborted["ok"]
 
     anyio.run(go)
 

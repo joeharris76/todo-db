@@ -12,6 +12,7 @@ truncating silently.
 from __future__ import annotations
 
 import base64
+import fnmatch
 import hashlib
 import json
 import subprocess
@@ -25,6 +26,7 @@ from . import store as S
 from .errors import (
     E_CONFLICT,
     E_CURSOR_STALE,
+    E_FINAL_EVIDENCE,
     E_MULTIPLE_CLAIMS,
     E_NOTHING_READY,
     E_OFFLINE,
@@ -145,6 +147,12 @@ class TrackerService:
                 outcome.snapshot, status=status, priority=priority,
                 text=text, ready_only=ready_only, now=now,
             )
+            if ready_only:
+                rows = [
+                    (item_id, entry)
+                    for item_id, entry in rows
+                    if self._batch_runtime_ready(outcome.snapshot, item_id)
+                ]
             total = len(rows)
             limit = max(1, min(int(limit), LIST_MAX_LIMIT))
             fingerprint = _query_fingerprint(status, priority, text, ready_only, limit)
@@ -164,12 +172,13 @@ class TrackerService:
             page = rows[offset : offset + limit]
             items = []
             for item_id, entry in page:
+                runtime_ready = self._batch_runtime_ready(outcome.snapshot, item_id)
                 items.append({
                     "id": item_id,
                     "title": entry["title"],
                     "priority": entry["priority"],
                     "status": entry["status"],
-                    "ready": S.is_ready(item_id, outcome.snapshot, now),
+                    "ready": S.is_ready(item_id, outcome.snapshot, now) and runtime_ready,
                 })
             remaining = total - offset - len(page)
             data: dict[str, Any] = {"items": items, "total": total, "limit": limit, "cursor_offset": offset}
@@ -235,7 +244,7 @@ class TrackerService:
                 "title": entry["title"],
                 "priority": entry["priority"],
                 "status": entry["status"],
-                "ready": S.is_ready(item_id, snap, now),
+                "ready": S.is_ready(item_id, snap, now) and self._batch_runtime_ready(snap, item_id),
                 "needs": self._page_ids(needs, outcome.rev, "needs"),
                 "unmet_needs": self._page_ids(unmet, outcome.rev, "unmet_needs"),
                 "unlocks": S.downstream_unlocks(item_id, snap),
@@ -281,6 +290,10 @@ class TrackerService:
                     "member_id": prepared["member_id"],
                     "source_worktree": prepared["source_worktree"],
                     "source_revision": prepared["source_revision"],
+                    "source_base": prepared["source_base"],
+                    "accepted_head": prepared["accepted_head"],
+                    "integration_head": prepared["integration_head"],
+                    "changed_files": prepared["changed_files"],
                     "verification": {
                         "status": prepared["verification"]["status"],
                         "revision": prepared["verification"]["revision"],
@@ -294,7 +307,7 @@ class TrackerService:
                     "status": final["status"],
                     "tree_worktree": final["tree_worktree"],
                     "tree_revision": final["tree_revision"],
-                    "scope_digest": final["scope_digest"],
+                    "scope_hash": final["scope_hash"],
                     "suite": final["suite"],
                     "clean": final["clean"],
                 }
@@ -450,7 +463,13 @@ class TrackerService:
         return None
 
     @staticmethod
-    def _validate_source_checkout(source_worktree: str, source_revision: str) -> str:
+    def _validate_source_checkout(
+        source_worktree: str,
+        source_revision: str,
+        *,
+        expected_branch: str | None = None,
+        expected_repository: str | None = None,
+    ) -> str:
         """Prove the receipt names a clean checkout at the recorded revision."""
         path = Path(source_worktree).expanduser()
         if not path.is_absolute() or not path.is_dir():
@@ -465,6 +484,18 @@ class TrackerService:
                 ["git", "rev-parse", "HEAD"], cwd=path, check=True,
                 capture_output=True, text=True, timeout=30,
             ).stdout.strip()
+            branch = subprocess.run(
+                ["git", "symbolic-ref", "--quiet", "--short", "HEAD"], cwd=path,
+                check=False, capture_output=True, text=True, timeout=30,
+            ).stdout.strip()
+            common_dir = subprocess.run(
+                ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], cwd=path,
+                check=True, capture_output=True, text=True, timeout=30,
+            ).stdout.strip()
+            remote = subprocess.run(
+                ["git", "remote", "get-url", "origin"], cwd=path,
+                check=False, capture_output=True, text=True, timeout=30,
+            ).stdout.strip()
             dirty = subprocess.run(
                 ["git", "status", "--porcelain=v1", "--untracked-files=all"], cwd=path,
                 check=True, capture_output=True, text=True, timeout=30,
@@ -477,7 +508,109 @@ class TrackerService:
             raise TodoError("source checkout HEAD differs from source_revision", code=E_STATE)
         if dirty:
             raise TodoError("source checkout is dirty; prepare requires a clean exact checkout", code=E_STATE)
+        if expected_branch is not None and branch != expected_branch:
+            raise TodoError("checkout branch differs from the registered integration branch", code=E_STATE)
+        if expected_repository and expected_repository.startswith("/"):
+            candidates = {str(path), str(Path(common_dir).resolve()), str(Path(common_dir).resolve().parent)}
+            if str(Path(expected_repository).resolve()) not in candidates:
+                raise TodoError("checkout belongs to a different registered repository", code=E_STATE)
+        elif expected_repository:
+            if not remote or remote.rstrip("/") != expected_repository.rstrip("/"):
+                raise TodoError("checkout origin differs from the registered repository", code=E_STATE)
         return str(path)
+
+    @staticmethod
+    def _changed_paths(path: str, base: str, head: str) -> list[str]:
+        try:
+            output = subprocess.run(
+                ["git", "diff", "--name-only", f"{base}..{head}"], cwd=path,
+                check=True, capture_output=True, text=True, timeout=30,
+            ).stdout
+        except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+            raise TodoError(f"cannot inspect prepared member range: {exc}", code=E_STATE) from exc
+        return sorted(set(output.splitlines()))
+
+    def _batch_runtime_ready(self, snap: S.Snapshot, item_id: str) -> bool:
+        """Check live Git state for prepared edges; ordinary work stays local-only."""
+        detail = snap.details.get(item_id, {})
+        batch_meta = detail.get("batch")
+        if not isinstance(batch_meta, dict):
+            return True
+        entry = snap.index["items"].get(item_id, {})
+        implementation_deps = set(batch_meta.get("implementation_dependencies", []))
+        if not any(dep in implementation_deps and snap.index["items"][dep]["status"] != "done" for dep in entry.get("needs", [])):
+            return True
+        batch = snap.index.get("batches", {}).get(batch_meta.get("batch_id"))
+        if not isinstance(batch, dict):
+            return False
+        try:
+            integration_worktree = self._validate_source_checkout(
+                batch["integration_worktree"], batch["integration_head"],
+                expected_branch=batch["integration_branch"], expected_repository=batch["repository"],
+            )
+            for dependency in implementation_deps:
+                if snap.index["items"].get(dependency, {}).get("status") == "done":
+                    continue
+                dep_detail = snap.details.get(dependency, {})
+                receipt = dep_detail.get("prepared")
+                if not isinstance(receipt, dict):
+                    return False
+                subprocess.run(
+                    ["git", "merge-base", "--is-ancestor", receipt["accepted_head"], batch["integration_head"]],
+                    cwd=integration_worktree, check=True, capture_output=True, text=True, timeout=30,
+                )
+                changed_files = receipt.get("changed_files", [])
+                if changed_files:
+                    subprocess.run(
+                        ["git", "diff", "--quiet", receipt["accepted_head"], batch["integration_head"], "--", *changed_files],
+                        cwd=integration_worktree, check=True, capture_output=True, text=True, timeout=30,
+                    )
+        except (KeyError, OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired, TodoError):
+            return False
+        return True
+
+    def _validate_final_checkout(self, snap: S.Snapshot, item_id: str, evidence: dict[str, Any]) -> dict[str, Any]:
+        """Re-prove the registered integration checkout on every retry."""
+        if item_id not in snap.details or item_id not in snap.index["items"]:
+            raise TodoError(f"unknown task {item_id!r}", code=E_STATE)
+        if not isinstance(snap.details[item_id].get("batch"), dict):
+            raise TodoError("final-tree evidence requires a registered batch", code=E_FINAL_EVIDENCE)
+        checked = S._validate_batch_final_evidence(snap, item_id, S._validate_final_evidence(item_id, evidence))
+        batch_id = snap.details[item_id]["batch"]["batch_id"]
+        batch = snap.index["batches"][batch_id]
+        if checked["tree_worktree"] != batch["integration_worktree"]:
+            raise TodoError("final tree is not the registered integration worktree", code=E_STATE)
+        clean = self._validate_source_checkout(
+            checked["tree_worktree"], checked["tree_revision"],
+            expected_branch=batch["integration_branch"], expected_repository=batch["repository"],
+        )
+        for revision, label in [(batch["start_head"], "batch start head"), *[
+            (head, f"prepared member {member}") for member, head in checked["member_heads"].items()
+        ]]:
+            try:
+                subprocess.run(
+                    ["git", "merge-base", "--is-ancestor", revision, checked["tree_revision"]],
+                    cwd=clean, check=True, capture_output=True, text=True, timeout=30,
+                )
+            except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+                raise TodoError(f"final tree does not contain {label}: {exc}", code=E_FINAL_EVIDENCE) from exc
+        for member, accepted_head in checked["member_heads"].items():
+            changed_files = snap.details[member]["prepared"].get("changed_files", [])
+            if changed_files:
+                try:
+                    subprocess.run(
+                        ["git", "diff", "--quiet", accepted_head, checked["tree_revision"], "--", *changed_files],
+                        cwd=clean, check=True, capture_output=True, text=True, timeout=30,
+                    )
+                except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+                    raise TodoError(f"final tree drifted from accepted content for {member!r}", code=E_FINAL_EVIDENCE) from exc
+        actual = subprocess.run(
+            ["git", "diff", "--name-only", f"{batch['start_head']}..{checked['tree_revision']}"],
+            cwd=clean, check=True, capture_output=True, text=True, timeout=30,
+        ).stdout.splitlines()
+        if set(actual) != set(checked["changed_files"]):
+            raise TodoError("final evidence changed_files drifted from the registered integration tree", code=E_FINAL_EVIDENCE)
+        return checked
 
     def create_item(self, item_id: str, title: str, **kwargs: Any) -> dict[str, Any]:
         def apply(snap: S.Snapshot) -> dict[str, Any]:
@@ -485,6 +618,41 @@ class TrackerService:
             return {"id": item_id, "status": "open"}
 
         return self._mutate("create", f"add {item_id}", apply)
+
+    def register_batch(self, **kwargs: Any) -> dict[str, Any]:
+        """Register the immutable batch contract before member work starts."""
+        kwargs = dict(kwargs)
+        kwargs["owner"] = self.worker
+        try:
+            self._validate_source_checkout(
+                str(kwargs["integration_worktree"]), str(kwargs["start_head"]),
+                expected_branch=str(kwargs["integration_branch"]),
+                expected_repository=str(kwargs["repository"]),
+            )
+        except (KeyError, TodoError) as exc:
+            return err(getattr(exc, "code", None) or E_STATE, str(exc))
+
+        def apply(snap: S.Snapshot) -> dict[str, Any]:
+            self._validate_source_checkout(
+                str(kwargs["integration_worktree"]), str(kwargs["start_head"]),
+                expected_branch=str(kwargs["integration_branch"]),
+                expected_repository=str(kwargs["repository"]),
+            )
+            return S.op_register_batch(snap, **kwargs)
+
+        return self._mutate("register_batch", f"{self.worker} registers batch {kwargs['batch_id']}", apply)
+
+    def abort_batch(self, batch_id: str, owner_generation: str) -> dict[str, Any]:
+        def apply(snap: S.Snapshot) -> dict[str, Any]:
+            return S.op_abort_batch(snap, batch_id, self.worker, owner_generation)
+
+        return self._mutate("abort_batch", f"{self.worker} aborts batch {batch_id}", apply)
+
+    def bind_batch_pr(self, batch_id: str, owner_generation: str, *, number: int, node_id: str, head: str) -> dict[str, Any]:
+        def apply(snap: S.Snapshot) -> dict[str, Any]:
+            return S.op_bind_batch_pr(snap, batch_id, self.worker, owner_generation, number=number, node_id=node_id, head=head)
+
+        return self._mutate("bind_batch_pr", f"{self.worker} binds final PR for {batch_id}", apply)
 
     UPDATE_GUARDED_FIELDS = ("title", "priority", "status", "needs")
 
@@ -539,6 +707,17 @@ class TrackerService:
                     f"worker {worker!r} already holds a live claim on {held!r}; release or finish it first",
                     code=E_MULTIPLE_CLAIMS,
                 )
+            detail = snap.details.get(item_id, {})
+            batch_meta = detail.get("batch") if isinstance(detail, dict) else None
+            if isinstance(batch_meta, dict):
+                entry = snap.index["items"].get(item_id, {})
+                implementation_deps = set(batch_meta.get("implementation_dependencies", []))
+                has_prepared_edge = any(
+                    dep in implementation_deps and snap.index["items"][dep]["status"] != "done"
+                    for dep in entry.get("needs", [])
+                )
+                if has_prepared_edge and (not S.is_ready(item_id, snap, now) or not self._batch_runtime_ready(snap, item_id)):
+                    raise TodoError(f"task {item_id!r} is not ready at the current integration head", code=E_NOTHING_READY)
             took = S.op_take(snap, item_id, worker, ttl_hours=self.ttl_hours)
             entry = snap.index["items"][item_id]
             detail = snap.details[item_id]
@@ -621,6 +800,10 @@ class TrackerService:
         member_id: str,
         source_worktree: str,
         source_revision: str,
+        source_base: str,
+        accepted_head: str,
+        integration_head: str,
+        scope_hash: str,
         verification: dict[str, Any],
         implementation_dependencies: list[str] | None = None,
     ) -> dict[str, Any]:
@@ -637,13 +820,82 @@ class TrackerService:
         def apply(snap: S.Snapshot) -> dict[str, Any]:
             # Re-check on every publication retry: a concurrent state push
             # must not turn a formerly clean checkout into a stale receipt.
-            current_worktree = self._validate_source_checkout(clean_worktree, source_revision)
+            batch_record = snap.index.get("batches", {}).get(batch_id)
+            expected_repository = batch_record.get("repository") if isinstance(batch_record, dict) else None
+            current_worktree = self._validate_source_checkout(
+                clean_worktree, source_revision, expected_repository=expected_repository,
+            )
+            if isinstance(batch_record, dict):
+                integration_worktree = self._validate_source_checkout(
+                    str(batch_record["integration_worktree"]), integration_head,
+                    expected_branch=str(batch_record["integration_branch"]),
+                    expected_repository=expected_repository,
+                )
+                try:
+                    subprocess.run(
+                        ["git", "merge-base", "--is-ancestor", accepted_head, integration_head],
+                        cwd=integration_worktree, check=True, capture_output=True, text=True, timeout=30,
+                    )
+                except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+                    raise TodoError("integration head is missing the current accepted member", code=E_STATE) from exc
+                for integrated_member, integrated_revision in batch_record.get("accepted_members", {}).items():
+                    try:
+                        subprocess.run(
+                            ["git", "merge-base", "--is-ancestor", integrated_revision, integration_head],
+                            cwd=integration_worktree, check=True, capture_output=True, text=True, timeout=30,
+                        )
+                    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+                        raise TodoError(
+                            f"integration head is missing accepted member {integrated_member!r}", code=E_STATE
+                        ) from exc
+                    prior_receipt = snap.details.get(integrated_member, {}).get("prepared")
+                    if isinstance(prior_receipt, dict) and prior_receipt.get("changed_files"):
+                        try:
+                            subprocess.run(
+                                ["git", "diff", "--quiet", integrated_revision, integration_head, "--", *prior_receipt["changed_files"]],
+                                cwd=integration_worktree, check=True, capture_output=True, text=True, timeout=30,
+                            )
+                        except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+                            raise TodoError(
+                                f"integration head drifted from accepted content for {integrated_member!r}", code=E_STATE
+                            ) from exc
+            try:
+                subprocess.run(
+                    ["git", "merge-base", "--is-ancestor", source_base, accepted_head],
+                    cwd=current_worktree, check=True, capture_output=True, text=True, timeout=30,
+                )
+            except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+                raise TodoError("accepted member head is not based on its registered source base", code=E_STATE) from exc
+            changed_files = self._changed_paths(current_worktree, source_base, accepted_head)
+            member_scope = batch_record["scope"][member_id] if isinstance(batch_record, dict) else []
+            if any(not any(fnmatch.fnmatch(path, pattern) for pattern in member_scope) for path in changed_files):
+                raise TodoError("prepared member range changes a path outside its frozen scope", code=E_STATE)
+            detail = snap.details.get(item_id, {})
+            dependencies = (detail.get("batch") or {}).get("implementation_dependencies", [])
+            if not dependencies and isinstance(batch_record, dict) and source_base != batch_record["start_head"]:
+                raise TodoError("a root prepared member must start at the registered batch head", code=E_STATE)
+            for dependency in dependencies:
+                predecessor = snap.details.get(dependency, {}).get("prepared")
+                if not isinstance(predecessor, dict):
+                    raise TodoError(f"prepared dependency {dependency!r} is missing its accepted receipt", code=E_STATE)
+                try:
+                    subprocess.run(
+                        ["git", "merge-base", "--is-ancestor", predecessor["accepted_head"], accepted_head],
+                        cwd=current_worktree, check=True, capture_output=True, text=True, timeout=30,
+                    )
+                except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+                    raise TodoError(f"prepared dependency {dependency!r} is absent from this member base", code=E_STATE) from exc
             return S.op_prepare(
                 snap, item_id, worker, generation,
                 batch_id=batch_id,
                 member_id=member_id,
                 source_worktree=current_worktree,
                 source_revision=source_revision,
+                source_base=source_base,
+                accepted_head=accepted_head,
+                integration_head=integration_head,
+                scope_hash=scope_hash,
+                changed_files=changed_files,
                 verification=verification,
                 implementation_dependencies=implementation_dependencies or [],
             )
@@ -652,17 +904,12 @@ class TrackerService:
 
     def finish(self, item_id: str, generation: str, final_evidence: dict[str, Any] | None = None) -> dict[str, Any]:
         worker = self.worker
-        if final_evidence is not None:
-            try:
-                self._validate_source_checkout(
-                    str(final_evidence.get("tree_worktree", "")),
-                    str(final_evidence.get("tree_revision", "")),
-                )
-            except TodoError as exc:
-                return err(exc.code or E_STATE, str(exc))
 
         def apply(snap: S.Snapshot) -> dict[str, Any]:
-            return S.op_finish(snap, item_id, worker, generation, final_evidence)
+            checked = final_evidence
+            if checked is not None:
+                checked = self._validate_final_checkout(snap, item_id, checked)
+            return S.op_finish(snap, item_id, worker, generation, checked)
 
         return self._mutate("finish", f"{worker} finishes {item_id}", apply)
 

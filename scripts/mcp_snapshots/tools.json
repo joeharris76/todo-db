@@ -1,64 +1,95 @@
 [
   {
+    "name": "abort_batch",
+    "description": "Abort an owned active batch after claims are released; invalidates prepared evidence and keeps members recoverable.",
+    "inputSchema": {
+      "properties": {
+        "batch_id": {
+          "title": "Batch Id",
+          "type": "string"
+        },
+        "owner_generation": {
+          "title": "Owner Generation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "batch_id",
+        "owner_generation"
+      ],
+      "title": "abort_batch_toolArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "abort_batch_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "name": "bind_batch_pr",
+    "description": "Bind exactly one final PR identity to a registered batch before final-tree closeout.",
+    "inputSchema": {
+      "properties": {
+        "batch_id": {
+          "title": "Batch Id",
+          "type": "string"
+        },
+        "owner_generation": {
+          "title": "Owner Generation",
+          "type": "string"
+        },
+        "number": {
+          "title": "Number",
+          "type": "integer"
+        },
+        "node_id": {
+          "title": "Node Id",
+          "type": "string"
+        },
+        "head": {
+          "title": "Head",
+          "type": "string"
+        }
+      },
+      "required": [
+        "batch_id",
+        "owner_generation",
+        "number",
+        "node_id",
+        "head"
+      ],
+      "title": "bind_batch_pr_toolArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "bind_batch_pr_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "name": "create_item",
     "description": "Create a task: id, title, priority (default medium), description, needs, acceptance, links, context, optional batch metadata.",
     "inputSchema": {
       "properties": {
-        "acceptance": {
-          "anyOf": [
-            {
-              "items": {
-                "type": "string"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Acceptance"
+        "id": {
+          "title": "Id",
+          "type": "string"
         },
-        "batch": {
-          "anyOf": [
-            {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Batch"
+        "title": {
+          "title": "Title",
+          "type": "string"
         },
-        "context": {
-          "default": "",
-          "title": "Context",
+        "priority": {
+          "default": "medium",
+          "title": "Priority",
           "type": "string"
         },
         "description": {
           "default": "",
           "title": "Description",
           "type": "string"
-        },
-        "id": {
-          "title": "Id",
-          "type": "string"
-        },
-        "links": {
-          "anyOf": [
-            {
-              "items": {
-                "type": "string"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Links"
         },
         "needs": {
           "anyOf": [
@@ -75,14 +106,53 @@
           "default": null,
           "title": "Needs"
         },
-        "priority": {
-          "default": "medium",
-          "title": "Priority",
+        "acceptance": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Acceptance"
+        },
+        "links": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Links"
+        },
+        "context": {
+          "default": "",
+          "title": "Context",
           "type": "string"
         },
-        "title": {
-          "title": "Title",
-          "type": "string"
+        "batch": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Batch"
         }
       },
       "required": [
@@ -92,7 +162,6 @@
       "title": "create_item_toolArguments",
       "type": "object"
     },
-    "name": "create_item",
     "outputSchema": {
       "additionalProperties": true,
       "title": "create_item_toolDictOutput",
@@ -100,9 +169,14 @@
     }
   },
   {
+    "name": "drop",
     "description": "Abandon a task as dropped. Unclaimed tasks drop freely; a live claim needs its generation.",
     "inputSchema": {
       "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
         "generation": {
           "anyOf": [
             {
@@ -114,10 +188,6 @@
           ],
           "default": null,
           "title": "Generation"
-        },
-        "id": {
-          "title": "Id",
-          "type": "string"
         }
       },
       "required": [
@@ -126,7 +196,6 @@
       "title": "drop_toolArguments",
       "type": "object"
     },
-    "name": "drop",
     "outputSchema": {
       "additionalProperties": true,
       "title": "drop_toolDictOutput",
@@ -134,9 +203,18 @@
     }
   },
   {
+    "name": "finish",
     "description": "Close a task. Prepared tasks additionally require current final-tree evidence.",
     "inputSchema": {
       "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "generation": {
+          "title": "Generation",
+          "type": "string"
+        },
         "final_evidence": {
           "anyOf": [
             {
@@ -149,14 +227,6 @@
           ],
           "default": null,
           "title": "Final Evidence"
-        },
-        "generation": {
-          "title": "Generation",
-          "type": "string"
-        },
-        "id": {
-          "title": "Id",
-          "type": "string"
         }
       },
       "required": [
@@ -166,7 +236,6 @@
       "title": "finish_toolArguments",
       "type": "object"
     },
-    "name": "finish",
     "outputSchema": {
       "additionalProperties": true,
       "title": "finish_toolDictOutput",
@@ -174,13 +243,13 @@
     }
   },
   {
+    "name": "get_instructions",
     "description": "Return the todo-db autonomous-agent workflow protocol as Markdown. Portable fallback for the todo://instructions resource and the todo/workflow prompt.",
     "inputSchema": {
       "properties": {},
       "title": "get_instructionsArguments",
       "type": "object"
     },
-    "name": "get_instructions",
     "outputSchema": {
       "properties": {
         "result": {
@@ -196,10 +265,11 @@
     }
   },
   {
+    "name": "list_items",
     "description": "List tasks as brief rows (id/title/priority/status). Filters: status, priority, text, ready_only. Paging: limit (default 5) + cursor.",
     "inputSchema": {
       "properties": {
-        "cursor": {
+        "status": {
           "anyOf": [
             {
               "type": "string"
@@ -209,12 +279,7 @@
             }
           ],
           "default": null,
-          "title": "Cursor"
-        },
-        "limit": {
-          "default": 5,
-          "title": "Limit",
-          "type": "integer"
+          "title": "Status"
         },
         "priority": {
           "anyOf": [
@@ -228,23 +293,6 @@
           "default": null,
           "title": "Priority"
         },
-        "ready_only": {
-          "default": false,
-          "title": "Ready Only",
-          "type": "boolean"
-        },
-        "status": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Status"
-        },
         "text": {
           "anyOf": [
             {
@@ -256,12 +304,33 @@
           ],
           "default": null,
           "title": "Text"
+        },
+        "ready_only": {
+          "default": false,
+          "title": "Ready Only",
+          "type": "boolean"
+        },
+        "limit": {
+          "default": 5,
+          "title": "Limit",
+          "type": "integer"
+        },
+        "cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cursor"
         }
       },
       "title": "list_items_toolArguments",
       "type": "object"
     },
-    "name": "list_items",
     "outputSchema": {
       "additionalProperties": true,
       "title": "list_items_toolDictOutput",
@@ -269,20 +338,54 @@
     }
   },
   {
+    "name": "prepare",
     "description": "Record verified member work and release its claim without marking it done. Requires an explicit batch member, clean exact source checkout, and passed bounded suite evidence.",
     "inputSchema": {
       "properties": {
-        "batch_id": {
-          "title": "Batch Id",
+        "id": {
+          "title": "Id",
           "type": "string"
         },
         "generation": {
           "title": "Generation",
           "type": "string"
         },
-        "id": {
-          "title": "Id",
+        "batch_id": {
+          "title": "Batch Id",
           "type": "string"
+        },
+        "member_id": {
+          "title": "Member Id",
+          "type": "string"
+        },
+        "source_worktree": {
+          "title": "Source Worktree",
+          "type": "string"
+        },
+        "source_revision": {
+          "title": "Source Revision",
+          "type": "string"
+        },
+        "source_base": {
+          "title": "Source Base",
+          "type": "string"
+        },
+        "accepted_head": {
+          "title": "Accepted Head",
+          "type": "string"
+        },
+        "integration_head": {
+          "title": "Integration Head",
+          "type": "string"
+        },
+        "scope_hash": {
+          "title": "Scope Hash",
+          "type": "string"
+        },
+        "verification": {
+          "additionalProperties": true,
+          "title": "Verification",
+          "type": "object"
         },
         "implementation_dependencies": {
           "anyOf": [
@@ -298,23 +401,6 @@
           ],
           "default": null,
           "title": "Implementation Dependencies"
-        },
-        "member_id": {
-          "title": "Member Id",
-          "type": "string"
-        },
-        "source_revision": {
-          "title": "Source Revision",
-          "type": "string"
-        },
-        "source_worktree": {
-          "title": "Source Worktree",
-          "type": "string"
-        },
-        "verification": {
-          "additionalProperties": true,
-          "title": "Verification",
-          "type": "object"
         }
       },
       "required": [
@@ -324,12 +410,15 @@
         "member_id",
         "source_worktree",
         "source_revision",
+        "source_base",
+        "accepted_head",
+        "integration_head",
+        "scope_hash",
         "verification"
       ],
       "title": "prepare_toolArguments",
       "type": "object"
     },
-    "name": "prepare",
     "outputSchema": {
       "additionalProperties": true,
       "title": "prepare_toolDictOutput",
@@ -337,15 +426,102 @@
     }
   },
   {
+    "name": "register_batch",
+    "description": "Register one immutable prepared-work batch contract: repository, owner generation, integration branch/worktree, start head, ordered members, frozen scope, delivery boundary, and terminal outcome.",
+    "inputSchema": {
+      "properties": {
+        "batch_id": {
+          "title": "Batch Id",
+          "type": "string"
+        },
+        "project_id": {
+          "title": "Project Id",
+          "type": "string"
+        },
+        "repository": {
+          "title": "Repository",
+          "type": "string"
+        },
+        "owner_generation": {
+          "title": "Owner Generation",
+          "type": "string"
+        },
+        "integration_branch": {
+          "title": "Integration Branch",
+          "type": "string"
+        },
+        "integration_worktree": {
+          "title": "Integration Worktree",
+          "type": "string"
+        },
+        "start_head": {
+          "title": "Start Head",
+          "type": "string"
+        },
+        "members": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Members",
+          "type": "array"
+        },
+        "scope": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": "Scope",
+          "type": "object"
+        },
+        "scope_hash": {
+          "title": "Scope Hash",
+          "type": "string"
+        },
+        "delivery_boundary": {
+          "title": "Delivery Boundary",
+          "type": "string"
+        },
+        "terminal_outcome": {
+          "title": "Terminal Outcome",
+          "type": "string"
+        }
+      },
+      "required": [
+        "batch_id",
+        "project_id",
+        "repository",
+        "owner_generation",
+        "integration_branch",
+        "integration_worktree",
+        "start_head",
+        "members",
+        "scope",
+        "scope_hash",
+        "delivery_boundary",
+        "terminal_outcome"
+      ],
+      "title": "register_batch_toolArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "register_batch_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "name": "release",
     "description": "Hand a claim back without finishing. Needs the generation returned by take.",
     "inputSchema": {
       "properties": {
-        "generation": {
-          "title": "Generation",
-          "type": "string"
-        },
         "id": {
           "title": "Id",
+          "type": "string"
+        },
+        "generation": {
+          "title": "Generation",
           "type": "string"
         }
       },
@@ -356,7 +532,6 @@
       "title": "release_toolArguments",
       "type": "object"
     },
-    "name": "release",
     "outputSchema": {
       "additionalProperties": true,
       "title": "release_toolDictOutput",
@@ -364,15 +539,16 @@
     }
   },
   {
+    "name": "renew",
     "description": "Extend a long-running claim. Same generation, no progress milestones required.",
     "inputSchema": {
       "properties": {
-        "generation": {
-          "title": "Generation",
-          "type": "string"
-        },
         "id": {
           "title": "Id",
+          "type": "string"
+        },
+        "generation": {
+          "title": "Generation",
           "type": "string"
         }
       },
@@ -383,7 +559,6 @@
       "title": "renew_toolArguments",
       "type": "object"
     },
-    "name": "renew",
     "outputSchema": {
       "additionalProperties": true,
       "title": "renew_toolDictOutput",
@@ -391,13 +566,13 @@
     }
   },
   {
+    "name": "show_item",
     "description": "Show one task with needs, readiness, and sections. Large fields spill to section reads: field/offset/budget/rev.",
     "inputSchema": {
       "properties": {
-        "budget": {
-          "default": 6000,
-          "title": "Budget",
-          "type": "integer"
+        "id": {
+          "title": "Id",
+          "type": "string"
         },
         "field": {
           "anyOf": [
@@ -411,13 +586,14 @@
           "default": null,
           "title": "Field"
         },
-        "id": {
-          "title": "Id",
-          "type": "string"
-        },
         "offset": {
           "default": 0,
           "title": "Offset",
+          "type": "integer"
+        },
+        "budget": {
+          "default": 6000,
+          "title": "Budget",
           "type": "integer"
         },
         "rev": {
@@ -439,7 +615,6 @@
       "title": "show_item_toolArguments",
       "type": "object"
     },
-    "name": "show_item",
     "outputSchema": {
       "additionalProperties": true,
       "title": "show_item_toolDictOutput",
@@ -447,6 +622,7 @@
     }
   },
   {
+    "name": "take",
     "description": "Claim a task. Returns the claim generation plus enough context to begin work. One live claim per worker.",
     "inputSchema": {
       "properties": {
@@ -461,7 +637,6 @@
       "title": "take_toolArguments",
       "type": "object"
     },
-    "name": "take",
     "outputSchema": {
       "additionalProperties": true,
       "title": "take_toolDictOutput",
@@ -469,38 +644,15 @@
     }
   },
   {
+    "name": "update_item",
     "description": "Edit a task: title/priority/description/needs/sections, optional batch metadata, or open/blocked moves. Closing goes through finish.",
     "inputSchema": {
       "properties": {
-        "acceptance": {
-          "anyOf": [
-            {
-              "items": {
-                "type": "string"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Acceptance"
+        "id": {
+          "title": "Id",
+          "type": "string"
         },
-        "batch": {
-          "anyOf": [
-            {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Batch"
-        },
-        "context": {
+        "title": {
           "anyOf": [
             {
               "type": "string"
@@ -510,7 +662,19 @@
             }
           ],
           "default": null,
-          "title": "Context"
+          "title": "Title"
+        },
+        "priority": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Priority"
         },
         "description": {
           "anyOf": [
@@ -523,25 +687,6 @@
           ],
           "default": null,
           "title": "Description"
-        },
-        "id": {
-          "title": "Id",
-          "type": "string"
-        },
-        "links": {
-          "anyOf": [
-            {
-              "items": {
-                "type": "string"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Links"
         },
         "needs": {
           "anyOf": [
@@ -558,7 +703,37 @@
           "default": null,
           "title": "Needs"
         },
-        "priority": {
+        "acceptance": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Acceptance"
+        },
+        "links": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Links"
+        },
+        "context": {
           "anyOf": [
             {
               "type": "string"
@@ -568,7 +743,20 @@
             }
           ],
           "default": null,
-          "title": "Priority"
+          "title": "Context"
+        },
+        "batch": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Batch"
         },
         "status": {
           "anyOf": [
@@ -581,18 +769,6 @@
           ],
           "default": null,
           "title": "Status"
-        },
-        "title": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Title"
         }
       },
       "required": [
@@ -601,7 +777,6 @@
       "title": "update_item_toolArguments",
       "type": "object"
     },
-    "name": "update_item",
     "outputSchema": {
       "additionalProperties": true,
       "title": "update_item_toolDictOutput",

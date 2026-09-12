@@ -77,10 +77,13 @@ is mirrored into `.claude/`, `.codex/`, and `.gemini/` to teach the workflow.
 
 ## Concepts
 
-State schema 2 adds prepared receipts while remaining able to read schema 1
-state. Ordinary items keep the original serial lifecycle. A prepared member
-must name an existing same-batch implementation edge; ordinary dependencies
-remain done-only.
+State schema 3 adds the registered prepared-batch contract and remains able to
+read schema 1 and schema 2 snapshots. A schema-1/2 snapshot is upgraded lazily
+to schema 3 only when a batch operation writes it; ordinary reads remain
+read-only. Clients that do not advertise the schema-3 registered-batch
+capability must use the serial lifecycle and must not treat legacy receipts as
+valid prepared work; old prepared-receipt records fail closed until rewritten
+through the registered schema-3 lifecycle. Ordinary dependencies remain done-only.
 
 | Term | Meaning |
 | --- | --- |

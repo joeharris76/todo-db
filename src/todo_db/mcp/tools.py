@@ -1,7 +1,8 @@
 """The small agent surface over shared service operations.
 
-``list_items`` / ``show_item`` / ``create_item`` / ``update_item`` /
-``take`` / ``prepare`` / ``release`` / ``finish`` / ``renew`` are backed by
+``list_items`` / ``show_item`` / ``create_item`` / ``register_batch`` /
+``update_item`` / ``take`` / ``prepare`` / ``bind_batch_pr`` /
+``abort_batch`` / ``release`` / ``finish`` / ``renew`` are backed by
 :mod:`todo_db.service`, the same operations the human/CI CLI uses.
 Blocking Git work runs via ``asyncio.to_thread``; there is no shared
 mutable connection to guard.
@@ -113,6 +114,38 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
         )
 
     @server.tool(
+        name="register_batch",
+        description="Register one immutable prepared-work batch contract: repository, owner generation, integration branch/worktree, start head, ordered members, frozen scope, delivery boundary, and terminal outcome.",
+    )
+    async def register_batch_tool(
+        batch_id: str,
+        project_id: str,
+        repository: str,
+        owner_generation: str,
+        integration_branch: str,
+        integration_worktree: str,
+        start_head: str,
+        members: list[str],
+        scope: dict[str, list[str]],
+        scope_hash: str,
+        delivery_boundary: str,
+        terminal_outcome: str,
+        ctx: Context = None,  # type: ignore[assignment]
+    ) -> dict[str, Any]:
+        worker = _need_principal(holder, ctx)
+        if not isinstance(worker, str):
+            return worker
+        svc = _service(target, worker)
+        return await asyncio.to_thread(
+            svc.register_batch,
+            batch_id=batch_id, project_id=project_id, repository=repository,
+            owner_generation=owner_generation, integration_branch=integration_branch,
+            integration_worktree=integration_worktree, start_head=start_head,
+            members=members, scope=scope, scope_hash=scope_hash,
+            delivery_boundary=delivery_boundary, terminal_outcome=terminal_outcome,
+        )
+
+    @server.tool(
         name="update_item",
         description="Edit a task: title/priority/description/needs/sections, optional batch metadata, or open/blocked moves. Closing goes through finish.",
     )
@@ -197,6 +230,10 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
         member_id: str,
         source_worktree: str,
         source_revision: str,
+        source_base: str,
+        accepted_head: str,
+        integration_head: str,
+        scope_hash: str,
         verification: dict[str, Any],
         implementation_dependencies: list[str] | None = None,
         ctx: Context = None,  # type: ignore[assignment]
@@ -213,9 +250,48 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
             member_id=member_id,
             source_worktree=source_worktree,
             source_revision=source_revision,
+            source_base=source_base,
+            accepted_head=accepted_head,
+            integration_head=integration_head,
+            scope_hash=scope_hash,
             verification=verification,
             implementation_dependencies=implementation_dependencies or [],
         )
+
+    @server.tool(
+        name="bind_batch_pr",
+        description="Bind exactly one final PR identity to a registered batch before final-tree closeout.",
+    )
+    async def bind_batch_pr_tool(
+        batch_id: str,
+        owner_generation: str,
+        number: int,
+        node_id: str,
+        head: str,
+        ctx: Context = None,  # type: ignore[assignment]
+    ) -> dict[str, Any]:
+        worker = _need_principal(holder, ctx)
+        if not isinstance(worker, str):
+            return worker
+        svc = _service(target, worker)
+        return await asyncio.to_thread(
+            svc.bind_batch_pr, batch_id, owner_generation, number=number, node_id=node_id, head=head,
+        )
+
+    @server.tool(
+        name="abort_batch",
+        description="Abort an owned active batch after claims are released; invalidates prepared evidence and keeps members recoverable.",
+    )
+    async def abort_batch_tool(
+        batch_id: str,
+        owner_generation: str,
+        ctx: Context = None,  # type: ignore[assignment]
+    ) -> dict[str, Any]:
+        worker = _need_principal(holder, ctx)
+        if not isinstance(worker, str):
+            return worker
+        svc = _service(target, worker)
+        return await asyncio.to_thread(svc.abort_batch, batch_id, owner_generation)
 
     @server.tool(
         name="finish",

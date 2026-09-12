@@ -9,6 +9,8 @@ from importlib.metadata import version
 from pathlib import Path
 
 EXPECTED_TOOLS = {
+    "abort_batch",
+    "bind_batch_pr",
     "create_item",
     "drop",
     "finish",
@@ -17,6 +19,7 @@ EXPECTED_TOOLS = {
     "prepare",
     "release",
     "renew",
+    "register_batch",
     "show_item",
     "take",
     "update_item",
