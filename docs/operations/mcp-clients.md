@@ -18,12 +18,34 @@ Common flags:
 - `--state-remote` / `--state-branch` — the authoritative state branch.
   Flags beat `TODO_DB_STATE_REMOTE` / `TODO_DB_STATE_BRANCH`, which beat the
   discovered config.
-- `--actor` — worker identity. Concurrent workers must run separate servers
-  with different `--actor` values. With no `--actor` the server derives
-  `mcp:<clientInfo.name>:<user>@<host>` from the `initialize` handshake.
+- `--actor` — stable worker identity. It overrides `TODO_DB_ACTOR`; either form
+  supports ordinary restart/re-adoption. Give concurrent logical workers
+  different actors, and never run one actor in two servers at the same time.
+- With no actor, the server derives an instance-scoped identity from
+  `clientInfo.name`, user/host, and its per-process session. Separate default
+  servers are isolated even when their client names match.
+- `--session` — override the generated session identifier. Reusing the same
+  value with the same client name and user/host deliberately recreates a
+  fallback identity for restart recovery. Do not put one shared value in a
+  global registration: concurrent servers would then be the same worker.
 - `--cache-dir` — local snapshot cache (default `~/.cache/todo-db-state`).
 
 Logging goes to **stderr only**; stdout carries JSON-RPC framing.
+
+### Upgrade and restart recovery
+
+Claims made by 0.7.3 or earlier use the legacy fallback
+`mcp:<clientInfo.name>:<user>@<host>`. An upgraded default server will not
+silently adopt one of those claims. Stop the old server first, then either:
+
+1. restart with `--actor '<exact legacy claim worker value>'` and call `take` on
+   the same item, which rotates the generation; or
+2. let the lease expire and take the item with the new server.
+
+For new claims, prefer a stable unique `--actor` when automatic recovery is
+required. A fallback worker can instead record the startup `session id` from
+stderr and restart once with `--session '<recorded id>'`. These identities and
+claim generations are cooperative credentials, not authentication secrets.
 
 ## Claude Code
 

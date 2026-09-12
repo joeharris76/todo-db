@@ -42,6 +42,12 @@ authoritative index, cooperative claims, and a small MCP surface.
   non-destructive migration from the lossless export envelope that
   archives unmapped fields instead of dropping them.
 
+Identity amendment (2026-09-12): a generated MCP fallback worker is scoped to
+one server instance. Client product name plus user/host is diagnostic context,
+not a unique logical-worker key. Stable restart identity requires an explicit
+actor or deliberate reuse of `--session`; existing fallback claims require
+explicit recovery or lease expiry.
+
 ## Consequences
 
 Breaking simplification: no compatibility layer for removed tools, gates,

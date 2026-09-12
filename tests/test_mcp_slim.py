@@ -17,7 +17,7 @@ from todo_db.mcp.server import build_parser, build_server, resolve_launch_config
 from todo_db.service import MAX_BYTES
 
 
-def _launch(tmp_path: Path, actor: str | None = "w1"):
+def _launch(tmp_path: Path, actor: str | None = "w1", session: str | None = None):
     remote = tmp_path / "state.git"
     if not remote.exists():
         subprocess.run(["git", "init", "--quiet", "--bare", str(remote)], check=True)
@@ -26,6 +26,8 @@ def _launch(tmp_path: Path, actor: str | None = "w1"):
     argv = ["--state-remote", str(remote), "--cache-dir", str(tmp_path / "cache")]
     if actor is not None:
         argv += ["--actor", actor]
+    if session is not None:
+        argv += ["--session", session]
     return resolve_launch_config(parser.parse_args(argv))
 
 
@@ -91,6 +93,77 @@ def test_second_worker_conflict_and_stale_generation(tmp_path: Path) -> None:
         async with connect(server1, client_info=types.Implementation(name="w1", version="0")) as s1:
             released = _payload(await s1.call_tool("release", {"id": "c", "generation": gen}))
             assert released["ok"]
+
+    anyio.run(go)
+
+
+def test_independent_same_name_clients_have_separate_claim_ownership(tmp_path: Path) -> None:
+    async def go():
+        server1 = build_server(_launch(tmp_path, actor=None))
+        server2 = build_server(_launch(tmp_path, actor=None))
+        same_client = types.Implementation(name="codex-mcp-client", version="0")
+        async with connect(server1, client_info=same_client) as s1:
+            assert _payload(await s1.call_tool("create_item", {"id": "a", "title": "Task A"}))["ok"]
+            assert _payload(await s1.call_tool("create_item", {"id": "b", "title": "Task B"}))["ok"]
+            first = _payload(await s1.call_tool("take", {"id": "a"}))
+            assert first["ok"], first
+            first_generation = first["data"]["claim"]["generation"]
+
+        async with connect(server2, client_info=same_client) as s2:
+            conflict = _payload(await s2.call_tool("take", {"id": "a"}))
+            assert not conflict["ok"] and conflict["code"] == "E_CONFLICT"
+            for tool in ("renew", "finish", "release", "drop"):
+                stale = _payload(await s2.call_tool(tool, {"id": "a", "generation": first_generation}))
+                assert not stale["ok"] and stale["code"] == "E_CLAIM_STALE", (tool, stale)
+            second = _payload(await s2.call_tool("take", {"id": "b"}))
+            assert second["ok"], second
+
+    anyio.run(go)
+
+
+def test_restart_with_same_session_re_adopts_and_stales_old_generation(tmp_path: Path) -> None:
+    async def go():
+        same_client = types.Implementation(name="codex-mcp-client", version="0")
+        server1 = build_server(_launch(tmp_path, actor=None, session="resume-123"))
+        server2 = build_server(_launch(tmp_path, actor=None, session="resume-123"))
+        async with connect(server1, client_info=same_client) as s1:
+            assert _payload(await s1.call_tool("create_item", {"id": "resume", "title": "Resume"}))["ok"]
+            assert _payload(await s1.call_tool("create_item", {"id": "other", "title": "Other"}))["ok"]
+            first = _payload(await s1.call_tool("take", {"id": "resume"}))
+            old_generation = first["data"]["claim"]["generation"]
+
+        async with connect(server2, client_info=same_client) as s2:
+            adopted = _payload(await s2.call_tool("take", {"id": "resume"}))
+            assert adopted["ok"], adopted
+            new_generation = adopted["data"]["claim"]["generation"]
+            assert new_generation != old_generation
+            second_claim = _payload(await s2.call_tool("take", {"id": "other"}))
+            assert not second_claim["ok"] and second_claim["code"] == "E_MULTIPLE_CLAIMS"
+
+        async with connect(server1, client_info=same_client) as s1:
+            stale = _payload(await s1.call_tool("renew", {"id": "resume", "generation": old_generation}))
+            assert not stale["ok"] and stale["code"] == "E_CLAIM_STALE"
+
+    anyio.run(go)
+
+
+def test_explicit_actor_restart_re_adopts_without_weakening_one_claim_rule(tmp_path: Path) -> None:
+    async def go():
+        same_client = types.Implementation(name="codex-mcp-client", version="0")
+        server1 = build_server(_launch(tmp_path, actor="stable-worker"))
+        server2 = build_server(_launch(tmp_path, actor="stable-worker"))
+        async with connect(server1, client_info=same_client) as s1:
+            assert _payload(await s1.call_tool("create_item", {"id": "owned", "title": "Owned"}))["ok"]
+            assert _payload(await s1.call_tool("create_item", {"id": "other", "title": "Other"}))["ok"]
+            first = _payload(await s1.call_tool("take", {"id": "owned"}))
+            old_generation = first["data"]["claim"]["generation"]
+
+        async with connect(server2, client_info=same_client) as s2:
+            adopted = _payload(await s2.call_tool("take", {"id": "owned"}))
+            assert adopted["ok"], adopted
+            assert adopted["data"]["claim"]["generation"] != old_generation
+            blocked = _payload(await s2.call_tool("take", {"id": "other"}))
+            assert not blocked["ok"] and blocked["code"] == "E_MULTIPLE_CLAIMS"
 
     anyio.run(go)
 

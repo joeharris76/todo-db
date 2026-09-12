@@ -107,8 +107,10 @@ Responses are capped at 16 KiB at their final serialization; lists page
 with cursors scoped to a state revision, and oversized fields spill to
 section reads.
 
-One server instance is one worker identity. Concurrent workers run
-separate servers with different `--actor` values.
+One server instance is one logical worker. Without an explicit actor, each
+server gets an isolated fallback identity even when several clients report the
+same product name. Use a stable, unique `--actor` for a worker that must resume
+across ordinary restarts; do not run that actor concurrently in two servers.
 
 ## Floor CLI
 

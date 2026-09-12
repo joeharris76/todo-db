@@ -21,6 +21,13 @@ This architecture decision record establishes the contract for the streamlined, 
 - **Session Attribution in `claimed_session`**: Records the ephemeral session identifier (e.g., `PI_SESSION_ID` or UUID).
 - **Claim Token in `claim_token`**: A cryptographic random token generated upon every claim acquisition. Used for generation checking to prevent stale writes.
 
+The JSON/Git implementation in ADR 0007 stores this contract as `worker` plus
+`generation`. Explicit actors remain stable principals. When no actor is
+configured, the MCP server creates an instance-scoped fallback worker; its
+session discriminator is folded into `worker` rather than stored as a separate
+claim field. Reusing `--session` is an explicit recovery action, not inference
+from an ambient agent-session variable.
+
 ### 2.2 Same-Principal Adoption vs. Audited Cross-Principal Takeover
 - **Same-Principal Adoption**: If an agent restarts with the same stable principal (`claimed_by`), it can adopt or resume its active claim without releasing or re-queuing.
 - **Cross-Principal Takeover**: A different principal may acquire only an expired lease; the audited `claim` event records the previous holder. v1 has no forced model or agent takeover surface.
