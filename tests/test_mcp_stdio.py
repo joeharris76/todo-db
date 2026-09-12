@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from importlib.metadata import version
 from pathlib import Path
 
 EXPECTED_TOOLS = {
@@ -77,6 +78,7 @@ def test_stdio_smoke_initialize_and_tools_list(tmp_path: Path):
         assert "result" in resp, f"initialize failed: {resp}"
         from todo_db import TOOL_VERSION
 
+        assert TOOL_VERSION == version("todo-db")
         assert resp["result"]["serverInfo"] == {"name": "todo-db", "version": TOOL_VERSION}
         proc.stdin.write(json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}) + "\n")
         proc.stdin.flush()

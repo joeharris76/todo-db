@@ -32,7 +32,7 @@ Every release ships a wheel on
 checksums:
 
 ```sh
-VERSION=0.7.0
+VERSION=0.7.2
 gh release download "v$VERSION" --repo joeharris76/todo-db \
   --pattern "todo_db-$VERSION-py3-none-any.whl"
 uv tool install "./todo_db-$VERSION-py3-none-any.whl[mcp]"
@@ -72,8 +72,8 @@ for each are in
 [`docs/operations/mcp-clients.md`](docs/operations/mcp-clients.md).
 
 Your agent now has the tracker. It creates work with `create_item`, then runs
-the loop below. This repository also ships a `todo-db` skill (mirrored into
-`.claude/`, `.codex/`, and `.gemini/`) that teaches the workflow.
+the loop below. The canonical `todo` skill from the `skill-sync-skills` catalog
+is mirrored into `.claude/`, `.codex/`, and `.gemini/` to teach the workflow.
 
 ## Concepts
 

@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- The MCP initialization handshake now derives its reported version from the
+  installed package metadata instead of retaining the original 0.7.0 value.
+- Installation guidance and bug-report prompts now name the current release,
+  and the README identifies the catalog-owned `todo` skill correctly.
+
 ### Removed
 
 - **Retired repository-owned `skills/todo-db`.** Tracker guidance is consolidated
