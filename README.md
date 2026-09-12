@@ -77,18 +77,30 @@ is mirrored into `.claude/`, `.codex/`, and `.gemini/` to teach the workflow.
 
 ## Concepts
 
+State schema 3 adds the registered prepared-batch contract and remains able to
+read schema 1 and schema 2 snapshots. A schema-1/2 snapshot is upgraded lazily
+to schema 3 only when `register_batch` writes it; ordinary reads remain
+read-only. That upgrade is one-way for older binaries: before setting
+`confirm_schema3_cutover=true`, stop or upgrade every process that can access
+the state branch. There is no runtime capability negotiation, and schema-1
+clients cannot safely coexist after cutover. Old prepared-receipt records fail
+closed until rewritten through the registered schema-3 lifecycle. Ordinary
+dependencies remain done-only.
+
 | Term | Meaning |
 | --- | --- |
 | **Item** | One unit of tracked work: an id, title, priority, status, claim, and optional `needs` IDs in the index; description and context in its detail file. |
 | **Status** | `open`, `active`, `blocked`, `done`, or `dropped`. Only `active` holds a live claim; `done`/`dropped` carry none. |
 | **Claim** | A cooperative hold: worker identity, expiry, and a unique generation. Ownership plus generation checks protect renew, release, and finish from stale writers. |
 | **Generation** | The token proving you hold the claim; returned by `take`, required by `renew`/`finish`/`release`. |
+| **Prepared receipt** | Detail-owned evidence binding a member to a batch, owner generation, clean exact source worktree/revision, and a passed bounded suite. It can unlock only an explicit same-batch implementation edge; it is not completion. |
 | **State branch** | The authoritative task store (`todo-state` by default). One commit per operation; fast-forward pushes only. |
 
 ## The agent loop
 
 ```
 list_items  ──▶  take  ──▶  show_item  ──▶  renew ×N  ──▶  finish
+                              └──▶  prepare (release claim; preserve receipt)
                                             │
                                             └──▶  release   (hand the claim back)
 ```

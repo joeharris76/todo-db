@@ -48,6 +48,14 @@ not a unique logical-worker key. Stable restart identity requires an explicit
 actor or deliberate reuse of `--session`; existing fallback claims require
 explicit recovery or lease expiry.
 
+Prepared-batch amendment (2026-09-12): schema 3 adds an immutable batch
+registry and exact Git evidence for prepared work. The first schema-3 write is
+an explicit operational cutover: `register_batch` requires
+`confirm_schema3_cutover=true`, which asserts that every process with access to
+the state branch has been stopped or upgraded. There is no mixed-version
+capability negotiation. This fail-closed boundary prevents an older client from
+silently bypassing prepared-member evidence rules after the upgrade.
+
 ## Consequences
 
 Breaking simplification: no compatibility layer for removed tools, gates,
