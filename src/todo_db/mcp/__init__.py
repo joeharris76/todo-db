@@ -2,7 +2,7 @@
 
 This package builds the server and registers the tracker tools. It resolves the
 state branch target, verifies it read-only at startup (never bootstraps),
-resolves an explicit worker identity (never a placeholder), and registers eight
+resolves an explicit worker identity (never a placeholder), and registers thirteen
 tools over shared service operations.
 """
 
