@@ -15,6 +15,7 @@ import base64
 import fnmatch
 import hashlib
 import json
+import os
 import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -523,12 +524,30 @@ class TrackerService:
     def _changed_paths(path: str, base: str, head: str) -> list[str]:
         try:
             output = subprocess.run(
-                ["git", "diff", "--name-only", f"{base}..{head}"], cwd=path,
-                check=True, capture_output=True, text=True, timeout=30,
+                ["git", "diff", "--name-only", "-z", f"{base}..{head}"], cwd=path,
+                check=True, capture_output=True, timeout=30,
             ).stdout
         except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             raise TodoError(f"cannot inspect prepared member range: {exc}", code=E_STATE) from exc
-        return sorted(set(output.splitlines()))
+        return sorted({os.fsdecode(value) for value in output.split(b"\0") if value})
+
+    @staticmethod
+    def _unchanged_paths(path: str, accepted_head: str, integration_head: str, changed_files: list[str]) -> bool:
+        if not changed_files:
+            return True
+        try:
+            subprocess.run(
+                [
+                    "git", "--literal-pathspecs", "diff", "--quiet",
+                    accepted_head, integration_head, "--", *changed_files,
+                ],
+                cwd=path, check=True, capture_output=True, timeout=30,
+            )
+        except subprocess.CalledProcessError as exc:
+            if exc.returncode == 1:
+                return False
+            raise
+        return True
 
     def _batch_runtime_ready(self, snap: S.Snapshot, item_id: str) -> bool:
         """Check live Git state for prepared edges; ordinary work stays local-only."""
@@ -560,11 +579,10 @@ class TrackerService:
                     cwd=integration_worktree, check=True, capture_output=True, text=True, timeout=30,
                 )
                 changed_files = receipt.get("changed_files", [])
-                if changed_files:
-                    subprocess.run(
-                        ["git", "diff", "--quiet", receipt["accepted_head"], batch["integration_head"], "--", *changed_files],
-                        cwd=integration_worktree, check=True, capture_output=True, text=True, timeout=30,
-                    )
+                if not self._unchanged_paths(
+                    integration_worktree, receipt["accepted_head"], batch["integration_head"], changed_files
+                ):
+                    return False
         except (KeyError, OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired, TodoError):
             return False
         return True
@@ -596,18 +614,13 @@ class TrackerService:
                 raise TodoError(f"final tree does not contain {label}: {exc}", code=E_FINAL_EVIDENCE) from exc
         for member, accepted_head in checked["member_heads"].items():
             changed_files = snap.details[member]["prepared"].get("changed_files", [])
-            if changed_files:
-                try:
-                    subprocess.run(
-                        ["git", "diff", "--quiet", accepted_head, checked["tree_revision"], "--", *changed_files],
-                        cwd=clean, check=True, capture_output=True, text=True, timeout=30,
-                    )
-                except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-                    raise TodoError(f"final tree drifted from accepted content for {member!r}", code=E_FINAL_EVIDENCE) from exc
-        actual = subprocess.run(
-            ["git", "diff", "--name-only", f"{batch['start_head']}..{checked['tree_revision']}"],
-            cwd=clean, check=True, capture_output=True, text=True, timeout=30,
-        ).stdout.splitlines()
+            try:
+                unchanged = self._unchanged_paths(clean, accepted_head, checked["tree_revision"], changed_files)
+            except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+                raise TodoError(f"cannot inspect final content for {member!r}", code=E_FINAL_EVIDENCE) from exc
+            if not unchanged:
+                raise TodoError(f"final tree drifted from accepted content for {member!r}", code=E_FINAL_EVIDENCE)
+        actual = self._changed_paths(clean, batch["start_head"], checked["tree_revision"])
         if set(actual) != set(checked["changed_files"]):
             raise TodoError("final evidence changed_files drifted from the registered integration tree", code=E_FINAL_EVIDENCE)
         return checked
@@ -851,14 +864,18 @@ class TrackerService:
                     prior_receipt = snap.details.get(integrated_member, {}).get("prepared")
                     if isinstance(prior_receipt, dict) and prior_receipt.get("changed_files"):
                         try:
-                            subprocess.run(
-                                ["git", "diff", "--quiet", integrated_revision, integration_head, "--", *prior_receipt["changed_files"]],
-                                cwd=integration_worktree, check=True, capture_output=True, text=True, timeout=30,
+                            unchanged = self._unchanged_paths(
+                                integration_worktree, integrated_revision, integration_head,
+                                prior_receipt["changed_files"],
                             )
                         except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
                             raise TodoError(
-                                f"integration head drifted from accepted content for {integrated_member!r}", code=E_STATE
+                                f"cannot inspect accepted content for {integrated_member!r}", code=E_STATE
                             ) from exc
+                        if not unchanged:
+                            raise TodoError(
+                                f"integration head drifted from accepted content for {integrated_member!r}", code=E_STATE
+                            )
             try:
                 subprocess.run(
                     ["git", "merge-base", "--is-ancestor", source_base, accepted_head],
@@ -874,6 +891,8 @@ class TrackerService:
             dependencies = (detail.get("batch") or {}).get("implementation_dependencies", [])
             if not dependencies and isinstance(batch_record, dict) and source_base != batch_record["start_head"]:
                 raise TodoError("a root prepared member must start at the registered batch head", code=E_STATE)
+            if dependencies and isinstance(batch_record, dict) and source_base != batch_record["integration_head"]:
+                raise TodoError("a dependent prepared member must start at the current integration head", code=E_STATE)
             for dependency in dependencies:
                 predecessor = snap.details.get(dependency, {}).get("prepared")
                 if not isinstance(predecessor, dict):

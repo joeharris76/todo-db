@@ -19,8 +19,9 @@ acknowledgement; lists return brief rows (id/title/priority/status).
 2. `show_item` -- one task with needs, readiness, and sections.
    Large fields arrive as section reads: field/offset/budget.
 3. `register_batch` -- register the immutable repository/integration contract
-   before any prepared member enrollment. Older servers or schemas do not
-   support prepared mode; use serial mode instead.
+   before any prepared member enrollment. The first schema-3 registration
+   requires `confirm_schema3_cutover=true` after every process with state-branch
+   access has been stopped or upgraded. Older clients cannot coexist after it.
 4. `create_item` -- id, title, priority (default medium),
    description, needs, acceptance, links, context, and optional batch
    metadata (`batch_id`, `member_id`, `implementation_dependencies`).
@@ -46,7 +47,9 @@ acknowledgement; lists return brief rows (id/title/priority/status).
 
 `update_item` edits title/priority/description/needs/sections/status
 (open/blocked moves only; closing goes through finish/drop). Batch metadata
-is explicit and never inferred from an ordinary dependency.
+is explicit, immutable after assignment, and never inferred from an ordinary
+dependency. A prepared member cannot be dropped while its batch is active;
+complete or abort the batch instead.
 
 ## Responses
 

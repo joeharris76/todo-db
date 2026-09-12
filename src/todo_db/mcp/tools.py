@@ -50,7 +50,7 @@ def _need_principal(holder: PrincipalHolder, ctx: Context | None) -> str | dict[
 def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHolder) -> None:
     @server.tool(
         name="list_items",
-        description="List tasks as brief rows (id/title/priority/status). Filters: status, priority, text, ready_only. Paging: limit (default 5) + cursor.",
+        description="List task summaries with filters and stable pagination.",
     )
     async def list_items_tool(
         status: str | None = None,
@@ -72,7 +72,7 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
 
     @server.tool(
         name="show_item",
-        description="Show one task with needs, readiness, and sections. Large fields spill to section reads: field/offset/budget/rev.",
+        description="Show a task or one paged large field.",
     )
     async def show_item_tool(
         id: str,
@@ -90,7 +90,7 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
 
     @server.tool(
         name="create_item",
-        description="Create a task: id, title, priority (default medium), description, needs, acceptance, links, context, optional batch metadata.",
+        description="Create a task, optionally as a registered batch member.",
     )
     async def create_item_tool(
         id: str,
@@ -115,7 +115,7 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
 
     @server.tool(
         name="register_batch",
-        description="Register one immutable prepared-work batch contract: repository, owner generation, integration branch/worktree, start head, ordered members, frozen scope, delivery boundary, and terminal outcome.",
+        description="Register an immutable prepared-work batch after confirmed schema-3 cutover.",
     )
     async def register_batch_tool(
         batch_id: str,
@@ -130,6 +130,7 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
         scope_hash: str,
         delivery_boundary: str,
         terminal_outcome: str,
+        confirm_schema3_cutover: bool = False,
         ctx: Context = None,  # type: ignore[assignment]
     ) -> dict[str, Any]:
         worker = _need_principal(holder, ctx)
@@ -143,11 +144,12 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
             integration_worktree=integration_worktree, start_head=start_head,
             members=members, scope=scope, scope_hash=scope_hash,
             delivery_boundary=delivery_boundary, terminal_outcome=terminal_outcome,
+            confirm_schema3_cutover=confirm_schema3_cutover,
         )
 
     @server.tool(
         name="update_item",
-        description="Edit a task: title/priority/description/needs/sections, optional batch metadata, or open/blocked moves. Closing goes through finish.",
+        description="Edit task fields or move between open and blocked.",
     )
     async def update_item_tool(
         id: str,
@@ -189,7 +191,7 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
 
     @server.tool(
         name="take",
-        description="Claim a task. Returns the claim generation plus enough context to begin work. One live claim per worker.",
+        description="Claim one ready task and return its generation and context.",
     )
     async def take_tool(
         id: str,
@@ -203,7 +205,7 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
 
     @server.tool(
         name="release",
-        description="Hand a claim back without finishing. Needs the generation returned by take.",
+        description="Release a claim by generation without finishing.",
     )
     async def release_tool(
         id: str,
@@ -218,10 +220,7 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
 
     @server.tool(
         name="prepare",
-        description=(
-            "Record verified member work and release its claim without marking it done. "
-            "Requires an explicit batch member, clean exact source checkout, and passed bounded suite evidence."
-        ),
+        description="Record verified batch-member work without completing the task.",
     )
     async def prepare_tool(
         id: str,
@@ -260,7 +259,7 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
 
     @server.tool(
         name="bind_batch_pr",
-        description="Bind exactly one final PR identity to a registered batch before final-tree closeout.",
+        description="Bind the batch's final PR before closeout.",
     )
     async def bind_batch_pr_tool(
         batch_id: str,
@@ -280,7 +279,7 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
 
     @server.tool(
         name="abort_batch",
-        description="Abort an owned active batch after claims are released; invalidates prepared evidence and keeps members recoverable.",
+        description="Abort a claim-free active batch and recover its members.",
     )
     async def abort_batch_tool(
         batch_id: str,

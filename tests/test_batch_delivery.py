@@ -51,6 +51,19 @@ def _register(snap: store.Snapshot, revision: str, members: list[str], scope: di
     )
 
 
+def _final_evidence(snap: store.Snapshot, revision: str, members: list[str]) -> dict:
+    return {
+        "status": "passed", "project_id": "todo-db", "repository": "repo",
+        "batch_id": "batch-1", "tree_worktree": "/tmp/integration", "tree_revision": revision,
+        "integration_branch": "main", "integration_head": revision,
+        "scope_hash": snap.index["batches"]["batch-1"]["scope_hash"],
+        "member_heads": {member: revision for member in members},
+        "member_ranges": {member: {"base": revision, "head": revision} for member in members},
+        "changed_files": [], "final_pr": {"number": 1, "node_id": "PR_1", "head": revision},
+        "suite": "combined-tree", "clean": True,
+    }
+
+
 def test_prepare_releases_claim_without_done_and_unlocks_explicit_member(tmp_path: Path) -> None:
     source, revision = _git_checkout(tmp_path)
     snap = _snap()
@@ -119,6 +132,34 @@ def test_prepare_rejects_stale_or_dirty_source_and_bad_evidence(tmp_path: Path) 
             source_base=revision, accepted_head=revision, integration_head=revision,
             scope_hash=snap.index["batches"]["batch-1"]["scope_hash"],
         )
+
+
+def test_prepare_without_batch_metadata_returns_todo_error() -> None:
+    snap = _snap()
+    revision = "a" * 40
+    store.op_create(snap, item_id="a", title="A")
+    claim = store.op_take(snap, "a", "worker")
+    with pytest.raises(TodoError) as exc:
+        store.op_prepare(
+            snap, "a", "worker", claim["claim"]["generation"],
+            batch_id="batch-1", member_id="a", source_worktree="/tmp/source",
+            source_revision=revision, source_base=revision, accepted_head=revision,
+            integration_head=revision, scope_hash="0" * 64,
+            verification=_verification(revision),
+        )
+    assert exc.value.code == "E_STATE"
+
+
+def test_malformed_final_evidence_returns_todo_error() -> None:
+    with pytest.raises(TodoError) as exc:
+        store._validate_final_evidence("a", {
+            "status": "passed", "project_id": "todo-db", "repository": "repo",
+            "batch_id": "batch-1", "tree_worktree": "/tmp/integration",
+            "tree_revision": "a" * 40, "integration_branch": "main",
+            "integration_head": "a" * 40, "scope_hash": "0" * 64,
+            "suite": "combined-tree",
+        })
+    assert exc.value.code == "E_FINAL_EVIDENCE"
 
 
 def test_prepared_finish_requires_current_final_tree_evidence(tmp_path: Path) -> None:
@@ -239,6 +280,28 @@ def test_abort_preserves_dropped_member_state() -> None:
     assert "batch" not in snap.details["a"]
 
 
+def test_prepared_member_cannot_be_dropped_while_batch_is_active() -> None:
+    snap = _snap()
+    revision = "b" * 40
+    _register(snap, revision, ["a"])
+    store.op_create(
+        snap, item_id="a", title="A",
+        batch={"batch_id": "batch-1", "member_id": "a", "implementation_dependencies": []},
+    )
+    claim = store.op_take(snap, "a", "worker")
+    store.op_prepare(
+        snap, "a", "worker", claim["claim"]["generation"], batch_id="batch-1", member_id="a",
+        source_worktree="/tmp/source", source_revision=revision, source_base=revision,
+        accepted_head=revision, integration_head=revision,
+        scope_hash=snap.index["batches"]["batch-1"]["scope_hash"], verification=_verification(revision),
+    )
+    with pytest.raises(TodoError) as exc:
+        store.op_drop(snap, "a")
+    assert exc.value.code == "E_STATE"
+    assert snap.index["items"]["a"]["status"] == "open"
+    assert "prepared" in snap.details["a"]
+
+
 def test_abort_refuses_done_members_without_reopening_them() -> None:
     snap = _snap()
     revision = "d" * 40
@@ -314,6 +377,35 @@ def test_member_edit_invalidates_transitive_downstream_receipts() -> None:
     assert all("prepared" not in snap.details[item_id] for item_id in ("a", "b", "c"))
 
 
+def test_member_edit_cannot_invalidate_completed_dependent() -> None:
+    snap = _snap()
+    revision = "b" * 40
+    _register(snap, revision, ["a", "b"])
+    for item_id, needs, deps in (("a", [], []), ("b", ["a"], ["a"])):
+        store.op_create(
+            snap, item_id=item_id, title=item_id.upper(), needs=needs,
+            batch={"batch_id": "batch-1", "member_id": item_id, "implementation_dependencies": deps},
+        )
+        claim = store.op_take(snap, item_id, "worker")
+        store.op_prepare(
+            snap, item_id, "worker", claim["claim"]["generation"], batch_id="batch-1", member_id=item_id,
+            source_worktree="/tmp/source", source_revision=revision, source_base=revision,
+            accepted_head=revision, integration_head=revision,
+            scope_hash=snap.index["batches"]["batch-1"]["scope_hash"], verification=_verification(revision),
+            implementation_dependencies=deps,
+        )
+    store.op_bind_batch_pr(snap, "batch-1", "worker", "1" * 32, number=1, node_id="PR_1", head=revision)
+    claim = store.op_take(snap, "b", "worker")
+    store.op_finish(snap, "b", "worker", claim["claim"]["generation"], _final_evidence(snap, revision, ["a", "b"]))
+    with pytest.raises(TodoError) as exc:
+        store.op_update(snap, "a", title="changed")
+    assert exc.value.code == "E_STATE"
+    assert snap.index["items"]["a"]["title"] == "A"
+    assert snap.index["items"]["b"]["status"] == "done"
+    assert "prepared" in snap.details["b"]
+    assert "final_evidence" in snap.details["b"]
+
+
 def test_distinct_integrated_heads_keep_multiple_predecessors_ready() -> None:
     snap = _snap()
     base, ahead, bhead, merge_head = ("a" * 40, "b" * 40, "c" * 40, "d" * 40)
@@ -362,6 +454,54 @@ def test_duplicate_batch_registration_and_foreign_member_fail_closed() -> None:
         )
 
 
+def test_active_batch_membership_is_unique_and_immutable() -> None:
+    snap = _snap()
+    revision = "c" * 40
+    _register(snap, revision, ["a"])
+    store.op_create(
+        snap, item_id="a", title="A",
+        batch={"batch_id": "batch-1", "member_id": "a", "implementation_dependencies": []},
+    )
+    with pytest.raises(TodoError) as exc:
+        store.op_update(
+            snap, "a", batch={"batch_id": "other", "member_id": "a", "implementation_dependencies": []}
+        )
+    assert exc.value.code == "E_STATE"
+    with pytest.raises(TodoError) as exc:
+        store.op_register_batch(
+            snap, batch_id="batch-2", project_id="todo-db", repository="repo", owner="worker",
+            owner_generation="2" * 32, integration_branch="main", integration_worktree="/tmp/integration",
+            start_head=revision, members=["a"], scope={"a": ["a/**"]},
+            scope_hash=store.scope_digest({"a": ["a/**"]}), delivery_boundary="final-pr",
+            terminal_outcome="merged",
+        )
+    assert exc.value.code == "E_CONFLICT"
+
+
+def test_schema_three_cutover_requires_explicit_confirmation() -> None:
+    snap = _snap()
+    snap.index = {"schema_version": 1, "items": {}}
+    revision = "c" * 40
+    with pytest.raises(TodoError) as exc:
+        store.op_register_batch(
+            snap, batch_id="batch-1", project_id="todo-db", repository="repo", owner="worker",
+            owner_generation="1" * 32, integration_branch="main", integration_worktree="/tmp/integration",
+            start_head=revision, members=["a"], scope={"a": ["a/**"]},
+            scope_hash=store.scope_digest({"a": ["a/**"]}), delivery_boundary="final-pr",
+            terminal_outcome="merged",
+        )
+    assert exc.value.code == "E_STATE"
+    assert snap.index["schema_version"] == 1
+    store.op_register_batch(
+        snap, batch_id="batch-1", project_id="todo-db", repository="repo", owner="worker",
+        owner_generation="1" * 32, integration_branch="main", integration_worktree="/tmp/integration",
+        start_head=revision, members=["a"], scope={"a": ["a/**"]},
+        scope_hash=store.scope_digest({"a": ["a/**"]}), delivery_boundary="final-pr",
+        terminal_outcome="merged", confirm_schema3_cutover=True,
+    )
+    assert snap.index["schema_version"] == 3
+
+
 def test_real_git_scope_and_repository_identity_checks(tmp_path: Path) -> None:
     source, base = _git_checkout(tmp_path)
     subprocess.run(["git", "-C", str(source), "remote", "add", "origin", "https://example.invalid/todo-db.git"], check=True)
@@ -376,6 +516,51 @@ def test_real_git_scope_and_repository_identity_checks(tmp_path: Path) -> None:
     with pytest.raises(TodoError):
         TrackerService._validate_source_checkout(str(source), head, expected_repository="https://example.invalid/other.git")
     assert TrackerService._changed_paths(str(source), base, head) == ["a/ok.txt"]
+
+
+def test_literal_git_paths_cannot_hide_drift(tmp_path: Path) -> None:
+    source, base = _git_checkout(tmp_path)
+    magic_name = ":(exclude)*"
+    (source / magic_name).write_text("accepted\n", encoding="utf-8")
+    subprocess.run(["git", "--literal-pathspecs", "-C", str(source), "add", "--", magic_name], check=True)
+    subprocess.run(["git", "-C", str(source), "commit", "--quiet", "-m", "accepted"], check=True)
+    accepted = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
+    (source / magic_name).write_text("drifted\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(source), "commit", "--quiet", "-am", "drift"], check=True)
+    integrated = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
+    assert magic_name in TrackerService._changed_paths(str(source), base, accepted)
+    assert TrackerService._unchanged_paths(str(source), accepted, integrated, [magic_name]) is False
+
+
+def test_dependent_prepare_rejects_caller_selected_empty_range() -> None:
+    snap = _snap()
+    base, predecessor, accepted = "a" * 40, "b" * 40, "c" * 40
+    _register(snap, base, ["a", "b"])
+    store.op_create(
+        snap, item_id="a", title="A",
+        batch={"batch_id": "batch-1", "member_id": "a", "implementation_dependencies": []},
+    )
+    store.op_create(
+        snap, item_id="b", title="B", needs=["a"],
+        batch={"batch_id": "batch-1", "member_id": "b", "implementation_dependencies": ["a"]},
+    )
+    claim = store.op_take(snap, "a", "worker")
+    store.op_prepare(
+        snap, "a", "worker", claim["claim"]["generation"], batch_id="batch-1", member_id="a",
+        source_worktree="/tmp/source", source_revision=predecessor, source_base=base,
+        accepted_head=predecessor, integration_head=predecessor,
+        scope_hash=snap.index["batches"]["batch-1"]["scope_hash"], verification=_verification(predecessor),
+    )
+    claim = store.op_take(snap, "b", "worker")
+    with pytest.raises(TodoError) as exc:
+        store.op_prepare(
+            snap, "b", "worker", claim["claim"]["generation"], batch_id="batch-1", member_id="b",
+            source_worktree="/tmp/source", source_revision=accepted, source_base=accepted,
+            accepted_head=accepted, integration_head=accepted,
+            scope_hash=snap.index["batches"]["batch-1"]["scope_hash"], verification=_verification(accepted),
+            implementation_dependencies=["a"],
+        )
+    assert exc.value.code == "E_STATE"
 
 
 def test_runtime_readiness_fails_closed_when_integration_checkout_moves(tmp_path: Path) -> None:

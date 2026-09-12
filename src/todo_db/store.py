@@ -348,11 +348,13 @@ def _validate_final_evidence(item_id: str, evidence: Any) -> dict[str, Any]:
     _validate_revision(evidence["integration_head"], "integration_head")
     if evidence["tree_revision"] != evidence["integration_head"]:
         raise TodoError(f"final evidence for {item_id!r} has inconsistent tree/head", code=E_FINAL_EVIDENCE)
-    if not isinstance(evidence["member_heads"], dict) or not isinstance(evidence["member_ranges"], dict):
+    if not isinstance(evidence.get("member_heads"), dict) or not isinstance(evidence.get("member_ranges"), dict):
         raise TodoError(f"final evidence for {item_id!r} has invalid member mappings", code=E_FINAL_EVIDENCE)
-    if not isinstance(evidence["changed_files"], list) or any(not isinstance(path, str) for path in evidence["changed_files"]):
+    if not isinstance(evidence.get("changed_files"), list) or any(
+        not isinstance(path, str) for path in evidence.get("changed_files", [])
+    ):
         raise TodoError(f"final evidence for {item_id!r} has invalid changed_files", code=E_FINAL_EVIDENCE)
-    if not isinstance(evidence["final_pr"], dict):
+    if not isinstance(evidence.get("final_pr"), dict):
         raise TodoError(f"final evidence for {item_id!r} has no final PR identity", code=E_FINAL_EVIDENCE)
     if not isinstance(evidence["final_pr"].get("number"), int) or not isinstance(evidence["final_pr"].get("node_id"), str):
         raise TodoError(f"final evidence for {item_id!r} has an invalid final PR identity", code=E_FINAL_EVIDENCE)
@@ -815,11 +817,18 @@ def _invalidate_prepared_dependents(snapshot: Snapshot, root_id: str) -> list[st
                 continue
             if "prepared" not in detail and "final_evidence" not in detail:
                 continue
-            detail.pop("prepared", None)
-            detail.pop("final_evidence", None)
             invalidated.append(item_id)
             seen.add(item_id)
             queue.append(item_id)
+    completed = [item_id for item_id in invalidated if snapshot.index["items"][item_id]["status"] == "done"]
+    if completed:
+        raise TodoError(
+            f"cannot invalidate evidence for completed batch members: {', '.join(sorted(completed))}",
+            code=E_STATE,
+        )
+    for item_id in invalidated:
+        snapshot.details[item_id].pop("prepared", None)
+        snapshot.details[item_id].pop("final_evidence", None)
     return invalidated
 
 
@@ -841,6 +850,11 @@ def op_update(
     if item_id not in items:
         raise TodoError(f"unknown task {item_id!r}", code=E_STATE)
     existing_batch = snapshot.details[item_id].get("batch")
+    if batch is not None and isinstance(existing_batch, dict) and batch != existing_batch:
+        raise TodoError(
+            f"registered batch metadata for {item_id!r} is immutable; abort the batch before reassignment",
+            code=E_STATE,
+        )
     if isinstance(existing_batch, dict):
         batch_record = snapshot.index.get("batches", {}).get(existing_batch.get("batch_id"))
         if isinstance(batch_record, dict) and batch_record.get("lifecycle", "active") != "active":
@@ -906,23 +920,26 @@ def op_update(
             detail.pop("context", None)
         changed.append("context")
     if batch is not None:
-        if snapshot.index["schema_version"] < SCHEMA_VERSION:
-            snapshot.index["schema_version"] = SCHEMA_VERSION
-        detail["batch"] = json.loads(json.dumps(batch))
-        changed.append("batch")
+        if batch != existing_batch:
+            if snapshot.index["schema_version"] < SCHEMA_VERSION:
+                snapshot.index["schema_version"] = SCHEMA_VERSION
+            detail["batch"] = json.loads(json.dumps(batch))
+            changed.append("batch")
     invalidated: list[str] = []
-    if changed and "prepared" in detail:
-        # A prepared receipt binds the exact member content and declared
-        # edge. Any later edit invalidates it instead of allowing a stale
-        # receipt to unlock a dependent member.
-        detail.pop("prepared", None)
-        detail.pop("final_evidence", None)
-        changed.append("prepared_receipt")
-    if changed:
-        invalidated = _invalidate_prepared_dependents(snapshot, item_id)
-        if invalidated:
-            changed.append("downstream_prepared_receipts")
     try:
+        if changed and "prepared" in detail:
+            if entry["status"] == "done":
+                raise TodoError(f"cannot edit completed prepared batch member {item_id!r}", code=E_STATE)
+            # A prepared receipt binds the exact member content and declared
+            # edge. Any later edit invalidates it instead of allowing a stale
+            # receipt to unlock a dependent member.
+            detail.pop("prepared", None)
+            detail.pop("final_evidence", None)
+            changed.append("prepared_receipt")
+        if changed:
+            invalidated = _invalidate_prepared_dependents(snapshot, item_id)
+            if invalidated:
+                changed.append("downstream_prepared_receipts")
         validate_snapshot(snapshot.index, snapshot.details)
     except TodoError:
         items[item_id] = previous
@@ -949,14 +966,28 @@ def op_register_batch(
     scope_hash: str,
     delivery_boundary: str,
     terminal_outcome: str,
+    confirm_schema3_cutover: bool = False,
 ) -> dict[str, Any]:
     """Register one immutable batch contract before member preparation."""
+    if snapshot.index["schema_version"] < SCHEMA_VERSION and confirm_schema3_cutover is not True:
+        raise TodoError(
+            "register_batch requires confirm_schema3_cutover=true after every active consumer is upgraded",
+            code=E_STATE,
+        )
     previous_version = snapshot.index["schema_version"]
     if snapshot.index["schema_version"] < SCHEMA_VERSION:
         snapshot.index["schema_version"] = SCHEMA_VERSION
     batches = snapshot.index.setdefault("batches", {})
     if batch_id in batches:
         raise TodoError(f"batch {batch_id!r} is already registered; refusing duplicate enrollment", code=E_CONFLICT)
+    member_set = set(members)
+    for existing_id, existing in batches.items():
+        if existing.get("lifecycle", "active") == "active" and member_set.intersection(existing.get("members", [])):
+            overlap = ", ".join(sorted(member_set.intersection(existing["members"])))
+            raise TodoError(
+                f"batch members already belong to active batch {existing_id!r}: {overlap}",
+                code=E_CONFLICT,
+            )
     record = {
         "project_id": project_id,
         "repository": repository,
@@ -1210,7 +1241,11 @@ def op_prepare(
     detail = snapshot.details[item_id]
     batch = detail.get("batch")
     batch_record = snapshot.index.get("batches", {}).get(batch_id)
-    if not isinstance(batch_record, dict) or (batch.get("batch_id"), batch.get("member_id")) != (batch_id, member_id):
+    if (
+        not isinstance(batch, dict)
+        or not isinstance(batch_record, dict)
+        or (batch.get("batch_id"), batch.get("member_id")) != (batch_id, member_id)
+    ):
         raise TodoError(
             f"task {item_id!r} must be explicitly registered as batch member {member_id!r} before prepare",
             code=E_STATE,
@@ -1220,6 +1255,10 @@ def op_prepare(
     registered_deps = list(batch.get("implementation_dependencies", []))
     if registered_deps != deps:
         raise TodoError("prepare dependencies differ from registered batch metadata", code=E_STATE)
+    expected_base = batch_record["integration_head"] if deps else batch_record["start_head"]
+    if source_base != expected_base:
+        kind = "current integration head" if deps else "registered batch head"
+        raise TodoError(f"prepared member must start at the {kind}", code=E_STATE)
     if scope_hash != batch_record["scope_hash"]:
         raise TodoError("prepared source does not match the registered batch scope", code=E_STATE)
     if member_id not in batch_record["members"]:
@@ -1348,6 +1387,14 @@ def op_drop(
     if entry["status"] in TERMINAL_STATUSES:
         raise TodoError(f"task {item_id!r} is already {entry['status']}", code=E_STATE)
     claim = entry.get("claim")
+    detail = snapshot.details[item_id]
+    batch_meta = detail.get("batch")
+    batch = snapshot.index.get("batches", {}).get(batch_meta.get("batch_id")) if isinstance(batch_meta, dict) else None
+    if isinstance(batch, dict) and batch.get("lifecycle", "active") == "active" and "prepared" in detail:
+        raise TodoError(
+            f"prepared batch member {item_id!r} cannot be dropped; abort or complete its batch",
+            code=E_STATE,
+        )
     if claim_is_live(claim):
         if (
             worker is None

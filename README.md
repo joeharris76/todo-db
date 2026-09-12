@@ -79,11 +79,13 @@ is mirrored into `.claude/`, `.codex/`, and `.gemini/` to teach the workflow.
 
 State schema 3 adds the registered prepared-batch contract and remains able to
 read schema 1 and schema 2 snapshots. A schema-1/2 snapshot is upgraded lazily
-to schema 3 only when a batch operation writes it; ordinary reads remain
-read-only. Clients that do not advertise the schema-3 registered-batch
-capability must use the serial lifecycle and must not treat legacy receipts as
-valid prepared work; old prepared-receipt records fail closed until rewritten
-through the registered schema-3 lifecycle. Ordinary dependencies remain done-only.
+to schema 3 only when `register_batch` writes it; ordinary reads remain
+read-only. That upgrade is one-way for older binaries: before setting
+`confirm_schema3_cutover=true`, stop or upgrade every process that can access
+the state branch. There is no runtime capability negotiation, and schema-1
+clients cannot safely coexist after cutover. Old prepared-receipt records fail
+closed until rewritten through the registered schema-3 lifecycle. Ordinary
+dependencies remain done-only.
 
 | Term | Meaning |
 | --- | --- |

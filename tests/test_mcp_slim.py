@@ -188,6 +188,15 @@ def test_public_mcp_prepared_delivery_and_finish(tmp_path: Path) -> None:
                 "batch_id": "delivery", "owner_generation": "1" * 32,
                 **final_pr,
             }))["ok"]
+            malformed = _payload(await session.call_tool("finish", {
+                "id": "a", "generation": generation, "final_evidence": {
+                    "status": "passed", "batch_id": "delivery", "project_id": "todo-db",
+                    "repository": str(repo), "tree_worktree": str(repo), "tree_revision": ahead,
+                    "integration_branch": "main", "integration_head": ahead,
+                    "scope_hash": store.scope_digest(scope), "suite": "combined", "clean": True,
+                },
+            }))
+            assert not malformed["ok"] and malformed["code"] == "E_FINAL_EVIDENCE"
             finished = _payload(await session.call_tool("finish", {
                 "id": "a", "generation": generation, "final_evidence": {
                     "status": "passed", "batch_id": "delivery", "project_id": "todo-db",
