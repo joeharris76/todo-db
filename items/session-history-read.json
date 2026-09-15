@@ -1,0 +1,9 @@
+{
+  "acceptance": [
+    "State commits carry a bounded single-line Todo-Session trailer next to Todo-Actor, visible in history/recover output",
+    "show_item returns a sessions summary (total, last) with the full log available through paged show_item field=sessions reads; list_items stays brief",
+    "Long histories honor the 16 KiB cap via the existing continuation/slim path"
+  ],
+  "context": "Approved plan 2026-09-14: per-task session history. Work plan steps 4-5. No new tool; reuse the field/offset/budget section machinery. op_id in each entry resolves to its commit via reconcile.",
+  "description": "Emit the Todo-Session commit trailer and expose per-task session history on the read path: show_item sessions summary plus paged section reads, with trailer surfaced in history/recover output."
+}

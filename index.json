@@ -642,6 +642,15 @@
       "status": "open",
       "title": "Plumb agent session context into the mutation path"
     },
+    "session-history-read": {
+      "claim": null,
+      "needs": [
+        "session-history-record"
+      ],
+      "priority": "high",
+      "status": "open",
+      "title": "Expose session history on transport and read paths"
+    },
     "session-history-record": {
       "claim": null,
       "needs": [
