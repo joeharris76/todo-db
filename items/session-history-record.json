@@ -1,0 +1,8 @@
+{
+  "acceptance": [
+    "create, take (fresh and re-adoption), renew, release, prepare, finish, drop, and item updates each append exactly one entry with op/at/op_id (plus generation for claim ops)",
+    "A retried publication (same op_id) never appends a duplicate entry"
+  ],
+  "context": "Approved plan 2026-09-14: per-task session history. Work plan step 3. Take re-adoption records a second entry (same actor, new generation). Default: update_item touches also append (revisit if noisy).",
+  "description": "Record one op_id-keyed session entry inside the apply path of every item-mutating service operation (create/take/renew/release/prepare/finish/drop/update), threading op_id into the apply closure so publication retries stay idempotent."
+}

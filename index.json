@@ -642,6 +642,15 @@
       "status": "open",
       "title": "Plumb agent session context into the mutation path"
     },
+    "session-history-record": {
+      "claim": null,
+      "needs": [
+        "session-history-store"
+      ],
+      "priority": "high",
+      "status": "open",
+      "title": "Record session entries on every item touch"
+    },
     "session-history-store": {
       "claim": null,
       "needs": [
