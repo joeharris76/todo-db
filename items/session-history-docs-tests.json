@@ -1,0 +1,8 @@
+{
+  "acceptance": [
+    "Agent docs tell the next session to read session history first and to leave resumption notes in context before release/finish, with handoff citing history as the first continuity source",
+    "New tests cover append, op_id idempotency, shape rejection, absence on old items, per-op recording, retry safety, identity plumbing, trailer presence, and show_item paging; focused suites plus ruff are green"
+  ],
+  "context": "Approved plan 2026-09-14: per-task session history. Work plan steps 6-7. History entries are pointers (who/when/what-operation/which-commit); detail context and handoffs carry the substance for reuse.",
+  "description": "Update INSTRUCTIONS, implement.md, and handoff.md for the history-first workflow with resumption notes, and add covering tests for the store, service, identity plumbing, trailer, and paged reads."
+}

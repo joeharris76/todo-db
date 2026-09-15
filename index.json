@@ -635,6 +635,15 @@
       "status": "done",
       "title": "Schedule audit verify + doctor; define mechanical alert channel"
     },
+    "session-history-docs-tests": {
+      "claim": null,
+      "needs": [
+        "session-history-read"
+      ],
+      "priority": "medium",
+      "status": "open",
+      "title": "Document history workflow and cover it with tests"
+    },
     "session-history-plumbing": {
       "claim": null,
       "needs": [],
