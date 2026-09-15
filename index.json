@@ -635,6 +635,13 @@
       "status": "done",
       "title": "Schedule audit verify + doctor; define mechanical alert channel"
     },
+    "session-history-plumbing": {
+      "claim": null,
+      "needs": [],
+      "priority": "high",
+      "status": "open",
+      "title": "Plumb agent session context into the mutation path"
+    },
     "skills-deployment-repair": {
       "claim": null,
       "needs": [],

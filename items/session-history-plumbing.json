@@ -1,0 +1,8 @@
+{
+  "acceptance": [
+    "TrackerService accepts session context (actor, session_id, client label) from MCP launch and CLI invocation while existing worker-only construction keeps working",
+    "MCP mutations carry the server session id and sanitized client label; CLI gains --session / TODO_DB_SESSION with an ephemeral per-invocation fallback so CLI touches leave no gaps"
+  ],
+  "context": "Approved plan 2026-09-14: per-task session history. Work plan step 1. Agent name = existing worker identity (actor); session = MCP server session or CLI session; client = sanitized clientInfo.name when available.",
+  "description": "Thread session context (actor, session_id, client label) from MCP PrincipalHolder/Identity through register_tools into TrackerService without breaking worker-only construction, and add CLI --session / TODO_DB_SESSION with an ephemeral per-invocation fallback. No history is recorded yet; this only makes the identity available where mutations are applied."
+}
