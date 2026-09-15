@@ -642,6 +642,15 @@
       "status": "open",
       "title": "Plumb agent session context into the mutation path"
     },
+    "session-history-store": {
+      "claim": null,
+      "needs": [
+        "session-history-plumbing"
+      ],
+      "priority": "high",
+      "status": "open",
+      "title": "Define sessions log shape and validation in the store"
+    },
     "skills-deployment-repair": {
       "claim": null,
       "needs": [],

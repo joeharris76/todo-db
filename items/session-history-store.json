@@ -1,0 +1,8 @@
+{
+  "acceptance": [
+    "items/<id>.json accepts an optional append-only sessions array; malformed entries are rejected and absence on old items stays valid",
+    "op_update preserves existing sessions entries; no schema_version bump or migration is required"
+  ],
+  "context": "Approved plan 2026-09-14: per-task session history. Work plan step 2. Entry shape: {actor, session_id, client, op, at, op_id, generation?}. Detail-owned array chosen over the secondary-index options (single sessions.json rejected for contention; per-item sidecars deferred as a measured follow-up).",
+  "description": "Define the sessions entry shape and validation for the additive detail-owned sessions array on items/<id>.json, plus the op_id-keyed append helper. Validate entry types, timestamp parsing, and single-line bounds when present; accept absence for pre-existing items; preserve entries across op_update."
+}
