@@ -214,6 +214,7 @@ def migrate_file(
     worker: str,
     dry_run: bool = False,
     backup_dir: str | Path | None = None,
+    session: str | None = None,
 ) -> dict[str, Any]:
     """Migrate an export file onto a freshly bootstrapped state branch."""
     import hashlib as _hashlib
@@ -264,7 +265,7 @@ def migrate_file(
 
     outcome = git_backend.mutate(
         ref, op="migrate", summary=f"migrate {report['items']} items from legacy export",
-        worker=worker, apply=apply,
+        worker=worker, apply=apply, session=session,
     )
     if not outcome.ok:
         raise TodoError(outcome.error or "migration publication failed", code=outcome.code or E_STATE)

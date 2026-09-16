@@ -62,6 +62,21 @@ def test_session_id_prefers_flag_then_environment_then_ephemeral(monkeypatch) ->
     assert len(first) == 32 and len(second) == 32 and first != second
 
 
+def test_forged_session_identity_is_rejected(monkeypatch) -> None:
+    from argparse import Namespace
+
+    from todo_db.errors import TodoError
+
+    import pytest
+
+    monkeypatch.delenv("TODO_DB_SESSION", raising=False)
+    with pytest.raises(TodoError):
+        _session_id(Namespace(session="bad\nline"))
+    monkeypatch.setenv("TODO_DB_SESSION", "bad\nline")
+    with pytest.raises(TodoError):
+        _session_id(Namespace(session=None))
+
+
 def test_list_show_recover_round_trip(tmp_path: Path, capsys) -> None:
     remote = _remote(tmp_path)
     assert main(["bootstrap", *_args(remote)]) == 0

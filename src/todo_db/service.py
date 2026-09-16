@@ -264,8 +264,22 @@ class TrackerService:
                     "expires_at": claim["expires_at"],
                     "live": S.claim_is_live(claim, now),
                 }
+            log = detail.get("sessions", [])
+            if isinstance(log, list) and log:
+                last = log[-1] if isinstance(log[-1], dict) else {}
+                data["sessions"] = {
+                    "total": len(log),
+                    "last": {
+                        key: last[key]
+                        for key in ("actor", "session_id", "client", "op", "at", "op_id", "generation")
+                        if key in last
+                    },
+                }
+                data["sessions_continuation"] = {
+                    "field": "sessions", "offset": 0, "budget": SECTION_BUDGET, "rev": outcome.rev,
+                }
             sections: dict[str, Any] = {}
-            for key in ("description", "acceptance", "links", "context", "legacy"):
+            for key in ("description", "acceptance", "links", "context", "legacy", "sessions"):
                 if key in detail:
                     sections[key] = self._section_summary(detail[key])
             sections["needs"] = {"total": len(needs)}
@@ -396,6 +410,29 @@ class TrackerService:
             if not _fits(env):
                 return err(E_OVERSIZED, "section window exceeds the byte cap")
             return env
+        if field == "sessions":
+            # Entry-window paging over the session log: offsets count
+            # entries (not bytes), mirroring the needs/unmet_needs path.
+            log = detail.get("sessions", [])
+            if not isinstance(log, list):
+                return err(E_STATE, f"task {item_id!r} has a malformed sessions log")
+            offset = max(0, int(offset))
+            if offset >= len(log) and log:
+                return err(E_STATE, f"section offset {offset} is past the end ({len(log)})")
+            window = log[offset : offset + NEEDS_INLINE]
+            data = {
+                "id": item_id, "field": field, "offset": offset,
+                "total": len(log), "window": window, "rev": current_rev,
+            }
+            if offset + NEEDS_INLINE < len(log):
+                data["continuation"] = {
+                    "field": field, "offset": offset + NEEDS_INLINE,
+                    "budget": budget, "rev": current_rev,
+                }
+            env = ok(data)
+            if not _fits(env):
+                return err(E_OVERSIZED, "section window exceeds the byte cap")
+            return env
         if field not in detail:
             return err(E_STATE, f"task {item_id!r} has no section {field!r}")
         budget = max(1, min(int(budget), MAX_BYTES))
@@ -451,6 +488,7 @@ class TrackerService:
         try:
             result = git_backend.mutate(
                 self.ref, op=op, summary=summary, worker=self.worker, op_id=op_id, apply=bridged,
+                session=self.session_id,
             )
         except TodoError as exc:
             return err(exc.code or E_STATE, str(exc))

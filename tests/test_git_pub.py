@@ -47,6 +47,28 @@ def test_round_trip_mutate_and_read(tmp_path: Path) -> None:
     assert ro.snapshot.index["items"]["t1"]["title"] == "Task one"
 
 
+def test_history_surfaces_actor_and_session_trailers(tmp_path: Path) -> None:
+    ref = _remote(tmp_path)
+    git_backend.bootstrap(ref, worker="w0", session="session-zero")
+    out = git_backend.mutate(
+        ref, op="create", summary="add t1", worker="w1", session="session-a",
+        apply=lambda snap: (S.op_create(snap, item_id="t1", title="Task one"), {"id": "t1"}),
+    )
+    assert out.ok and out.sha, out
+    git_backend.mutate(
+        ref, op="create", summary="add t2", worker="w1",
+        apply=lambda snap: (S.op_create(snap, item_id="t2", title="Task two"), {"id": "t2"}),
+    )
+    entries = {entry["sha"]: entry for entry in git_backend.history(ref, limit=10)}
+    assert entries[out.sha]["actor"] == "w1"
+    assert entries[out.sha]["session"] == "session-a"
+    assert entries[out.sha]["op_id"]
+    boot = [entry for entry in entries.values() if entry["subject"].startswith("todo(bootstrap)")]
+    assert boot and boot[0]["actor"] == "w0" and boot[0]["session"] == "session-zero"
+    unattributed = [entry for sha, entry in entries.items() if sha != out.sha and not entry["subject"].startswith("todo(bootstrap)")]
+    assert unattributed and all(entry["session"] == "" for entry in unattributed)
+
+
 def test_missing_branch_read_reports_bootstrap(tmp_path: Path) -> None:
     ref = _remote(tmp_path)
     with pytest.raises(TodoError):

@@ -100,6 +100,44 @@ def test_update_appends_session_entry(tmp_path: Path) -> None:
     assert [entry["op"] for entry in log] == ["create", "update"]
 
 
+def test_show_item_surfaces_session_summary_and_pages(tmp_path: Path) -> None:
+    svc, ref = _session_svc(tmp_path)
+    assert svc.create_item("s1", "Shown", description="body")["ok"]
+    took = svc.take("s1")
+    assert took["ok"], took
+    shown = svc.show_item("s1")
+    assert shown["ok"], shown
+    summary = shown["data"]["sessions"]
+    assert summary["total"] == 2
+    assert summary["last"]["op"] == "take"
+    assert summary["last"]["session_id"] == "session-a"
+    assert summary["last"]["generation"] == took["data"]["claim"]["generation"]
+    assert summary["last"]["op_id"]
+    assert "sessions_continuation" in shown["data"]
+    assert "sessions" in shown["data"]["sections"]
+    page = svc.show_item("s1", field="sessions")
+    assert page["ok"], page
+    assert page["data"]["total"] == 2
+    assert [entry["op"] for entry in page["data"]["window"]] == ["create", "take"]
+    assert "continuation" not in page["data"]
+    rev = page["data"]["rev"]
+    second = svc.show_item("s1", field="sessions", offset=1, rev=rev)
+    assert second["ok"] and [entry["op"] for entry in second["data"]["window"]] == ["take"]
+    stale = svc.show_item("s1", field="sessions", offset=1)
+    assert not stale["ok"] and stale["code"] == "E_CURSOR_STALE"
+    past_end = svc.show_item("s1", field="sessions", offset=9, rev=rev)
+    assert not past_end["ok"]
+
+
+def test_show_item_without_history_has_no_sessions_keys(tmp_path: Path) -> None:
+    svc = _svc(tmp_path)
+    assert svc.create_item("plain", "Plain task")["ok"]
+    shown = svc.show_item("plain")
+    assert shown["ok"], shown
+    assert "sessions" not in shown["data"]
+    assert "sessions_continuation" not in shown["data"]
+
+
 def test_lifecycle_acks_are_compact(tmp_path: Path) -> None:
     svc = _svc(tmp_path)
     created = svc.create_item("t1", "First task", description="hello")
@@ -171,7 +209,7 @@ def test_update_retry_conflicts_on_touched_fields(tmp_path: Path, monkeypatch) -
     svc = _svc(tmp_path)
     assert svc.create_item("t", "v1")["ok"]
 
-    def fake_mutate(ref, *, op, summary, worker, op_id, apply, max_retries=5):
+    def fake_mutate(ref, *, op, summary, worker, op_id, apply, max_retries=5, session=None):
         # First attempt records the pre-image; a competing writer changes
         # the same field before the retry is evaluated.
         first = git_backend.read(ref, tmp_path / "c1").snapshot

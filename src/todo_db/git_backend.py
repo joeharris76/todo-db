@@ -67,6 +67,7 @@ STATE_BRANCH_FALLBACK = "todo-state"
 DEFAULT_MAX_RETRIES = 5
 GIT_TIMEOUT_S = 60
 OP_ID_TRAILER = "Todo-Op-Id"
+SESSION_TRAILER = "Todo-Session"
 
 CONFIG_DIRNAME = ".todo-db"
 CONFIG_FILENAME = "config.json"
@@ -312,9 +313,16 @@ def reconcile(ref: StateRef, op_id: str) -> ReconcileResult:
     return found
 
 
-def _commit_message(op: str, summary: str, op_id: str, worker: str) -> str:
+def _commit_message(op: str, summary: str, op_id: str, worker: str, session: str | None = None) -> str:
     subject = f"todo({op}): {summary}"[:200]
-    return f"{subject}\n\n{OP_ID_TRAILER}: {op_id}\nTodo-Actor: {worker}\n"
+    body = f"{OP_ID_TRAILER}: {op_id}\nTodo-Actor: {worker}\n"
+    if session:
+        # Trailer values are single lines by construction: the service
+        # validates session IDs before they reach this point, and the
+        # CLI validates its --session/TODO_DB_SESSION the same way.
+        safe = " ".join(str(session).split())
+        body += f"{SESSION_TRAILER}: {safe}\n"
+    return f"{subject}\n\n{body}"
 
 
 def mutate(
@@ -326,6 +334,7 @@ def mutate(
     op_id: str | None = None,
     apply: Callable[[Snapshot], dict[str, Any]],
     max_retries: int = DEFAULT_MAX_RETRIES,
+    session: str | None = None,
 ) -> MutationOutcome:
     """Apply one logical operation and publish it. See module docstring.
 
@@ -400,7 +409,10 @@ def mutate(
                     code=exc.code or E_STATE, error=str(exc),
                 )
             _git(["add", "--", INDEX_NAME, ITEMS_NAME], work)
-            commit = _git(["commit", "--quiet", "-m", _commit_message(op, summary, op_id, worker)], work)
+            commit = _git(
+                ["commit", "--quiet", "-m", _commit_message(op, summary, op_id, worker, session)],
+                work,
+            )
             if commit.returncode != 0:
                 if "nothing to commit" in (commit.stdout + commit.stderr):
                     return MutationOutcome(
@@ -644,7 +656,7 @@ def _assert_on_branch(ref: StateRef, rev: str) -> None:
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-def restore_rev(ref: StateRef, rev: str, worker: str) -> MutationOutcome:
+def restore_rev(ref: StateRef, rev: str, worker: str, session: str | None = None) -> MutationOutcome:
     """Append-only restore: a new commit returning state to *rev*'s content."""
     import json as _json
 
@@ -658,10 +670,13 @@ def restore_rev(ref: StateRef, rev: str, worker: str) -> MutationOutcome:
         snap.details.update(payload["details"])
         return {"id": "restore", "rev": rev}
 
-    return mutate(ref, op="restore", summary=f"restore state to {rev[:12]}", worker=worker, apply=apply)
+    return mutate(
+        ref, op="restore", summary=f"restore state to {rev[:12]}",
+        worker=worker, apply=apply, session=session,
+    )
 
 
-def bootstrap(ref: StateRef, *, worker: str = "bootstrap") -> str:
+def bootstrap(ref: StateRef, *, worker: str = "bootstrap", session: str | None = None) -> str:
     """Create the state branch with an empty snapshot. Refuses to overwrite."""
     try:
         existing = ls_remote_tip(ref)
@@ -681,7 +696,11 @@ def bootstrap(ref: StateRef, *, worker: str = "bootstrap") -> str:
         _git(["config", "user.email", "todo-db@localhost"], tmp)
         _save(tmp, Snapshot(index=empty_index(), details={}))
         _git_ok(["add", "--", INDEX_NAME, ITEMS_NAME], tmp)
-        _git_ok(["commit", "--quiet", "-m", _commit_message("bootstrap", "initial empty state", new_op_id(), worker)], tmp)
+        _git_ok(
+            ["commit", "--quiet", "-m",
+             _commit_message("bootstrap", "initial empty state", new_op_id(), worker, session)],
+            tmp,
+        )
         sha = _git_ok(["rev-parse", "HEAD"], tmp)
         push = _git(["push", "--quiet", ref.remote, f"HEAD:{ref.branch}"], tmp)
         if push.returncode != 0:
@@ -695,6 +714,26 @@ def bootstrap(ref: StateRef, *, worker: str = "bootstrap") -> str:
         return sha
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _commit_trailers(work: Path, sha: str) -> dict[str, str]:
+    """Read the exact trailer lines of one state commit.
+
+    Attribution rides in ``Todo-Op-Id`` / ``Todo-Actor`` / ``Todo-Session``
+    trailers. Only exact ``Key: value`` lines count — a worker-controlled
+    subject mentioning such a string never qualifies — mirroring the
+    strictness of :func:`_find_op_commit`. Missing trailers report as
+    empty strings so pre-history commits keep working.
+    """
+    found = {OP_ID_TRAILER: "", "Todo-Actor": "", SESSION_TRAILER: ""}
+    body = _git(["show", "-s", "--format=%B", sha], work)
+    if body.returncode != 0:
+        return {"op_id": "", "actor": "", "session": ""}
+    for line in body.stdout.splitlines():
+        for key in found:
+            if line.startswith(f"{key}:"):
+                found[key] = line.split(":", 1)[1].strip()
+    return {"op_id": found[OP_ID_TRAILER], "actor": found["Todo-Actor"], "session": found[SESSION_TRAILER]}
 
 
 def history(ref: StateRef, limit: int = 20) -> list[dict[str, str]]:
@@ -713,7 +752,10 @@ def history(ref: StateRef, limit: int = 20) -> list[dict[str, str]]:
         for line in out.stdout.strip().splitlines():
             parts = line.split("\x00")
             if len(parts) == 4:
-                entries.append({"sha": parts[0], "subject": parts[1], "author": parts[2], "at": parts[3]})
+                entries.append({
+                    "sha": parts[0], "subject": parts[1], "author": parts[2], "at": parts[3],
+                    **_commit_trailers(work, parts[0]),
+                })
         return entries
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
