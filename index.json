@@ -670,17 +670,12 @@
       "title": "Record session entries on every item touch"
     },
     "session-history-store": {
-      "claim": {
-        "expires_at": "2026-09-17T21:22:48Z",
-        "generation": "64a4b3d811374d94926d1c379a9deaf5",
-        "renewals": 0,
-        "worker": "mcp:tbh:joe@joe-mac-mini.local"
-      },
+      "claim": null,
       "needs": [
         "session-history-plumbing"
       ],
       "priority": "high",
-      "status": "active",
+      "status": "done",
       "title": "Define sessions log shape and validation in the store"
     },
     "skills-deployment-repair": {
