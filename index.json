@@ -645,10 +645,15 @@
       "title": "Document history workflow and cover it with tests"
     },
     "session-history-plumbing": {
-      "claim": null,
+      "claim": {
+        "expires_at": "2026-09-17T21:12:41Z",
+        "generation": "47aaa5cdbf6b4e25ac8ec7a0db09f27f",
+        "renewals": 0,
+        "worker": "mcp:tbh:joe@joe-mac-mini.local"
+      },
       "needs": [],
       "priority": "high",
-      "status": "open",
+      "status": "active",
       "title": "Plumb agent session context into the mutation path"
     },
     "session-history-read": {
