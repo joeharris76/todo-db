@@ -52,6 +52,82 @@ def test_session_and_client_validators_accept_bounded_single_lines() -> None:
             store.validate_client_name(bad)
 
 
+def test_record_session_appends_once_per_operation_id() -> None:
+    snap = _snap()
+    store.op_create(snap, item_id="task", title="Task")
+    assert store.record_session(
+        snap, "task", actor="w1", session_id="session-a", client="cli",
+        op="create", op_id="a" * 32,
+    ) is True
+    assert store.record_session(
+        snap, "task", actor="w1", session_id="session-a", client="cli",
+        op="create", op_id="a" * 32,
+    ) is False
+    log = snap.details["task"]["sessions"]
+    assert len(log) == 1
+    entry = log[0]
+    assert entry["actor"] == "w1" and entry["session_id"] == "session-a"
+    assert entry["client"] == "cli" and entry["op"] == "create"
+    assert entry["op_id"] == "a" * 32 and "generation" not in entry
+    store.validate_snapshot(snap.index, snap.details)
+
+
+def test_record_session_rejects_bad_attribution_and_unknown_tasks() -> None:
+    snap = _snap()
+    store.op_create(snap, item_id="task", title="Task")
+    with pytest.raises(TodoError):
+        store.record_session(
+            snap, "ghost", actor="w1", session_id="s", client=None, op="take", op_id="b" * 32,
+        )
+    with pytest.raises(TodoError):
+        store.record_session(
+            snap, "task", actor="w1", session_id="s", client=None, op="merge", op_id="b" * 32,
+        )
+    with pytest.raises(TodoError):
+        store.record_session(
+            snap, "task", actor="w1", session_id="bad\nline", client=None, op="take", op_id="b" * 32,
+        )
+    with pytest.raises(TodoError):
+        store.record_session(
+            snap, "task", actor="w1", session_id="s", client=None, op="take", op_id="short",
+        )
+    assert "sessions" not in snap.details["task"]
+
+
+def test_sessions_validation_covers_shape_dedup_and_absence() -> None:
+    snap = _snap()
+    store.op_create(snap, item_id="task", title="Task")
+    store.validate_snapshot(snap.index, snap.details)  # absence stays valid
+    snap.details["task"]["sessions"] = [
+        {"actor": "w1", "session_id": "s1", "op": "create", "at": "2026-09-14T00:00:00Z", "op_id": "c" * 32},
+        {"actor": "w1", "session_id": "s1", "client": "cli", "op": "take",
+         "at": "2026-09-14T01:00:00Z", "op_id": "d" * 32, "generation": "e" * 32},
+    ]
+    store.validate_snapshot(snap.index, snap.details)
+    for broken in (
+        "not-a-list",
+        [{"actor": "w1"}],  # missing keys
+        [{"actor": "w1", "session_id": "s", "op": "nap", "at": "2026-09-14T00:00:00Z", "op_id": "f" * 32}],
+        [{"actor": "w1", "session_id": "s", "op": "take", "at": "not-a-time", "op_id": "f" * 32}],
+        [{"actor": "w1", "session_id": "s", "op": "take", "at": "2026-09-14T00:00:00Z", "op_id": "f" * 32},
+         {"actor": "w1", "session_id": "s", "op": "take", "at": "2026-09-14T00:00:00Z", "op_id": "f" * 32}],
+    ):
+        snap.details["task"]["sessions"] = broken
+        with pytest.raises(TodoError):
+            store.validate_snapshot(snap.index, snap.details)
+
+
+def test_updates_preserve_session_history() -> None:
+    snap = _snap()
+    store.op_create(snap, item_id="task", title="Task")
+    assert store.record_session(
+        snap, "task", actor="w1", session_id="s1", client=None, op="create", op_id="a" * 32,
+    ) is True
+    store.op_update(snap, "task", title="Task v2")
+    assert len(snap.details["task"]["sessions"]) == 1
+    assert snap.details["task"]["sessions"][0]["op_id"] == "a" * 32
+
+
 def test_rejects_duplicate_ids_unknown_states_invalid_deps_cycles() -> None:
     snap = _snap()
     store.op_create(snap, item_id="a", title="A task")
