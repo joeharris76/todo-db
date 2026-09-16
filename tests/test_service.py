@@ -6,6 +6,8 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from todo_db import git_backend
 from todo_db.service import MAX_BYTES, TrackerService, count_tokens
 
@@ -20,6 +22,27 @@ def _svc(tmp_path: Path, worker: str = "w1", name: str = "s.git") -> TrackerServ
 
 def _size(env: dict) -> int:
     return len(json.dumps(env, separators=(",", ":"), sort_keys=True, ensure_ascii=False).encode())
+
+
+def test_service_carries_session_context_and_rejects_forgeries(tmp_path: Path) -> None:
+    from todo_db.errors import TodoError
+
+    remote = tmp_path / "sctx.git"
+    subprocess.run(["git", "init", "--quiet", "--bare", str(remote)], check=True)
+    ref = git_backend.StateRef(remote=str(remote), branch="todo-state")
+    git_backend.bootstrap(ref)
+    svc = TrackerService(
+        ref=ref, cache_dir=tmp_path / "cache", worker="w1",
+        session_id="session-a", client_name="claude-code",
+    )
+    assert svc.session_id == "session-a"
+    assert svc.client_name == "claude-code"
+    legacy = TrackerService(ref=ref, cache_dir=tmp_path / "cache", worker="w1")
+    assert legacy.session_id is None and legacy.client_name is None
+    with pytest.raises(TodoError):
+        TrackerService(ref=ref, cache_dir=tmp_path / "cache", worker="w1", session_id="bad\nline")
+    with pytest.raises(TodoError):
+        TrackerService(ref=ref, cache_dir=tmp_path / "cache", worker="w1", client_name="x" * 65)
 
 
 def test_lifecycle_acks_are_compact(tmp_path: Path) -> None:

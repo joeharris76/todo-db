@@ -119,9 +119,15 @@ class TrackerService:
     cache_dir: str | Path
     worker: str
     ttl_hours: float = S.DEFAULT_TTL_HOURS
+    session_id: str | None = None
+    client_name: str | None = None
 
     def __post_init__(self) -> None:
         self.worker = S.validate_worker(self.worker)
+        if self.session_id is not None:
+            self.session_id = S.validate_session_id(self.session_id)
+        if self.client_name is not None:
+            self.client_name = S.validate_client_name(self.client_name)
 
     # -- reads --
 

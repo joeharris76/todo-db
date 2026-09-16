@@ -14,6 +14,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from . import git_backend
 from . import store as S
@@ -48,6 +49,20 @@ def _ref_from(args: argparse.Namespace) -> tuple[git_backend.StateRef, Path | No
 
 def _worker(args: argparse.Namespace) -> str:
     return args.actor or os.environ.get("TODO_DB_ACTOR") or "human"
+
+
+def _session_id(args: argparse.Namespace) -> str:
+    """Resolve the CLI session: flag, environment, or an ephemeral ID.
+
+    Mutations from one CLI invocation belong to one session. An explicit
+    ``--session`` / ``TODO_DB_SESSION`` value lets a caller resume it;
+    otherwise a fresh per-invocation ID leaves no unattributed gaps in
+    session history.
+    """
+    explicit = getattr(args, "session", None) or os.environ.get("TODO_DB_SESSION")
+    if explicit and str(explicit).strip():
+        return str(explicit).strip()
+    return uuid4().hex
 
 
 def _cache(args: argparse.Namespace) -> Path:
@@ -188,7 +203,10 @@ def cmd_recover(args: argparse.Namespace) -> int:
 def cmd_list(args: argparse.Namespace) -> int:
     try:
         ref, _ = _ref_from(args)
-        svc = TrackerService(ref=ref, cache_dir=_cache(args), worker="cli")
+        svc = TrackerService(
+            ref=ref, cache_dir=_cache(args), worker="cli",
+            session_id=_session_id(args), client_name="cli",
+        )
         env = svc.list_items(
             status=args.status, priority=args.priority, text=args.text,
             ready_only=args.ready, limit=args.limit, cursor=args.cursor,
@@ -202,7 +220,10 @@ def cmd_list(args: argparse.Namespace) -> int:
 def cmd_show(args: argparse.Namespace) -> int:
     try:
         ref, _ = _ref_from(args)
-        svc = TrackerService(ref=ref, cache_dir=_cache(args), worker="cli")
+        svc = TrackerService(
+            ref=ref, cache_dir=_cache(args), worker="cli",
+            session_id=_session_id(args), client_name="cli",
+        )
         env = svc.show_item(args.id, field=args.field, offset=args.offset, budget=args.budget)
     except TodoDBError as exc:
         return _fail(str(exc))
@@ -217,6 +238,7 @@ def _add_target_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--cache-dir", help="local snapshot cache")
     parser.add_argument("--repo-root", help="project root for config discovery (default: cwd)")
     parser.add_argument("--actor", help="worker identity for mutations (default: TODO_DB_ACTOR or 'human')")
+    parser.add_argument("--session", help="session identity for mutations (default: TODO_DB_SESSION or a fresh ID)")
 
 
 def build_parser() -> argparse.ArgumentParser:

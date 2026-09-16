@@ -69,6 +69,8 @@ ID_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
 MAX_ID_LEN = 128
 MAX_TITLE_LEN = 200
 MAX_WORKER_LEN = 128
+MAX_SESSION_LEN = 256
+MAX_CLIENT_LEN = 64
 DEFAULT_TTL_HOURS = 24.0
 MAX_TTL_HOURS = 72.0
 
@@ -144,6 +146,35 @@ def validate_worker(worker: str) -> str:
     # protocol lines. Single line, no control characters.
     if any(ord(char) < 32 for char in cleaned):
         raise TodoError("worker identity must be a single line without control characters", code=E_STATE)
+    return cleaned
+
+
+def validate_session_id(session: str) -> str:
+    """Validate a session identity: one bounded line, no control characters.
+
+    Session IDs land in session-history entries and commit trailers, where
+    a newline would forge protocol lines — the same rule as worker
+    identities, with the MCP ``--session`` bound (256 chars).
+    """
+    if not isinstance(session, str) or not session.strip():
+        raise TodoError("session identity must be a non-empty string", code=E_STATE)
+    cleaned = session.strip()
+    if len(cleaned) > MAX_SESSION_LEN:
+        raise TodoError(f"session identity exceeds {MAX_SESSION_LEN} chars", code=E_STATE)
+    if any(ord(char) < 32 for char in cleaned):
+        raise TodoError("session identity must be a single line without control characters", code=E_STATE)
+    return cleaned
+
+
+def validate_client_name(client: str) -> str:
+    """Validate a client (harness) label: one bounded line, no controls."""
+    if not isinstance(client, str) or not client.strip():
+        raise TodoError("client name must be a non-empty string", code=E_STATE)
+    cleaned = client.strip()
+    if len(cleaned) > MAX_CLIENT_LEN:
+        raise TodoError(f"client name exceeds {MAX_CLIENT_LEN} chars", code=E_STATE)
+    if any(ord(char) < 32 for char in cleaned):
+        raise TodoError("client name must be a single line without control characters", code=E_STATE)
     return cleaned
 
 

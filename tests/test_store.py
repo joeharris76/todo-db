@@ -40,6 +40,18 @@ def test_finish_needs_no_work_units_scope_or_attestation() -> None:
     assert result["status"] == "done"
 
 
+def test_session_and_client_validators_accept_bounded_single_lines() -> None:
+    assert store.validate_session_id("session-a") == "session-a"
+    assert store.validate_session_id("  padded  ") == "padded"
+    assert store.validate_client_name("claude-code") == "claude-code"
+    for bad in ("", "   ", "has\nnewline", "x" * 257):
+        with pytest.raises(TodoError):
+            store.validate_session_id(bad)
+    for bad in ("", "has\nnewline", "x" * 65):
+        with pytest.raises(TodoError):
+            store.validate_client_name(bad)
+
+
 def test_rejects_duplicate_ids_unknown_states_invalid_deps_cycles() -> None:
     snap = _snap()
     store.op_create(snap, item_id="a", title="A task")

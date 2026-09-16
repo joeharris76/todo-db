@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 
 from todo_db import git_backend
-from todo_db.cli import main
+from todo_db.cli import _session_id, main
 from todo_db.git_backend import StateRef
 from todo_db.service import TrackerService
 
@@ -46,6 +46,20 @@ def test_bootstrap_config_blocked_before_branch(tmp_path: Path, capsys) -> None:
     capsys.readouterr()
     # The refusal landed before any remote mutation: no branch was created.
     assert git_backend.ls_remote_tip(StateRef(remote=remote, branch="todo-state")) == before
+
+
+def test_session_id_prefers_flag_then_environment_then_ephemeral(monkeypatch) -> None:
+    from argparse import Namespace
+
+    monkeypatch.delenv("TODO_DB_SESSION", raising=False)
+    assert _session_id(Namespace(session="flag-session")) == "flag-session"
+    monkeypatch.setenv("TODO_DB_SESSION", "env-session")
+    assert _session_id(Namespace(session="flag-session")) == "flag-session"
+    assert _session_id(Namespace(session=None)) == "env-session"
+    monkeypatch.delenv("TODO_DB_SESSION", raising=False)
+    first = _session_id(Namespace(session=None))
+    second = _session_id(Namespace(session=None))
+    assert len(first) == 32 and len(second) == 32 and first != second
 
 
 def test_list_show_recover_round_trip(tmp_path: Path, capsys) -> None:
