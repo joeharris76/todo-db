@@ -20,7 +20,7 @@ import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from . import git_backend
 from . import store as S
@@ -425,11 +425,32 @@ class TrackerService:
 
     # -- mutations --
 
-    def _mutate(self, op: str, summary: str, apply) -> dict[str, Any]:
+    def _record_session(
+        self, snap: S.Snapshot, item_id: str, op: str, op_id: str,
+        generation: str | None = None,
+    ) -> None:
+        # History annotates; it never gates. Constructions without a
+        # session (legacy callers, older tests) skip recording and the
+        # mutation still succeeds.
+        if self.session_id is None:
+            return
+        S.record_session(
+            snap, item_id, actor=self.worker, session_id=self.session_id,
+            client=self.client_name, op=op, op_id=op_id, generation=generation,
+        )
+
+    def _mutate(
+        self, op: str, summary: str,
+        apply: Callable[[S.Snapshot, str], dict[str, Any]],
+    ) -> dict[str, Any]:
         op_id = git_backend.new_op_id()
+
+        def bridged(snap: S.Snapshot) -> dict[str, Any]:
+            return apply(snap, op_id)
+
         try:
             result = git_backend.mutate(
-                self.ref, op=op, summary=summary, worker=self.worker, op_id=op_id, apply=apply,
+                self.ref, op=op, summary=summary, worker=self.worker, op_id=op_id, apply=bridged,
             )
         except TodoError as exc:
             return err(exc.code or E_STATE, str(exc))
@@ -632,8 +653,9 @@ class TrackerService:
         return checked
 
     def create_item(self, item_id: str, title: str, **kwargs: Any) -> dict[str, Any]:
-        def apply(snap: S.Snapshot) -> dict[str, Any]:
+        def apply(snap: S.Snapshot, op_id: str) -> dict[str, Any]:
             S.op_create(snap, item_id=item_id, title=title, **kwargs)
+            self._record_session(snap, item_id, "create", op_id)
             return {"id": item_id, "status": "open"}
 
         return self._mutate("create", f"add {item_id}", apply)
@@ -651,7 +673,7 @@ class TrackerService:
         except (KeyError, TodoError) as exc:
             return err(getattr(exc, "code", None) or E_STATE, str(exc))
 
-        def apply(snap: S.Snapshot) -> dict[str, Any]:
+        def apply(snap: S.Snapshot, op_id: str) -> dict[str, Any]:
             self._validate_source_checkout(
                 str(kwargs["integration_worktree"]), str(kwargs["start_head"]),
                 expected_branch=str(kwargs["integration_branch"]),
@@ -662,13 +684,13 @@ class TrackerService:
         return self._mutate("register_batch", f"{self.worker} registers batch {kwargs['batch_id']}", apply)
 
     def abort_batch(self, batch_id: str, owner_generation: str) -> dict[str, Any]:
-        def apply(snap: S.Snapshot) -> dict[str, Any]:
+        def apply(snap: S.Snapshot, op_id: str) -> dict[str, Any]:
             return S.op_abort_batch(snap, batch_id, self.worker, owner_generation)
 
         return self._mutate("abort_batch", f"{self.worker} aborts batch {batch_id}", apply)
 
     def bind_batch_pr(self, batch_id: str, owner_generation: str, *, number: int, node_id: str, head: str) -> dict[str, Any]:
-        def apply(snap: S.Snapshot) -> dict[str, Any]:
+        def apply(snap: S.Snapshot, op_id: str) -> dict[str, Any]:
             return S.op_bind_batch_pr(snap, batch_id, self.worker, owner_generation, number=number, node_id=node_id, head=head)
 
         return self._mutate("bind_batch_pr", f"{self.worker} binds final PR for {batch_id}", apply)
@@ -692,7 +714,7 @@ class TrackerService:
                 image[f"detail:{key}"] = json.loads(json.dumps(detail.get(key)))
             return image
 
-        def apply(snap: S.Snapshot) -> dict[str, Any]:
+        def apply(snap: S.Snapshot, op_id: str) -> dict[str, Any]:
             nonlocal pre_image
             if item_id not in snap.index["items"]:
                 raise TodoError(f"unknown task {item_id!r}", code=E_STATE)
@@ -711,14 +733,16 @@ class TrackerService:
                             "re-read and retry deliberately",
                             code=E_CONFLICT,
                         )
-            return S.op_update(snap, item_id, **kwargs)
+            out = S.op_update(snap, item_id, **kwargs)
+            self._record_session(snap, item_id, "update", op_id)
+            return out
 
         return self._mutate("update", f"edit {item_id}", apply)
 
     def take(self, item_id: str) -> dict[str, Any]:
         worker = self.worker
 
-        def apply(snap: S.Snapshot) -> dict[str, Any]:
+        def apply(snap: S.Snapshot, op_id: str) -> dict[str, Any]:
             now = datetime.now(timezone.utc)
             held = self._held_claim(snap, now)
             if held is not None and held != item_id:
@@ -738,6 +762,9 @@ class TrackerService:
                 if has_prepared_edge and (not S.is_ready(item_id, snap, now) or not self._batch_runtime_ready(snap, item_id)):
                     raise TodoError(f"task {item_id!r} is not ready at the current integration head", code=E_NOTHING_READY)
             took = S.op_take(snap, item_id, worker, ttl_hours=self.ttl_hours)
+            self._record_session(
+                snap, item_id, "take", op_id, generation=took["claim"]["generation"]
+            )
             entry = snap.index["items"][item_id]
             detail = snap.details[item_id]
             needs = list(entry.get("needs", []))
@@ -805,8 +832,10 @@ class TrackerService:
     def release(self, item_id: str, generation: str) -> dict[str, Any]:
         worker = self.worker
 
-        def apply(snap: S.Snapshot) -> dict[str, Any]:
-            return S.op_release(snap, item_id, worker, generation)
+        def apply(snap: S.Snapshot, op_id: str) -> dict[str, Any]:
+            out = S.op_release(snap, item_id, worker, generation)
+            self._record_session(snap, item_id, "release", op_id, generation=generation)
+            return out
 
         return self._mutate("release", f"{worker} releases {item_id}", apply)
 
@@ -836,7 +865,7 @@ class TrackerService:
 
         worker = self.worker
 
-        def apply(snap: S.Snapshot) -> dict[str, Any]:
+        def apply(snap: S.Snapshot, op_id: str) -> dict[str, Any]:
             # Re-check on every publication retry: a concurrent state push
             # must not turn a formerly clean checkout into a stale receipt.
             batch_record = snap.index.get("batches", {}).get(batch_id)
@@ -910,7 +939,7 @@ class TrackerService:
                     )
                 except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
                     raise TodoError(f"prepared dependency {dependency!r} is absent from this member base", code=E_STATE) from exc
-            return S.op_prepare(
+            out = S.op_prepare(
                 snap, item_id, worker, generation,
                 batch_id=batch_id,
                 member_id=member_id,
@@ -924,25 +953,30 @@ class TrackerService:
                 verification=verification,
                 implementation_dependencies=implementation_dependencies or [],
             )
+            self._record_session(snap, item_id, "prepare", op_id, generation=generation)
+            return out
 
         return self._mutate("prepare", f"{worker} prepares {item_id}", apply)
 
     def finish(self, item_id: str, generation: str, final_evidence: dict[str, Any] | None = None) -> dict[str, Any]:
         worker = self.worker
 
-        def apply(snap: S.Snapshot) -> dict[str, Any]:
+        def apply(snap: S.Snapshot, op_id: str) -> dict[str, Any]:
             checked = final_evidence
             if checked is not None:
                 checked = self._validate_final_checkout(snap, item_id, checked)
-            return S.op_finish(snap, item_id, worker, generation, checked)
+            out = S.op_finish(snap, item_id, worker, generation, checked)
+            self._record_session(snap, item_id, "finish", op_id, generation=generation)
+            return out
 
         return self._mutate("finish", f"{worker} finishes {item_id}", apply)
 
     def renew(self, item_id: str, generation: str) -> dict[str, Any]:
         worker = self.worker
 
-        def apply(snap: S.Snapshot) -> dict[str, Any]:
+        def apply(snap: S.Snapshot, op_id: str) -> dict[str, Any]:
             renewed = S.op_renew(snap, item_id, worker, generation, ttl_hours=self.ttl_hours)
+            self._record_session(snap, item_id, "renew", op_id, generation=generation)
             return {"id": item_id, "expires_at": renewed["claim"]["expires_at"]}
 
         return self._mutate("renew", f"{worker} renews {item_id}", apply)
@@ -950,7 +984,9 @@ class TrackerService:
     def drop(self, item_id: str, generation: str | None = None) -> dict[str, Any]:
         worker = self.worker
 
-        def apply(snap: S.Snapshot) -> dict[str, Any]:
-            return S.op_drop(snap, item_id, worker, generation)
+        def apply(snap: S.Snapshot, op_id: str) -> dict[str, Any]:
+            out = S.op_drop(snap, item_id, worker, generation)
+            self._record_session(snap, item_id, "drop", op_id, generation=generation)
+            return out
 
         return self._mutate("drop", f"{worker} drops {item_id}", apply)

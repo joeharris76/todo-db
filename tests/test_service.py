@@ -45,6 +45,61 @@ def test_service_carries_session_context_and_rejects_forgeries(tmp_path: Path) -
         TrackerService(ref=ref, cache_dir=tmp_path / "cache", worker="w1", client_name="x" * 65)
 
 
+def _session_svc(tmp_path: Path, worker: str = "w1", session: str = "session-a"):
+    remote = tmp_path / "sess.git"
+    subprocess.run(["git", "init", "--quiet", "--bare", str(remote)], check=True)
+    ref = git_backend.StateRef(remote=str(remote), branch="todo-state")
+    git_backend.bootstrap(ref)
+    svc = TrackerService(
+        ref=ref, cache_dir=tmp_path / "cache", worker=worker,
+        session_id=session, client_name="pytest",
+    )
+    return svc, ref
+
+
+def _sessions_of(ref, cache: Path):
+    snap = git_backend.read(ref, cache).snapshot
+    return snap.details
+
+
+def test_lifecycle_records_complete_session_history(tmp_path: Path) -> None:
+    svc, ref = _session_svc(tmp_path)
+    assert svc.create_item("h1", "History task")["ok"]
+    took = svc.take("h1")
+    assert took["ok"], took
+    gen = took["data"]["claim"]["generation"]
+    assert svc.renew("h1", gen)["ok"]
+    assert svc.release("h1", gen)["ok"]
+    retook = svc.take("h1")
+    assert retook["ok"], retook
+    assert svc.finish("h1", retook["data"]["claim"]["generation"])["ok"]
+    log = _sessions_of(ref, tmp_path / "cache")["h1"]["sessions"]
+    assert [entry["op"] for entry in log] == ["create", "take", "renew", "release", "take", "finish"]
+    assert {entry["op_id"] for entry in log} and len({entry["op_id"] for entry in log}) == 6
+    for entry in log:
+        assert entry["actor"] == "w1" and entry["session_id"] == "session-a"
+        assert entry["client"] == "pytest" and "at" in entry
+    assert "generation" not in log[0]  # create carries none
+    assert log[1]["generation"] == gen  # take binds the claim it created
+    assert log[4]["generation"] != gen  # re-adoption rotates the generation
+
+
+def test_sessionless_service_mutates_without_history(tmp_path: Path) -> None:
+    svc = _svc(tmp_path, name="legacy.git")
+    assert svc.create_item("l1", "Legacy task")["ok"]
+    took = svc.take("l1")
+    assert took["ok"], took
+    assert svc.finish("l1", took["data"]["claim"]["generation"])["ok"]
+
+
+def test_update_appends_session_entry(tmp_path: Path) -> None:
+    svc, ref = _session_svc(tmp_path)
+    assert svc.create_item("u1", "Updatable")["ok"]
+    assert svc.update_item("u1", title="Updatable v2")["ok"]
+    log = _sessions_of(ref, tmp_path / "cache")["u1"]["sessions"]
+    assert [entry["op"] for entry in log] == ["create", "update"]
+
+
 def test_lifecycle_acks_are_compact(tmp_path: Path) -> None:
     svc = _svc(tmp_path)
     created = svc.create_item("t1", "First task", description="hello")
