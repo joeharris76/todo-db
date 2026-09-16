@@ -652,17 +652,12 @@
       "title": "Plumb agent session context into the mutation path"
     },
     "session-history-read": {
-      "claim": {
-        "expires_at": "2026-09-17T21:33:15Z",
-        "generation": "34f5da69dc6443898a589843f5f4c7b6",
-        "renewals": 0,
-        "worker": "mcp:tbh:joe@joe-mac-mini.local"
-      },
+      "claim": null,
       "needs": [
         "session-history-record"
       ],
       "priority": "high",
-      "status": "active",
+      "status": "done",
       "title": "Expose session history on transport and read paths"
     },
     "session-history-record": {
