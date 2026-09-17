@@ -77,6 +77,15 @@ def test_forged_session_identity_is_rejected(monkeypatch) -> None:
         _session_id(Namespace(session=None))
 
 
+def test_reads_tolerate_broken_session_config(tmp_path: Path, capsys, monkeypatch) -> None:
+    remote = _remote(tmp_path)
+    assert main(["bootstrap", *_args(remote)]) == 0
+    capsys.readouterr()
+    monkeypatch.setenv("TODO_DB_SESSION", "bad\nline")
+    assert main(["list", *_args(remote)]) == 0
+    assert json.loads(capsys.readouterr().out)["ok"]
+
+
 def test_list_show_recover_round_trip(tmp_path: Path, capsys) -> None:
     remote = _remote(tmp_path)
     assert main(["bootstrap", *_args(remote)]) == 0

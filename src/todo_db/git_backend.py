@@ -729,9 +729,13 @@ def _commit_trailers(work: Path, sha: str) -> dict[str, str]:
     body = _git(["show", "-s", "--format=%B", sha], work)
     if body.returncode != 0:
         return {"op_id": "", "actor": "", "session": ""}
-    for line in body.stdout.splitlines():
+    # Split on "\n" only: Python's splitlines() also breaks on Unicode
+    # separators (U+0085/U+2028/U+2029), which identities may no longer
+    # contain but older commits might. First exact match wins, so an
+    # injected later line can never override the real trailer.
+    for line in body.stdout.split("\n"):
         for key in found:
-            if line.startswith(f"{key}:"):
+            if found[key] == "" and line.startswith(f"{key}:"):
                 found[key] = line.split(":", 1)[1].strip()
     return {"op_id": found[OP_ID_TRAILER], "actor": found["Todo-Actor"], "session": found[SESSION_TRAILER]}
 

@@ -53,15 +53,9 @@ complete or abort the batch instead.
 
 ## Session history
 
-Every mutation records its actor, session, operation, and operation ID
-on the touched task. After `take`, read `show_item`'s `sessions`
-summary (full log via `show_item field="sessions"`, entry-paged like
-needs): it names the prior sessions and operations behind the current
-state, so a resumed task starts from invested effort instead of from
-zero. Before `release` or `finish`, leave resumption notes in
-`context` so the next session inherits the work, not just the IDs.
-Each entry carries its `op_id`, which pins the state commit that
-recorded it.
+Mutations record actor, session, operation, and operation ID per task.
+After `take`, read `show_item`'s `sessions`; before
+`release`/`finish`, leave resumption notes in `context`.
 
 ## Responses
 

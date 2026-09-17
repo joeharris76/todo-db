@@ -82,6 +82,10 @@ def test_lifecycle_records_complete_session_history(tmp_path: Path) -> None:
     assert "generation" not in log[0]  # create carries none
     assert log[1]["generation"] == gen  # take binds the claim it created
     assert log[4]["generation"] != gen  # re-adoption rotates the generation
+    trail = git_backend.history(ref, limit=10)
+    assert any(
+        entry["session"] == "session-a" and entry["actor"] == "w1" for entry in trail
+    ), trail
 
 
 def test_sessionless_service_mutates_without_history(tmp_path: Path) -> None:
@@ -100,6 +104,65 @@ def test_update_appends_session_entry(tmp_path: Path) -> None:
     assert [entry["op"] for entry in log] == ["create", "update"]
 
 
+def test_noop_update_keeps_legacy_refusal(tmp_path: Path) -> None:
+    svc, ref = _session_svc(tmp_path)
+    assert svc.create_item("n1", "Noop")["ok"]
+    out = svc.update_item("n1")
+    assert not out["ok"] and out["code"] == "E_STATE"
+    log = _sessions_of(ref, tmp_path / "cache")["n1"]["sessions"]
+    assert [entry["op"] for entry in log] == ["create"]
+
+
+def test_drop_records_session_entry(tmp_path: Path) -> None:
+    svc, ref = _session_svc(tmp_path)
+    assert svc.create_item("d1", "Droppable")["ok"]
+    took = svc.take("d1")
+    assert took["ok"], took
+    assert svc.drop("d1", took["data"]["claim"]["generation"])["ok"]
+    log = _sessions_of(ref, tmp_path / "cache")["d1"]["sessions"]
+    assert [entry["op"] for entry in log] == ["create", "take", "drop"]
+
+
+def test_large_session_log_pages_within_cap(tmp_path: Path) -> None:
+    from todo_db import store as S
+
+    svc, ref = _session_svc(tmp_path)
+    assert svc.create_item("big", "Big history")["ok"]
+    # Seed 61 near-maximal MCP-shaped entries in ONE commit: 61 pushes
+    # would take minutes, and the read path is what's under proof.
+    actor = "mcp:claude-code:" + "u" * 32 + ":" + "a" * 24
+
+    def seed(snap) -> dict:
+        for i in range(61):
+            assert S.record_session(
+                snap, "big", actor=actor, session_id="s" * 256, client="c" * 64,
+                op="renew", op_id=f"{i:032x}", generation=f"{9 - (i % 10):032x}",
+            )
+        return {"id": "big"}
+
+    outcome = git_backend.mutate(
+        ref, op="update", summary="seed history", worker="seeder", apply=seed,
+    )
+    assert outcome.ok, outcome
+    seen: list[str] = []
+    page = svc.show_item("big", field="sessions")
+    assert page["ok"], page
+    assert page["data"]["total"] == 62
+    for _ in range(10):
+        assert all("generation" not in entry for entry in page["data"]["window"])
+        seen.extend(entry["op_id"] for entry in page["data"]["window"])
+        cont = page["data"].get("continuation")
+        if cont is None:
+            break
+        page = svc.show_item(
+            "big", field="sessions", offset=cont["offset"], budget=cont["budget"], rev=cont["rev"],
+        )
+        assert page["ok"], page
+    else:
+        raise AssertionError("session pages did not terminate")
+    assert len(seen) == 62 and len(set(seen)) == 62
+
+
 def test_show_item_surfaces_session_summary_and_pages(tmp_path: Path) -> None:
     svc, ref = _session_svc(tmp_path)
     assert svc.create_item("s1", "Shown", description="body")["ok"]
@@ -111,7 +174,9 @@ def test_show_item_surfaces_session_summary_and_pages(tmp_path: Path) -> None:
     assert summary["total"] == 2
     assert summary["last"]["op"] == "take"
     assert summary["last"]["session_id"] == "session-a"
-    assert summary["last"]["generation"] == took["data"]["claim"]["generation"]
+    # Generations authorize the holder's own take response; the read path
+    # must not republish them, least of all the live one.
+    assert "generation" not in summary["last"]
     assert summary["last"]["op_id"]
     assert "sessions_continuation" in shown["data"]
     assert "sessions" in shown["data"]["sections"]

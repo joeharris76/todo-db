@@ -93,6 +93,20 @@ def _fits(envelope: dict[str, Any]) -> bool:
     return len(_wire(envelope).encode("utf-8")) <= MAX_BYTES
 
 
+def _public_session_entry(entry: Any) -> Any:
+    """Read-path view of a session-history entry.
+
+    Generations authorize only the holder's own take response; republishing
+    them — especially the live one — would let a stale same-worker image
+    that hits ``E_CLAIM_STALE`` read the rotated generation out of
+    ``show_item`` and adopt the claim it was meant to lose. The durable
+    log keeps generations for audit; the API never serves them.
+    """
+    if not isinstance(entry, dict):
+        return entry
+    return {key: value for key, value in entry.items() if key != "generation"}
+
+
 def _query_fingerprint(status: str | None, priority: str | None, text: str | None, ready_only: bool, limit: int) -> str:
     raw = _compact({"s": status, "p": priority, "t": text, "r": ready_only, "l": limit})
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
@@ -266,14 +280,9 @@ class TrackerService:
                 }
             log = detail.get("sessions", [])
             if isinstance(log, list) and log:
-                last = log[-1] if isinstance(log[-1], dict) else {}
                 data["sessions"] = {
                     "total": len(log),
-                    "last": {
-                        key: last[key]
-                        for key in ("actor", "session_id", "client", "op", "at", "op_id", "generation")
-                        if key in last
-                    },
+                    "last": _public_session_entry(log[-1]),
                 }
                 data["sessions_continuation"] = {
                     "field": "sessions", "offset": 0, "budget": SECTION_BUDGET, "rev": outcome.rev,
@@ -413,23 +422,38 @@ class TrackerService:
         if field == "sessions":
             # Entry-window paging over the session log: offsets count
             # entries (not bytes), mirroring the needs/unmet_needs path.
+            # Unlike needs, entries vary in size, so a full window can
+            # exceed the byte cap: shrink it until it fits, mirroring the
+            # list_items truncation loop. A single entry always fits (all
+            # identifier fields are bounded), so paging always makes
+            # progress and no log is ever unreadable.
             log = detail.get("sessions", [])
             if not isinstance(log, list):
                 return err(E_STATE, f"task {item_id!r} has a malformed sessions log")
             offset = max(0, int(offset))
             if offset >= len(log) and log:
                 return err(E_STATE, f"section offset {offset} is past the end ({len(log)})")
-            window = log[offset : offset + NEEDS_INLINE]
-            data = {
+            window = [_public_session_entry(entry) for entry in log[offset : offset + NEEDS_INLINE]]
+            data: dict[str, Any] = {
                 "id": item_id, "field": field, "offset": offset,
                 "total": len(log), "window": window, "rev": current_rev,
             }
-            if offset + NEEDS_INLINE < len(log):
+            if offset + len(window) < len(log):
                 data["continuation"] = {
-                    "field": field, "offset": offset + NEEDS_INLINE,
+                    "field": field, "offset": offset + len(window),
                     "budget": budget, "rev": current_rev,
                 }
             env = ok(data)
+            while len(window) > 1 and not _fits(env):
+                window.pop()
+                data["window"] = window
+                data.pop("continuation", None)
+                if offset + len(window) < len(log):
+                    data["continuation"] = {
+                        "field": field, "offset": offset + len(window),
+                        "budget": budget, "rev": current_rev,
+                    }
+                env = ok(data)
             if not _fits(env):
                 return err(E_OVERSIZED, "section window exceeds the byte cap")
             return env
@@ -772,7 +796,11 @@ class TrackerService:
                             code=E_CONFLICT,
                         )
             out = S.op_update(snap, item_id, **kwargs)
-            self._record_session(snap, item_id, "update", op_id)
+            # A content-identical update changes nothing: recording it would
+            # turn the legacy "no state change" refusal into a commit, with
+            # the outcome depending on whether a session is attached.
+            if out.get("changed"):
+                self._record_session(snap, item_id, "update", op_id)
             return out
 
         return self._mutate("update", f"edit {item_id}", apply)

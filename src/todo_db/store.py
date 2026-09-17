@@ -71,6 +71,17 @@ MAX_TITLE_LEN = 200
 MAX_WORKER_LEN = 128
 MAX_SESSION_LEN = 256
 MAX_CLIENT_LEN = 64
+#: Bound for operation names accepted leniently by session-history readers.
+MAX_OP_LEN = 64
+
+#: Unicode line/paragraph separators: invisible, pass an ``ord < 32`` check,
+#: but split lines for Git trailer parsing. Forbidden in every identity so a
+#: crafted value can never forge a trailer line.
+FORBIDDEN_BREAKS = frozenset({"\x85", "\u2028", "\u2029"})  # NEL, LS, PS
+
+
+def _has_forbidden_breaks(text: str) -> bool:
+    return any(char in FORBIDDEN_BREAKS for char in text)
 DEFAULT_TTL_HOURS = 24.0
 MAX_TTL_HOURS = 72.0
 
@@ -95,9 +106,12 @@ SCOPE_HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 #: claim protocol cannot be bypassed.
 UPDATE_STATUSES = frozenset({"open", "blocked"})
 
-#: Item-level operations recorded in the per-task session history. Batch
-#: registry operations (register/abort/bind) name no single item and are
-#: attributed through commit trailers instead.
+#: Item-level operations this version writes into the per-task session
+#: history. Batch registry operations (register/abort/bind) name no single
+#: item and are attributed through commit trailers instead. Readers stay
+#: lenient — an unknown op is a bounded token, never a load failure — so a
+#: future operation cannot strand older clients; only writers are bound to
+#: this allowlist.
 SESSION_OPS = frozenset({"create", "take", "renew", "release", "prepare", "finish", "drop", "update"})
 
 OP_ID_RE = re.compile(r"^[0-9a-f]{32}$")
@@ -127,9 +141,18 @@ def _validate_sessions(item_id: str, sessions: Any) -> None:
         validate_session_id(str(entry["session_id"]))
         if entry.get("client") is not None:
             validate_client_name(str(entry["client"]))
-        if entry["op"] not in SESSION_OPS:
+        op = entry["op"]
+        # Lenient by design (see SESSION_OPS): a future operation must
+        # remain loadable by older readers. Only shape is enforced here.
+        if (
+            not isinstance(op, str)
+            or not op.strip()
+            or len(op) > MAX_OP_LEN
+            or any(ord(char) < 32 for char in op)
+            or _has_forbidden_breaks(op)
+        ):
             raise TodoError(
-                f"sessions log for {item_id!r} entry {pos} has unknown operation {entry['op']!r}",
+                f"sessions log for {item_id!r} entry {pos} has an invalid operation",
                 code=E_STATE,
             )
         parse_ts(str(entry["at"]))
@@ -260,8 +283,10 @@ def validate_worker(worker: str) -> str:
     if len(cleaned) > MAX_WORKER_LEN:
         raise TodoError(f"worker identity exceeds {MAX_WORKER_LEN} chars", code=E_STATE)
     # Worker identities land in commit trailers, where a newline would forge
-    # protocol lines. Single line, no control characters.
-    if any(ord(char) < 32 for char in cleaned):
+    # protocol lines. Single line, no control characters — and no Unicode
+    # line/paragraph separators, which pass the control check but still
+    # split lines for trailer parsing.
+    if any(ord(char) < 32 for char in cleaned) or _has_forbidden_breaks(cleaned):
         raise TodoError("worker identity must be a single line without control characters", code=E_STATE)
     return cleaned
 
@@ -278,7 +303,7 @@ def validate_session_id(session: str) -> str:
     cleaned = session.strip()
     if len(cleaned) > MAX_SESSION_LEN:
         raise TodoError(f"session identity exceeds {MAX_SESSION_LEN} chars", code=E_STATE)
-    if any(ord(char) < 32 for char in cleaned):
+    if any(ord(char) < 32 for char in cleaned) or _has_forbidden_breaks(cleaned):
         raise TodoError("session identity must be a single line without control characters", code=E_STATE)
     return cleaned
 
@@ -290,7 +315,7 @@ def validate_client_name(client: str) -> str:
     cleaned = client.strip()
     if len(cleaned) > MAX_CLIENT_LEN:
         raise TodoError(f"client name exceeds {MAX_CLIENT_LEN} chars", code=E_STATE)
-    if any(ord(char) < 32 for char in cleaned):
+    if any(ord(char) < 32 for char in cleaned) or _has_forbidden_breaks(cleaned):
         raise TodoError("client name must be a single line without control characters", code=E_STATE)
     return cleaned
 

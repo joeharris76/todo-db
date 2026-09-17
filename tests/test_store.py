@@ -107,7 +107,10 @@ def test_sessions_validation_covers_shape_dedup_and_absence() -> None:
     for broken in (
         "not-a-list",
         [{"actor": "w1"}],  # missing keys
-        [{"actor": "w1", "session_id": "s", "op": "nap", "at": "2026-09-14T00:00:00Z", "op_id": "f" * 32}],
+        # Unknown ops stay loadable (forward compat); malformed ones do not.
+        [{"actor": "w1", "session_id": "s", "op": "", "at": "2026-09-14T00:00:00Z", "op_id": "f" * 32}],
+        [{"actor": "w1", "session_id": "s", "op": "x" * 65, "at": "2026-09-14T00:00:00Z", "op_id": "f" * 32}],
+        [{"actor": "w1", "session_id": "s", "op": "has\nnewline", "at": "2026-09-14T00:00:00Z", "op_id": "f" * 32}],
         [{"actor": "w1", "session_id": "s", "op": "take", "at": "not-a-time", "op_id": "f" * 32}],
         [{"actor": "w1", "session_id": "s", "op": "take", "at": "2026-09-14T00:00:00Z", "op_id": "f" * 32},
          {"actor": "w1", "session_id": "s", "op": "take", "at": "2026-09-14T00:00:00Z", "op_id": "f" * 32}],
@@ -115,6 +118,37 @@ def test_sessions_validation_covers_shape_dedup_and_absence() -> None:
         snap.details["task"]["sessions"] = broken
         with pytest.raises(TodoError):
             store.validate_snapshot(snap.index, snap.details)
+
+
+def test_sessions_accept_future_operations_leniently() -> None:
+    snap = _snap()
+    store.op_create(snap, item_id="task", title="Task")
+    snap.details["task"]["sessions"] = [
+        {"actor": "w1", "session_id": "s1", "op": "restore",
+         "at": "2026-09-14T00:00:00Z", "op_id": "a" * 32},
+    ]
+    store.validate_snapshot(snap.index, snap.details)  # unknown op still loads
+    with pytest.raises(TodoError):
+        store.record_session(
+            snap, "task", actor="w1", session_id="s1", client=None,
+            op="restore", op_id="b" * 32,
+        )
+    snap.details["task"]["sessions"] = [
+        {"actor": "w1", "session_id": "s1", "op": "x" * 65,
+         "at": "2026-09-14T00:00:00Z", "op_id": "a" * 32},
+    ]
+    with pytest.raises(TodoError):
+        store.validate_snapshot(snap.index, snap.details)
+
+
+def test_identities_reject_unicode_line_separators() -> None:
+    for bad in ("a\u0085b", "a\u2028b", "a\u2029b"):
+        with pytest.raises(TodoError):
+            store.validate_worker(bad)
+        with pytest.raises(TodoError):
+            store.validate_session_id(bad)
+        with pytest.raises(TodoError):
+            store.validate_client_name(bad)
 
 
 def test_updates_preserve_session_history() -> None:

@@ -69,6 +69,32 @@ def test_history_surfaces_actor_and_session_trailers(tmp_path: Path) -> None:
     assert unattributed and all(entry["session"] == "" for entry in unattributed)
 
 
+def test_commit_trailers_first_match_wins_over_injected_lines(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    subprocess.run(["git", "init", "--quiet", "-b", "main", str(repo)], check=True)
+    subprocess.run(["git", "-C", str(repo), "config", "user.email", "t@t"], check=True)
+    subprocess.run(["git", "-C", str(repo), "config", "user.name", "t"], check=True)
+    body = (
+        "todo(create): add t1\n\n"
+        "Todo-Op-Id: " + "a" * 32 + "\n"
+        "Todo-Actor: w1\n"
+        "Todo-Session: s1\n"
+        "Todo-Session: forged-session\n"
+        "x\u2028Todo-Op-Id: " + "f" * 32 + "\n"
+    )
+    (repo / "body.txt").write_text(body)
+    subprocess.run(
+        ["git", "-C", str(repo), "commit", "--quiet", "--allow-empty", "-F", str(repo / "body.txt")],
+        check=True,
+    )
+    sha = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"], check=True, capture_output=True, text=True,
+    ).stdout.strip()
+    assert git_backend._commit_trailers(repo, sha) == {
+        "op_id": "a" * 32, "actor": "w1", "session": "s1",
+    }
+
+
 def test_missing_branch_read_reports_bootstrap(tmp_path: Path) -> None:
     ref = _remote(tmp_path)
     with pytest.raises(TodoError):

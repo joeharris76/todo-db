@@ -69,3 +69,31 @@ def test_sanitize_client_name_reports_absence_and_bounds() -> None:
     assert bounded is not None
     assert len(bounded) <= 64
     assert all(ord(char) >= 32 for char in bounded)
+
+
+def test_mcp_service_wiring_forwards_session_and_client(tmp_path) -> None:
+    from todo_db.git_backend import StateRef
+    from todo_db.mcp.target import ResolvedTarget
+    from todo_db.mcp.tools import _service
+
+    target = ResolvedTarget(
+        state_ref=StateRef(remote="example", branch="todo-state"),
+        cache_dir=tmp_path / "cache",
+        source="test",
+        config_path=None,
+    )
+    holder = PrincipalHolder(resolve_identity("worker-a", "session-a"))
+    ctx = SimpleNamespace(
+        request_context=SimpleNamespace(
+            session=SimpleNamespace(
+                client_params=SimpleNamespace(clientInfo=SimpleNamespace(name="claude-code"))
+            )
+        )
+    )
+    svc = _service(target, "worker-a", holder, ctx)
+    assert svc.worker == "worker-a"
+    assert svc.session_id == "session-a"
+    assert svc.client_name == "claude-code"
+    headless = _service(target, "worker-a", holder, None)
+    assert headless.session_id == "session-a"
+    assert headless.client_name is None

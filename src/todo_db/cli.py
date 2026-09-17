@@ -204,12 +204,25 @@ def cmd_recover(args: argparse.Namespace) -> int:
         return _fail(str(exc))
 
 
+def _read_session_id(args: argparse.Namespace) -> str | None:
+    """Best-effort session for read-only commands.
+
+    Reads never mutate, so a broken session configuration must not block
+    them: fall back to unattributed rather than failing. Mutation paths
+    keep the fail-closed :func:`_session_id`.
+    """
+    try:
+        return _session_id(args)
+    except TodoDBError:
+        return None
+
+
 def cmd_list(args: argparse.Namespace) -> int:
     try:
         ref, _ = _ref_from(args)
         svc = TrackerService(
             ref=ref, cache_dir=_cache(args), worker="cli",
-            session_id=_session_id(args), client_name="cli",
+            session_id=_read_session_id(args), client_name="cli",
         )
         env = svc.list_items(
             status=args.status, priority=args.priority, text=args.text,
@@ -226,7 +239,7 @@ def cmd_show(args: argparse.Namespace) -> int:
         ref, _ = _ref_from(args)
         svc = TrackerService(
             ref=ref, cache_dir=_cache(args), worker="cli",
-            session_id=_session_id(args), client_name="cli",
+            session_id=_read_session_id(args), client_name="cli",
         )
         env = svc.show_item(args.id, field=args.field, offset=args.offset, budget=args.budget)
     except TodoDBError as exc:
