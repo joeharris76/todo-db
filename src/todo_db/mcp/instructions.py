@@ -51,6 +51,12 @@ is explicit, immutable after assignment, and never inferred from an ordinary
 dependency. A prepared member cannot be dropped while its batch is active;
 complete or abort the batch instead.
 
+## Session history
+
+Mutations record actor, session, operation, and operation ID per task.
+After `take`, read `show_item`'s `sessions`; before
+`release`/`finish`, leave resumption notes in `context`.
+
 ## Responses
 
     {"ok": true,  "data": {...}}

@@ -38,6 +38,19 @@ def _sanitize_client_name(raw: Any) -> str:
     return text or "unknown"
 
 
+def sanitize_client_name(raw: Any) -> str | None:
+    """Return a bounded client label, or ``None`` when none was supplied.
+
+    Unlike the principal derivation (which falls back to ``"unknown"``),
+    session-history attribution distinguishes "no client reported" from a
+    reported name, so an absent name stays absent.
+    """
+
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    return _sanitize_client_name(raw)
+
+
 def _user_host() -> str:
     try:
         user = getpass.getuser()
@@ -102,6 +115,11 @@ class PrincipalHolder:
     @property
     def pending(self) -> bool:
         return self.principal is None
+
+    @property
+    def session_id(self) -> str:
+        """The server session every mutation from this holder belongs to."""
+        return self._identity.session_id
 
     def ensure(self, client_info: Any | None) -> str | None:
         if self.principal is None and client_info is not None:

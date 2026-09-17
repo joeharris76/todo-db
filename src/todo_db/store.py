@@ -69,6 +69,19 @@ ID_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
 MAX_ID_LEN = 128
 MAX_TITLE_LEN = 200
 MAX_WORKER_LEN = 128
+MAX_SESSION_LEN = 256
+MAX_CLIENT_LEN = 64
+#: Bound for operation names accepted leniently by session-history readers.
+MAX_OP_LEN = 64
+
+#: Unicode line/paragraph separators: invisible, pass an ``ord < 32`` check,
+#: but split lines for Git trailer parsing. Forbidden in every identity so a
+#: crafted value can never forge a trailer line.
+FORBIDDEN_BREAKS = frozenset({"\x85", "\u2028", "\u2029"})  # NEL, LS, PS
+
+
+def _has_forbidden_breaks(text: str) -> bool:
+    return any(char in FORBIDDEN_BREAKS for char in text)
 DEFAULT_TTL_HOURS = 24.0
 MAX_TTL_HOURS = 72.0
 
@@ -92,6 +105,135 @@ SCOPE_HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 #: terminal states go through finish/drop. Anything else is rejected so the
 #: claim protocol cannot be bypassed.
 UPDATE_STATUSES = frozenset({"open", "blocked"})
+
+#: Item-level operations this version writes into the per-task session
+#: history. Batch registry operations (register/abort/bind) name no single
+#: item and are attributed through commit trailers instead. Readers stay
+#: lenient — an unknown op is a bounded token, never a load failure — so a
+#: future operation cannot strand older clients; only writers are bound to
+#: this allowlist.
+SESSION_OPS = frozenset({"create", "take", "renew", "release", "prepare", "finish", "drop", "update"})
+
+OP_ID_RE = re.compile(r"^[0-9a-f]{32}$")
+GENERATION_RE = re.compile(r"^[0-9a-f]{32}$")
+
+
+def _validate_sessions(item_id: str, sessions: Any) -> None:
+    """Validate the append-only per-task session history.
+
+    Absence is valid (pre-history items); presence must be a list of
+    entries keyed by unique operation IDs so retries can never duplicate
+    an entry and any entry resolves to its state commit via reconcile.
+    Unknown extra keys are tolerated for forward compatibility.
+    """
+    if not isinstance(sessions, list):
+        raise TodoError(f"sessions log for {item_id!r} must be a list", code=E_STATE)
+    seen: set[str] = set()
+    for pos, entry in enumerate(sessions):
+        if not isinstance(entry, dict):
+            raise TodoError(f"sessions log for {item_id!r} entry {pos} must be an object", code=E_STATE)
+        for key in ("actor", "session_id", "op", "at", "op_id"):
+            if key not in entry:
+                raise TodoError(
+                    f"sessions log for {item_id!r} entry {pos} is missing {key!r}", code=E_STATE
+                )
+        validate_worker(str(entry["actor"]))
+        validate_session_id(str(entry["session_id"]))
+        if entry.get("client") is not None:
+            validate_client_name(str(entry["client"]))
+        op = entry["op"]
+        # Lenient by design (see SESSION_OPS): a future operation must
+        # remain loadable by older readers. Only shape is enforced here.
+        if (
+            not isinstance(op, str)
+            or not op.strip()
+            or len(op) > MAX_OP_LEN
+            or any(ord(char) < 32 for char in op)
+            or _has_forbidden_breaks(op)
+        ):
+            raise TodoError(
+                f"sessions log for {item_id!r} entry {pos} has an invalid operation",
+                code=E_STATE,
+            )
+        parse_ts(str(entry["at"]))
+        op_id = entry["op_id"]
+        if not isinstance(op_id, str) or not OP_ID_RE.fullmatch(op_id):
+            raise TodoError(
+                f"sessions log for {item_id!r} entry {pos} has an invalid operation ID",
+                code=E_STATE,
+            )
+        generation = entry.get("generation")
+        if generation is not None and (
+            not isinstance(generation, str) or not GENERATION_RE.fullmatch(generation)
+        ):
+            raise TodoError(
+                f"sessions log for {item_id!r} entry {pos} has an invalid generation",
+                code=E_STATE,
+            )
+        if op_id in seen:
+            raise TodoError(
+                f"sessions log for {item_id!r} has a duplicate operation ID {op_id!r}",
+                code=E_STATE,
+            )
+        seen.add(op_id)
+
+
+def record_session(
+    snapshot: Snapshot,
+    item_id: str,
+    *,
+    actor: str,
+    session_id: str,
+    client: str | None,
+    op: str,
+    op_id: str,
+    generation: str | None = None,
+    now: datetime | None = None,
+) -> bool:
+    """Append one session-history entry to a task.
+
+    Returns ``True`` when appended, ``False`` when an entry for *op_id*
+    is already present (publication retry — never a duplicate). Raises
+    on unknown tasks or malformed attribution.
+    """
+    if item_id not in snapshot.index["items"]:
+        raise TodoError(f"unknown task {item_id!r}", code=E_STATE)
+    actor = validate_worker(actor)
+    session_id = validate_session_id(session_id)
+    if client is not None:
+        client = validate_client_name(client)
+    if op not in SESSION_OPS:
+        raise TodoError(f"unknown session operation {op!r}", code=E_STATE)
+    if not isinstance(op_id, str) or not OP_ID_RE.fullmatch(op_id):
+        raise TodoError("session entry needs a 32-hex operation ID", code=E_STATE)
+    if generation is not None and (
+        not isinstance(generation, str) or not GENERATION_RE.fullmatch(generation)
+    ):
+        raise TodoError("session entry has an invalid generation", code=E_STATE)
+    detail = snapshot.details[item_id]
+    log = detail.get("sessions")
+    if log is None:
+        log = []
+        detail["sessions"] = log
+    if not isinstance(log, list):
+        raise TodoError(f"sessions log for {item_id!r} must be a list", code=E_STATE)
+    if any(isinstance(entry, dict) and entry.get("op_id") == op_id for entry in log):
+        return False
+    moment = now or datetime.now(timezone.utc)
+    entry: dict[str, Any] = {
+        "actor": actor,
+        "session_id": session_id,
+        "op": op,
+        "at": moment.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "op_id": op_id,
+    }
+    if client is not None:
+        entry["client"] = client
+    if generation is not None:
+        entry["generation"] = generation
+    log.append(entry)
+    validate_snapshot(snapshot.index, snapshot.details)
+    return True
 
 
 def utc_now() -> str:
@@ -141,9 +283,40 @@ def validate_worker(worker: str) -> str:
     if len(cleaned) > MAX_WORKER_LEN:
         raise TodoError(f"worker identity exceeds {MAX_WORKER_LEN} chars", code=E_STATE)
     # Worker identities land in commit trailers, where a newline would forge
-    # protocol lines. Single line, no control characters.
-    if any(ord(char) < 32 for char in cleaned):
+    # protocol lines. Single line, no control characters — and no Unicode
+    # line/paragraph separators, which pass the control check but still
+    # split lines for trailer parsing.
+    if any(ord(char) < 32 for char in cleaned) or _has_forbidden_breaks(cleaned):
         raise TodoError("worker identity must be a single line without control characters", code=E_STATE)
+    return cleaned
+
+
+def validate_session_id(session: str) -> str:
+    """Validate a session identity: one bounded line, no control characters.
+
+    Session IDs land in session-history entries and commit trailers, where
+    a newline would forge protocol lines — the same rule as worker
+    identities, with the MCP ``--session`` bound (256 chars).
+    """
+    if not isinstance(session, str) or not session.strip():
+        raise TodoError("session identity must be a non-empty string", code=E_STATE)
+    cleaned = session.strip()
+    if len(cleaned) > MAX_SESSION_LEN:
+        raise TodoError(f"session identity exceeds {MAX_SESSION_LEN} chars", code=E_STATE)
+    if any(ord(char) < 32 for char in cleaned) or _has_forbidden_breaks(cleaned):
+        raise TodoError("session identity must be a single line without control characters", code=E_STATE)
+    return cleaned
+
+
+def validate_client_name(client: str) -> str:
+    """Validate a client (harness) label: one bounded line, no controls."""
+    if not isinstance(client, str) or not client.strip():
+        raise TodoError("client name must be a non-empty string", code=E_STATE)
+    cleaned = client.strip()
+    if len(cleaned) > MAX_CLIENT_LEN:
+        raise TodoError(f"client name exceeds {MAX_CLIENT_LEN} chars", code=E_STATE)
+    if any(ord(char) < 32 for char in cleaned) or _has_forbidden_breaks(cleaned):
+        raise TodoError("client name must be a single line without control characters", code=E_STATE)
     return cleaned
 
 
@@ -528,6 +701,10 @@ def validate_snapshot(index: Any, details: dict[str, Any]) -> dict[str, Any]:
             if version < 3:
                 raise TodoError("final evidence requires index schema version 3", code=E_SCHEMA)
             _validate_final_evidence(item_id, detail["final_evidence"])
+        if "sessions" in detail:
+            # Additive session history: absence stays valid for
+            # pre-history items, presence must validate.
+            _validate_sessions(item_id, detail["sessions"])
         _validate_batch_detail(item_id, detail, list(items[item_id].get("needs", [])))
 
     # A prepared receipt is useful only to an explicitly registered member of

@@ -14,6 +14,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from . import git_backend
 from . import store as S
@@ -48,6 +49,21 @@ def _ref_from(args: argparse.Namespace) -> tuple[git_backend.StateRef, Path | No
 
 def _worker(args: argparse.Namespace) -> str:
     return args.actor or os.environ.get("TODO_DB_ACTOR") or "human"
+
+
+def _session_id(args: argparse.Namespace) -> str:
+    """Resolve the CLI session: flag, environment, or an ephemeral ID.
+
+    Mutations from one CLI invocation belong to one session. An explicit
+    ``--session`` / ``TODO_DB_SESSION`` value lets a caller resume it;
+    otherwise a fresh per-invocation ID leaves no unattributed gaps in
+    session history.
+    """
+    explicit = getattr(args, "session", None) or os.environ.get("TODO_DB_SESSION")
+    if explicit and str(explicit).strip():
+        # Fail closed: a forged session would land in commit trailers.
+        return S.validate_session_id(str(explicit).strip())
+    return uuid4().hex
 
 
 def _cache(args: argparse.Namespace) -> Path:
@@ -92,7 +108,7 @@ def cmd_bootstrap(args: argparse.Namespace) -> int:
         # without a config file even when discovery finds nothing.
         return _fail(str(exc))
     try:
-        sha = git_backend.bootstrap(ref, worker=_worker(args))
+        sha = git_backend.bootstrap(ref, worker=_worker(args), session=_session_id(args))
     except TodoDBError as exc:
         return _fail(str(exc))
     if config_path is not None:
@@ -143,6 +159,7 @@ def cmd_migrate(args: argparse.Namespace) -> int:
             worker=_worker(args),
             dry_run=args.dry_run,
             backup_dir=args.backup_dir,
+            session=_session_id(args),
         )
     except TodoDBError as exc:
         return _fail(str(exc))
@@ -174,7 +191,9 @@ def cmd_recover(args: argparse.Namespace) -> int:
                 return EXIT_OK
             return _fail(f"reconciliation unknown: {result.detail}; retry later with --op-id {args.op_id}")
         if args.restore_rev:
-            outcome = git_backend.restore_rev(ref, args.restore_rev, _worker(args))
+            outcome = git_backend.restore_rev(
+                ref, args.restore_rev, _worker(args), session=_session_id(args)
+            )
             if not outcome.ok:
                 return _fail(outcome.error or "restore failed")
             _emit({"restored_to": args.restore_rev, "rev": outcome.sha})
@@ -185,10 +204,26 @@ def cmd_recover(args: argparse.Namespace) -> int:
         return _fail(str(exc))
 
 
+def _read_session_id(args: argparse.Namespace) -> str | None:
+    """Best-effort session for read-only commands.
+
+    Reads never mutate, so a broken session configuration must not block
+    them: fall back to unattributed rather than failing. Mutation paths
+    keep the fail-closed :func:`_session_id`.
+    """
+    try:
+        return _session_id(args)
+    except TodoDBError:
+        return None
+
+
 def cmd_list(args: argparse.Namespace) -> int:
     try:
         ref, _ = _ref_from(args)
-        svc = TrackerService(ref=ref, cache_dir=_cache(args), worker="cli")
+        svc = TrackerService(
+            ref=ref, cache_dir=_cache(args), worker="cli",
+            session_id=_read_session_id(args), client_name="cli",
+        )
         env = svc.list_items(
             status=args.status, priority=args.priority, text=args.text,
             ready_only=args.ready, limit=args.limit, cursor=args.cursor,
@@ -202,7 +237,10 @@ def cmd_list(args: argparse.Namespace) -> int:
 def cmd_show(args: argparse.Namespace) -> int:
     try:
         ref, _ = _ref_from(args)
-        svc = TrackerService(ref=ref, cache_dir=_cache(args), worker="cli")
+        svc = TrackerService(
+            ref=ref, cache_dir=_cache(args), worker="cli",
+            session_id=_read_session_id(args), client_name="cli",
+        )
         env = svc.show_item(args.id, field=args.field, offset=args.offset, budget=args.budget)
     except TodoDBError as exc:
         return _fail(str(exc))
@@ -217,6 +255,7 @@ def _add_target_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--cache-dir", help="local snapshot cache")
     parser.add_argument("--repo-root", help="project root for config discovery (default: cwd)")
     parser.add_argument("--actor", help="worker identity for mutations (default: TODO_DB_ACTOR or 'human')")
+    parser.add_argument("--session", help="session identity for mutations (default: TODO_DB_SESSION or a fresh ID)")
 
 
 def build_parser() -> argparse.ArgumentParser:

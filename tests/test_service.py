@@ -6,6 +6,8 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from todo_db import git_backend
 from todo_db.service import MAX_BYTES, TrackerService, count_tokens
 
@@ -20,6 +22,185 @@ def _svc(tmp_path: Path, worker: str = "w1", name: str = "s.git") -> TrackerServ
 
 def _size(env: dict) -> int:
     return len(json.dumps(env, separators=(",", ":"), sort_keys=True, ensure_ascii=False).encode())
+
+
+def test_service_carries_session_context_and_rejects_forgeries(tmp_path: Path) -> None:
+    from todo_db.errors import TodoError
+
+    remote = tmp_path / "sctx.git"
+    subprocess.run(["git", "init", "--quiet", "--bare", str(remote)], check=True)
+    ref = git_backend.StateRef(remote=str(remote), branch="todo-state")
+    git_backend.bootstrap(ref)
+    svc = TrackerService(
+        ref=ref, cache_dir=tmp_path / "cache", worker="w1",
+        session_id="session-a", client_name="claude-code",
+    )
+    assert svc.session_id == "session-a"
+    assert svc.client_name == "claude-code"
+    legacy = TrackerService(ref=ref, cache_dir=tmp_path / "cache", worker="w1")
+    assert legacy.session_id is None and legacy.client_name is None
+    with pytest.raises(TodoError):
+        TrackerService(ref=ref, cache_dir=tmp_path / "cache", worker="w1", session_id="bad\nline")
+    with pytest.raises(TodoError):
+        TrackerService(ref=ref, cache_dir=tmp_path / "cache", worker="w1", client_name="x" * 65)
+
+
+def _session_svc(tmp_path: Path, worker: str = "w1", session: str = "session-a"):
+    remote = tmp_path / "sess.git"
+    subprocess.run(["git", "init", "--quiet", "--bare", str(remote)], check=True)
+    ref = git_backend.StateRef(remote=str(remote), branch="todo-state")
+    git_backend.bootstrap(ref)
+    svc = TrackerService(
+        ref=ref, cache_dir=tmp_path / "cache", worker=worker,
+        session_id=session, client_name="pytest",
+    )
+    return svc, ref
+
+
+def _sessions_of(ref, cache: Path):
+    snap = git_backend.read(ref, cache).snapshot
+    return snap.details
+
+
+def test_lifecycle_records_complete_session_history(tmp_path: Path) -> None:
+    svc, ref = _session_svc(tmp_path)
+    assert svc.create_item("h1", "History task")["ok"]
+    took = svc.take("h1")
+    assert took["ok"], took
+    gen = took["data"]["claim"]["generation"]
+    assert svc.renew("h1", gen)["ok"]
+    assert svc.release("h1", gen)["ok"]
+    retook = svc.take("h1")
+    assert retook["ok"], retook
+    assert svc.finish("h1", retook["data"]["claim"]["generation"])["ok"]
+    log = _sessions_of(ref, tmp_path / "cache")["h1"]["sessions"]
+    assert [entry["op"] for entry in log] == ["create", "take", "renew", "release", "take", "finish"]
+    assert {entry["op_id"] for entry in log} and len({entry["op_id"] for entry in log}) == 6
+    for entry in log:
+        assert entry["actor"] == "w1" and entry["session_id"] == "session-a"
+        assert entry["client"] == "pytest" and "at" in entry
+    assert "generation" not in log[0]  # create carries none
+    assert log[1]["generation"] == gen  # take binds the claim it created
+    assert log[4]["generation"] != gen  # re-adoption rotates the generation
+    trail = git_backend.history(ref, limit=10)
+    assert any(
+        entry["session"] == "session-a" and entry["actor"] == "w1" for entry in trail
+    ), trail
+
+
+def test_sessionless_service_mutates_without_history(tmp_path: Path) -> None:
+    svc = _svc(tmp_path, name="legacy.git")
+    assert svc.create_item("l1", "Legacy task")["ok"]
+    took = svc.take("l1")
+    assert took["ok"], took
+    assert svc.finish("l1", took["data"]["claim"]["generation"])["ok"]
+
+
+def test_update_appends_session_entry(tmp_path: Path) -> None:
+    svc, ref = _session_svc(tmp_path)
+    assert svc.create_item("u1", "Updatable")["ok"]
+    assert svc.update_item("u1", title="Updatable v2")["ok"]
+    log = _sessions_of(ref, tmp_path / "cache")["u1"]["sessions"]
+    assert [entry["op"] for entry in log] == ["create", "update"]
+
+
+def test_noop_update_keeps_legacy_refusal(tmp_path: Path) -> None:
+    svc, ref = _session_svc(tmp_path)
+    assert svc.create_item("n1", "Noop")["ok"]
+    out = svc.update_item("n1")
+    assert not out["ok"] and out["code"] == "E_STATE"
+    log = _sessions_of(ref, tmp_path / "cache")["n1"]["sessions"]
+    assert [entry["op"] for entry in log] == ["create"]
+
+
+def test_drop_records_session_entry(tmp_path: Path) -> None:
+    svc, ref = _session_svc(tmp_path)
+    assert svc.create_item("d1", "Droppable")["ok"]
+    took = svc.take("d1")
+    assert took["ok"], took
+    assert svc.drop("d1", took["data"]["claim"]["generation"])["ok"]
+    log = _sessions_of(ref, tmp_path / "cache")["d1"]["sessions"]
+    assert [entry["op"] for entry in log] == ["create", "take", "drop"]
+
+
+def test_large_session_log_pages_within_cap(tmp_path: Path) -> None:
+    from todo_db import store as S
+
+    svc, ref = _session_svc(tmp_path)
+    assert svc.create_item("big", "Big history")["ok"]
+    # Seed 61 near-maximal MCP-shaped entries in ONE commit: 61 pushes
+    # would take minutes, and the read path is what's under proof.
+    actor = "mcp:claude-code:" + "u" * 32 + ":" + "a" * 24
+
+    def seed(snap) -> dict:
+        for i in range(61):
+            assert S.record_session(
+                snap, "big", actor=actor, session_id="s" * 256, client="c" * 64,
+                op="renew", op_id=f"{i:032x}", generation=f"{9 - (i % 10):032x}",
+            )
+        return {"id": "big"}
+
+    outcome = git_backend.mutate(
+        ref, op="update", summary="seed history", worker="seeder", apply=seed,
+    )
+    assert outcome.ok, outcome
+    seen: list[str] = []
+    page = svc.show_item("big", field="sessions")
+    assert page["ok"], page
+    assert page["data"]["total"] == 62
+    for _ in range(10):
+        assert all("generation" not in entry for entry in page["data"]["window"])
+        seen.extend(entry["op_id"] for entry in page["data"]["window"])
+        cont = page["data"].get("continuation")
+        if cont is None:
+            break
+        page = svc.show_item(
+            "big", field="sessions", offset=cont["offset"], budget=cont["budget"], rev=cont["rev"],
+        )
+        assert page["ok"], page
+    else:
+        raise AssertionError("session pages did not terminate")
+    assert len(seen) == 62 and len(set(seen)) == 62
+
+
+def test_show_item_surfaces_session_summary_and_pages(tmp_path: Path) -> None:
+    svc, ref = _session_svc(tmp_path)
+    assert svc.create_item("s1", "Shown", description="body")["ok"]
+    took = svc.take("s1")
+    assert took["ok"], took
+    shown = svc.show_item("s1")
+    assert shown["ok"], shown
+    summary = shown["data"]["sessions"]
+    assert summary["total"] == 2
+    assert summary["last"]["op"] == "take"
+    assert summary["last"]["session_id"] == "session-a"
+    # Generations authorize the holder's own take response; the read path
+    # must not republish them, least of all the live one.
+    assert "generation" not in summary["last"]
+    assert summary["last"]["op_id"]
+    assert "sessions_continuation" in shown["data"]
+    assert "sessions" in shown["data"]["sections"]
+    page = svc.show_item("s1", field="sessions")
+    assert page["ok"], page
+    assert page["data"]["total"] == 2
+    assert [entry["op"] for entry in page["data"]["window"]] == ["create", "take"]
+    assert "continuation" not in page["data"]
+    rev = page["data"]["rev"]
+    second = svc.show_item("s1", field="sessions", offset=1, rev=rev)
+    assert second["ok"] and [entry["op"] for entry in second["data"]["window"]] == ["take"]
+    stale = svc.show_item("s1", field="sessions", offset=1)
+    assert not stale["ok"] and stale["code"] == "E_CURSOR_STALE"
+    past_end = svc.show_item("s1", field="sessions", offset=9, rev=rev)
+    assert not past_end["ok"]
+
+
+def test_show_item_without_history_has_no_sessions_keys(tmp_path: Path) -> None:
+    svc = _svc(tmp_path)
+    assert svc.create_item("plain", "Plain task")["ok"]
+    shown = svc.show_item("plain")
+    assert shown["ok"], shown
+    assert "sessions" not in shown["data"]
+    assert "sessions_continuation" not in shown["data"]
 
 
 def test_lifecycle_acks_are_compact(tmp_path: Path) -> None:
@@ -93,7 +274,7 @@ def test_update_retry_conflicts_on_touched_fields(tmp_path: Path, monkeypatch) -
     svc = _svc(tmp_path)
     assert svc.create_item("t", "v1")["ok"]
 
-    def fake_mutate(ref, *, op, summary, worker, op_id, apply, max_retries=5):
+    def fake_mutate(ref, *, op, summary, worker, op_id, apply, max_retries=5, session=None):
         # First attempt records the pre-image; a competing writer changes
         # the same field before the retry is evaluated.
         first = git_backend.read(ref, tmp_path / "c1").snapshot

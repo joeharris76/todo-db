@@ -6,6 +6,16 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Per-task session history. Every create, claim, renewal, release,
+  preparation, finish, drop, and update records its actor, session,
+  operation, and operation ID in an append-only log on the touched
+  task, readable through `show_item`'s `sessions` summary and paged
+  `field="sessions"` section reads. State commits now also carry a
+  `Todo-Session` trailer next to `Todo-Actor`, surfaced by history
+  and recovery output.
+
 ### Fixed
 
 - Independent MCP servers that report the same client product name now receive
