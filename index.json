@@ -138,6 +138,13 @@
       "status": "dropped",
       "title": "Unify hosted credential resolution and auth classification"
     },
+    "batch-lifecycle-item-attribution": {
+      "claim": null,
+      "needs": [],
+      "priority": "medium",
+      "status": "open",
+      "title": "Attribute batch lifecycle rewrites on member session logs"
+    },
     "batch-replay-ledger-format": {
       "claim": null,
       "needs": [],

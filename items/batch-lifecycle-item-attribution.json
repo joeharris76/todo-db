@@ -1,0 +1,8 @@
+{
+  "acceptance": [
+    "abort_batch and prepared-evidence invalidation either record item-level session entries or document why trailer attribution suffices",
+    "A resumed member never shows a misleading last entry (e.g. prepare after its evidence was invalidated)"
+  ],
+  "context": "Deferred from adversarial review of PR #41 (per-task session history): claude found that abort_batch clears member claims/evidence and _invalidate_prepared_dependents rewrites other tasks without session entries. Batch-registry ops are trailer-attributed today; item-level attribution for these paths needs design beyond that change.",
+  "description": "Decide and implement item-level session attribution for batch lifecycle paths that rewrite member tasks: abort_batch (clears claims, prepared/final evidence, detaches members) and _invalidate_prepared_dependents (an update invalidating other tasks' receipts). Today these are attributed only through commit trailers, so a resumed member's last session entry can describe evidence that no longer exists."
+}
