@@ -139,15 +139,10 @@
       "title": "Unify hosted credential resolution and auth classification"
     },
     "batch-lifecycle-item-attribution": {
-      "claim": {
-        "expires_at": "2026-09-19T15:16:22Z",
-        "generation": "5392ad12ccd44e27b5665b111730e7ec",
-        "renewals": 0,
-        "worker": "mcp:tbh:joe@joe-mac-mini.local"
-      },
+      "claim": null,
       "needs": [],
       "priority": "medium",
-      "status": "active",
+      "status": "done",
       "title": "Attribute batch lifecycle rewrites on member session logs"
     },
     "batch-replay-ledger-format": {
