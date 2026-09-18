@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import subprocess
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 
-from todo_db import store
+from todo_db import git_backend, store
 from todo_db.errors import TodoError
 from todo_db.service import TrackerService
 
@@ -248,6 +248,138 @@ def test_owner_abort_is_claim_safe_idempotent_and_clears_prepared_work() -> None
         "id": "a", "status": "done",
     }
     assert store.op_abort_batch(snap, "batch-1", "worker", "1" * 32)["idempotent"] is True
+
+
+def test_abort_batch_reports_only_changed_members() -> None:
+    snap = _snap()
+    revision = "e" * 40
+    _register(snap, revision, ["a", "b", "c", "ghost"])
+    store.op_create(
+        snap, item_id="a", title="A",
+        batch={"batch_id": "batch-1", "member_id": "a", "implementation_dependencies": []},
+    )
+    store.op_create(snap, item_id="b", title="B")
+    store.op_create(snap, item_id="c", title="C")
+    store.op_update(snap, "c", status="blocked")
+    claim = store.op_take(snap, "a", "worker")
+    store.op_prepare(
+        snap, "a", "worker", claim["claim"]["generation"], batch_id="batch-1", member_id="a",
+        source_worktree="/tmp/source", source_revision=revision, source_base=revision,
+        accepted_head=revision, integration_head=revision,
+        scope_hash=snap.index["batches"]["batch-1"]["scope_hash"], verification=_verification(revision),
+    )
+    out = store.op_abort_batch(snap, "batch-1", "worker", "1" * 32)
+    # a lost its receipt, c lost its blocked status; b never changed and
+    # the phantom registry member has no task to record on.
+    assert out["affected"] == ["a", "c"]
+    assert snap.index["items"]["c"]["status"] == "open"
+
+
+def _session_service(tmp_path: Path, worker: str = "worker"):
+    remote = tmp_path / "batch-attr.git"
+    subprocess.run(["git", "init", "--quiet", "--bare", str(remote)], check=True)
+    ref = git_backend.StateRef(remote=str(remote), branch="todo-state")
+    git_backend.bootstrap(ref)
+    svc = TrackerService(
+        ref=ref, cache_dir=tmp_path / "cache", worker=worker,
+        session_id="session-a", client_name="pytest",
+    )
+    return svc, ref
+
+
+def _member_kwargs(member_id: str) -> dict:
+    return {"batch_id": "batch-1", "member_id": member_id, "implementation_dependencies": []}
+
+
+def test_service_abort_records_affected_members_only(tmp_path: Path) -> None:
+    svc, ref = _session_service(tmp_path)
+    revision = "e" * 40
+
+    def seed(snap) -> dict:
+        _register(snap, revision, ["a", "b"])
+        store.op_create(snap, item_id="a", title="A", batch=_member_kwargs("a"))
+        store.op_create(snap, item_id="b", title="B")
+        claim = store.op_take(snap, "a", "worker")
+        store.op_prepare(
+            snap, "a", "worker", claim["claim"]["generation"], batch_id="batch-1", member_id="a",
+            source_worktree="/tmp/source", source_revision=revision, source_base=revision,
+            accepted_head=revision, integration_head=revision,
+            scope_hash=snap.index["batches"]["batch-1"]["scope_hash"],
+            verification=_verification(revision),
+        )
+        return {"id": "seed"}
+
+    assert git_backend.mutate(ref, op="update", summary="seed", worker="seeder", apply=seed).ok
+    ack = svc.abort_batch("batch-1", "1" * 32)
+    assert ack["ok"], ack
+    snap = git_backend.read(ref, tmp_path / "cache").snapshot
+    assert [entry["op"] for entry in snap.details["a"]["sessions"]] == ["abort"]
+    assert snap.details["a"]["sessions"][0]["session_id"] == "session-a"
+    assert "generation" not in snap.details["a"]["sessions"][0]
+    assert "sessions" not in snap.details["b"]
+    shown = svc.show_item("a")
+    assert shown["ok"] and shown["data"]["sessions"]["last"]["op"] == "abort"
+    # A repeat abort changes nothing: recording stays silent and the
+    # legacy refusal survives.
+    again = svc.abort_batch("batch-1", "1" * 32)
+    assert not again["ok"]
+
+
+def test_service_abort_after_expired_claim_shows_abort_last(tmp_path: Path) -> None:
+    svc, ref = _session_service(tmp_path)
+    revision = "e" * 40
+    past = datetime.now(timezone.utc) - timedelta(days=2)
+
+    def seed(snap) -> dict:
+        _register(snap, revision, ["m"])
+        store.op_create(snap, item_id="m", title="M", batch=_member_kwargs("m"))
+        took = store.op_take(snap, "m", "worker", now=past)
+        store.record_session(
+            snap, "m", actor="worker", session_id="s-old", client=None,
+            op="take", op_id="1" * 32, generation=took["claim"]["generation"],
+        )
+        return {"id": "seed"}
+
+    assert git_backend.mutate(ref, op="update", summary="seed", worker="seeder", apply=seed).ok
+    assert svc.abort_batch("batch-1", "1" * 32)["ok"]
+    shown = svc.show_item("m")
+    assert shown["ok"], shown
+    log = git_backend.read(ref, tmp_path / "cache").snapshot.details["m"]["sessions"]
+    assert [entry["op"] for entry in log] == ["take", "abort"]
+    assert shown["data"]["sessions"]["last"]["op"] == "abort"
+
+
+def test_service_update_records_invalidate_on_dependents(tmp_path: Path) -> None:
+    svc, ref = _session_service(tmp_path)
+    revision = "b" * 40
+
+    def seed(snap) -> dict:
+        _register(snap, revision, ["a", "b"])
+        store.op_create(snap, item_id="a", title="A", batch=_member_kwargs("a"))
+        store.op_create(
+            snap, item_id="b", title="B", needs=["a"],
+            batch={"batch_id": "batch-1", "member_id": "b", "implementation_dependencies": ["a"]},
+        )
+        claim = store.op_take(snap, "b", "worker")
+        store.op_prepare(
+            snap, "b", "worker", claim["claim"]["generation"], batch_id="batch-1", member_id="b",
+            source_worktree="/tmp/source", source_revision=revision, source_base=revision,
+            accepted_head=revision, integration_head=revision,
+            scope_hash=snap.index["batches"]["batch-1"]["scope_hash"],
+            verification=_verification(revision), implementation_dependencies=["a"],
+        )
+        return {"id": "seed"}
+
+    assert git_backend.mutate(ref, op="update", summary="seed", worker="seeder", apply=seed).ok
+    assert svc.update_item("a", title="A changed")["ok"]
+    snap = git_backend.read(ref, tmp_path / "cache").snapshot
+    a_log = snap.details["a"]["sessions"]
+    b_log = snap.details["b"]["sessions"]
+    assert [entry["op"] for entry in a_log] == ["update"]
+    assert [entry["op"] for entry in b_log] == ["invalidate"]
+    # One commit links the whole cascade.
+    assert b_log[0]["op_id"] == a_log[0]["op_id"]
+    assert b_log[0]["session_id"] == "session-a"
 
 
 def test_abort_expired_active_member_returns_it_to_open() -> None:

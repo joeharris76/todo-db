@@ -12,7 +12,9 @@ adheres to [Semantic Versioning](https://semver.org/).
   preparation, finish, drop, and update records its actor, session,
   operation, and operation ID in an append-only log on the touched
   task, readable through `show_item`'s `sessions` summary and paged
-  `field="sessions"` section reads. State commits now also carry a
+  `field="sessions"` section reads. Batch aborts and evidence
+  invalidations record `abort`/`invalidate` entries on the rewritten
+  members. State commits now also carry a
   `Todo-Session` trailer next to `Todo-Actor`, surfaced by history
   and recovery output.
 
