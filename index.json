@@ -167,10 +167,15 @@
       "title": "Require removal items to name a merged replacement and narrowed scope to be re-homed"
     },
     "claim-takeover": {
-      "claim": null,
+      "claim": {
+        "expires_at": "2026-09-21T00:43:19Z",
+        "generation": "898a0981745f4c048262f7397856b791",
+        "renewals": 0,
+        "worker": "mcp:tbh:joe@joe-mac-mini.local"
+      },
       "needs": [],
       "priority": "high",
-      "status": "open",
+      "status": "active",
       "title": "Implement audited claim takeover for dead sessions"
     },
     "credential-provider-review-remediation": {
