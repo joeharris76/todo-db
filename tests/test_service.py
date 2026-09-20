@@ -9,6 +9,8 @@ from pathlib import Path
 import pytest
 
 from todo_db import git_backend
+from todo_db import store as S
+from todo_db.errors import TodoError
 from todo_db.service import MAX_BYTES, TrackerService, count_tokens
 
 
@@ -201,6 +203,93 @@ def test_show_item_without_history_has_no_sessions_keys(tmp_path: Path) -> None:
     assert shown["ok"], shown
     assert "sessions" not in shown["data"]
     assert "sessions_continuation" not in shown["data"]
+
+
+def _takeover_remote(tmp_path: Path, name: str = "takeover.git"):
+    remote = tmp_path / name
+    subprocess.run(["git", "init", "--quiet", "--bare", str(remote)], check=True)
+    ref = git_backend.StateRef(remote=str(remote), branch="todo-state")
+    git_backend.bootstrap(ref)
+    return ref
+
+
+def _takeover_svc(ref, cache: Path, worker: str, session: str | None) -> TrackerService:
+    return TrackerService(ref=ref, cache_dir=cache, worker=worker, session_id=session)
+
+
+def test_takeover_end_to_end_with_audit(tmp_path: Path) -> None:
+    ref = _takeover_remote(tmp_path, name="t1.git")
+    holder = _takeover_svc(ref, tmp_path / "cache-holder", "victim", "session-dead")
+    assert holder.create_item("x1", "Takeable")["ok"]
+    took = holder.take("x1")
+    assert took["ok"], took
+    old_gen = took["data"]["claim"]["generation"]
+    taker = _takeover_svc(ref, tmp_path / "cache-taker", "taker", "session-a")
+    out = taker.takeover("x1", "victim", "holder session exhausted")
+    assert out["ok"], out
+    data = out["data"]
+    assert data["displaced"] == "victim"
+    assert data["claim"]["generation"] != old_gen
+    assert data["transferred_batches"] == []
+    log = _sessions_of(ref, tmp_path / "cache-taker")["x1"]["sessions"]
+    assert [entry["op"] for entry in log] == ["create", "take", "takeover"]
+    taken = log[-1]
+    assert taken["actor"] == "taker" and taken["displaced"] == "victim"
+    assert taken["reason"] == "holder session exhausted"
+    # The displaced generation is dead.
+    stale = holder.release("x1", old_gen)
+    assert not stale["ok"] and stale["code"] == "E_CLAIM_STALE"
+    assert taker.renew("x1", data["claim"]["generation"])["ok"]
+
+
+def test_takeover_refuses_without_session_bad_holder_and_owned_claims(tmp_path: Path) -> None:
+    ref = _takeover_remote(tmp_path, name="t2.git")
+    holder = _takeover_svc(ref, tmp_path / "cache-holder", "victim", "session-dead")
+    assert holder.create_item("x1", "Takeable")["ok"]
+    assert holder.take("x1")["ok"]
+    nosession = _takeover_svc(ref, tmp_path / "cache-none", "taker", None)
+    refused = nosession.takeover("x1", "victim", "dead session")
+    assert not refused["ok"]
+    taker = _takeover_svc(ref, tmp_path / "cache-taker", "taker", "session-a")
+    wrong = taker.takeover("x1", "someone-else", "dead session")
+    assert not wrong["ok"] and wrong["code"] == "E_CONFLICT"
+    assert taker.create_item("mine", "Mine")["ok"]
+    mine = taker.take("mine")
+    assert mine["ok"], mine
+    busy = taker.takeover("x1", "victim", "dead session")
+    assert not busy["ok"] and busy["code"] == "E_MULTIPLE_CLAIMS"
+    assert taker.release("mine", mine["data"]["claim"]["generation"])["ok"]
+    assert taker.takeover("x1", "victim", "dead session")["ok"]
+
+
+def test_takeover_retry_conflicts_on_changed_claim(tmp_path: Path, monkeypatch) -> None:
+    svc, ref = _session_svc(tmp_path)
+    assert svc.create_item("t", "Task")["ok"]
+    took = svc.take("t")
+    assert took["ok"], took
+    holder_gen = took["data"]["claim"]["generation"]
+
+    def fake_mutate(ref, *, op, summary, worker, op_id, apply, max_retries=5, session=None):
+        first = git_backend.read(ref, tmp_path / "c1").snapshot
+        apply(first)
+        # The holder renews between our attempts: same worker, new image.
+        second = git_backend.read(ref, tmp_path / "c2").snapshot
+        S.op_renew(second, "t", "w1", holder_gen)
+        try:
+            apply(second)
+        except TodoError as exc:
+            return git_backend.MutationOutcome(
+                ok=False, outcome="conflict", op_id=op_id,
+                code=exc.code or "E_STATE", error=str(exc),
+            )
+        raise AssertionError("retry should have conflicted")
+
+    monkeypatch.setattr(git_backend, "mutate", fake_mutate)
+    taker = TrackerService(
+        ref=ref, cache_dir=tmp_path / "cache-taker", worker="taker", session_id="session-a",
+    )
+    out = taker.takeover("t", "w1", "dead session")
+    assert not out["ok"] and out["code"] == "E_CONFLICT"
 
 
 def test_lifecycle_acks_are_compact(tmp_path: Path) -> None:
