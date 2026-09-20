@@ -8,6 +8,10 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Audited claim takeover. `takeover(id, expected_holder, reason)` lets a
+  session take over a live foreign claim whose holder cannot resume, bound
+  to the inspected holder with compare-and-swap retries, batch ownership
+  transfer, and dual-surface audit (see ADR 0008, amending ADR 0003 §2.2).
 - Per-task session history. Every create, claim, renewal, release,
   preparation, finish, drop, and update records its actor, session,
   operation, and operation ID in an append-only log on the touched

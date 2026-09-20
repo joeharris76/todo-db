@@ -349,6 +349,43 @@ def test_service_abort_after_expired_claim_shows_abort_last(tmp_path: Path) -> N
     assert shown["data"]["sessions"]["last"]["op"] == "abort"
 
 
+def test_service_takeover_transfers_batch_ownership(tmp_path: Path) -> None:
+    remote = tmp_path / "takeover-batch.git"
+    subprocess.run(["git", "init", "--quiet", "--bare", str(remote)], check=True)
+    ref = git_backend.StateRef(remote=str(remote), branch="todo-state")
+    git_backend.bootstrap(ref)
+    revision = "e" * 40
+
+    def seed(snap) -> dict:
+        scope = {"m": ["m/**"]}
+        store.op_register_batch(
+            snap, batch_id="batch-1", project_id="todo-db", repository="repo",
+            owner="victim", owner_generation="2" * 32, integration_branch="main",
+            integration_worktree="/tmp/integration", start_head=revision,
+            members=["m"], scope=scope, scope_hash=store.scope_digest(scope),
+            delivery_boundary="final-pr", terminal_outcome="merged",
+        )
+        store.op_create(snap, item_id="m", title="M", batch=_member_kwargs("m"))
+        store.op_take(snap, "m", "victim")
+        return {"id": "seed"}
+
+    assert git_backend.mutate(ref, op="update", summary="seed", worker="seeder", apply=seed).ok
+    taker = TrackerService(
+        ref=ref, cache_dir=tmp_path / "cache", worker="taker", session_id="session-a",
+    )
+    out = taker.takeover("m", "victim", "owner session exhausted")
+    assert out["ok"], out
+    assert out["data"]["displaced"] == "victim"
+    assert len(out["data"]["transferred_batches"]) == 1
+    new_owner_gen = out["data"]["transferred_batches"][0]["owner_generation"]
+    snap = git_backend.read(ref, tmp_path / "cache").snapshot
+    assert snap.index["batches"]["batch-1"]["owner"] == "taker"
+    # The transferred ownership is immediately usable: release, then abort.
+    assert taker.release("m", out["data"]["claim"]["generation"])["ok"]
+    assert taker.abort_batch("batch-1", new_owner_gen)["ok"]
+    assert git_backend.read(ref, tmp_path / "cache").snapshot.index["batches"]["batch-1"]["lifecycle"] == "aborted"
+
+
 def test_service_update_records_invalidate_on_dependents(tmp_path: Path) -> None:
     svc, ref = _session_service(tmp_path)
     revision = "b" * 40

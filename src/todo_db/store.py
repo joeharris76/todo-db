@@ -73,6 +73,9 @@ MAX_SESSION_LEN = 256
 MAX_CLIENT_LEN = 64
 #: Bound for operation names accepted leniently by session-history readers.
 MAX_OP_LEN = 64
+#: Bound for takeover reasons: long enough to name the dead session and
+#: why it cannot resume, short enough to stay quoted in commit subjects.
+MAX_REASON_LEN = 280
 
 #: Unicode line/paragraph separators: invisible, pass an ``ord < 32`` check,
 #: but split lines for Git trailer parsing. Forbidden in every identity so a
@@ -114,7 +117,7 @@ UPDATE_STATUSES = frozenset({"open", "blocked"})
 #: clients; only writers are bound to this allowlist.
 SESSION_OPS = frozenset({
     "create", "take", "renew", "release", "prepare", "finish", "drop", "update",
-    "abort", "invalidate",
+    "abort", "invalidate", "takeover",
 })
 
 OP_ID_RE = re.compile(r"^[0-9a-f]{32}$")
@@ -173,6 +176,10 @@ def _validate_sessions(item_id: str, sessions: Any) -> None:
                 f"sessions log for {item_id!r} entry {pos} has an invalid generation",
                 code=E_STATE,
             )
+        if entry.get("reason") is not None:
+            validate_takeover_reason(str(entry["reason"]))
+        if entry.get("displaced") is not None:
+            validate_worker(str(entry["displaced"]))
         if op_id in seen:
             raise TodoError(
                 f"sessions log for {item_id!r} has a duplicate operation ID {op_id!r}",
@@ -192,6 +199,8 @@ def record_session(
     op_id: str,
     generation: str | None = None,
     now: datetime | None = None,
+    reason: str | None = None,
+    displaced: str | None = None,
 ) -> bool:
     """Append one session-history entry to a task.
 
@@ -213,6 +222,10 @@ def record_session(
         not isinstance(generation, str) or not GENERATION_RE.fullmatch(generation)
     ):
         raise TodoError("session entry has an invalid generation", code=E_STATE)
+    if reason is not None:
+        reason = validate_takeover_reason(reason)
+    if displaced is not None:
+        displaced = validate_worker(displaced)
     detail = snapshot.details[item_id]
     log = detail.get("sessions")
     if log is None:
@@ -234,6 +247,10 @@ def record_session(
         entry["client"] = client
     if generation is not None:
         entry["generation"] = generation
+    if reason is not None:
+        entry["reason"] = reason
+    if displaced is not None:
+        entry["displaced"] = displaced
     log.append(entry)
     validate_snapshot(snapshot.index, snapshot.details)
     return True
@@ -308,6 +325,24 @@ def validate_session_id(session: str) -> str:
         raise TodoError(f"session identity exceeds {MAX_SESSION_LEN} chars", code=E_STATE)
     if any(ord(char) < 32 for char in cleaned) or _has_forbidden_breaks(cleaned):
         raise TodoError("session identity must be a single line without control characters", code=E_STATE)
+    return cleaned
+
+
+def validate_takeover_reason(reason: str) -> str:
+    """Validate a takeover reason: one bounded line, never empty.
+
+    Reasons are durable Git state, returned in session reads, and quoted
+    into commit summaries — so they must not carry newlines, controls,
+    Unicode line separators (trailer forgery), or secrets (guidance, not
+    enforcement: never put credentials in a reason).
+    """
+    if not isinstance(reason, str) or not reason.strip():
+        raise TodoError("takeover reason must be a non-empty string", code=E_STATE)
+    cleaned = reason.strip()
+    if len(cleaned) > MAX_REASON_LEN:
+        raise TodoError(f"takeover reason exceeds {MAX_REASON_LEN} chars", code=E_STATE)
+    if any(ord(char) < 32 for char in cleaned) or _has_forbidden_breaks(cleaned):
+        raise TodoError("takeover reason must be a single line without control characters", code=E_STATE)
     return cleaned
 
 
@@ -1324,6 +1359,66 @@ def op_take(
     entry["status"] = "active"
     validate_snapshot(snapshot.index, snapshot.details)
     return {"id": item_id, "claim": fresh, "adopted": False}
+
+
+def op_takeover(
+    snapshot: Snapshot,
+    item_id: str,
+    worker: str,
+    expected_holder: str,
+    reason: str,
+    *,
+    ttl_hours: float = DEFAULT_TTL_HOURS,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Take over a live claim held by a session that cannot resume.
+
+    Unlike `take` (same-worker re-adoption or fresh acquisition), this
+    overwrites a *foreign* live claim — but only the exact claim the
+    caller inspected: the holder must still match *expected_holder*.
+    Anything else (no live claim, same worker, changed holder, terminal
+    state) is refused with direction to the ordinary path. Batch
+    ownership held by the displaced worker transfers with the item, so a
+    dead batch owner cannot strand prepared members; the fresh owner
+    generations are returned for the taker's next batch calls.
+    """
+    worker = validate_worker(worker)
+    expected_holder = validate_worker(expected_holder)
+    reason = validate_takeover_reason(reason)
+    entry = _require_entry(snapshot, item_id)
+    moment = now or datetime.now(timezone.utc)
+    if not 0 < ttl_hours <= MAX_TTL_HOURS:
+        raise TodoError(f"ttl must be within (0, {MAX_TTL_HOURS}] hours", code=E_STATE)
+    claim = entry.get("claim")
+    if not claim_is_live(claim, moment):
+        raise TodoError(f"task {item_id!r} has no live claim; use take", code=E_STATE)
+    if entry.get("status") != "active":
+        raise TodoError(f"task {item_id!r} is {entry.get('status')} and cannot be taken over", code=E_STATE)
+    if claim["worker"] == worker:
+        raise TodoError(f"task {item_id!r} is already claimed by you; use take to re-adopt", code=E_STATE)
+    if claim["worker"] != expected_holder:
+        raise TodoError(f"task {item_id!r} holder changed; re-read with show and retry", code=E_CONFLICT)
+    displaced = claim["worker"]
+    fresh = {
+        "worker": worker,
+        "expires_at": (moment + timedelta(hours=ttl_hours)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "generation": new_generation(),
+        "renewals": 0,
+    }
+    entry["claim"] = fresh
+    entry["status"] = "active"
+    transferred: list[dict[str, str]] = []
+    for batch_id, batch in snapshot.index.get("batches", {}).items():
+        if (
+            batch.get("lifecycle", "active") == "active"
+            and batch.get("owner") == displaced
+            and item_id in batch.get("members", [])
+        ):
+            batch["owner"] = worker
+            batch["owner_generation"] = new_generation()
+            transferred.append({"batch_id": batch_id, "owner_generation": batch["owner_generation"]})
+    validate_snapshot(snapshot.index, snapshot.details)
+    return {"id": item_id, "claim": fresh, "displaced": displaced, "transferred_batches": transferred}
 
 
 def op_renew(
