@@ -1,0 +1,11 @@
+{
+  "acceptance": [
+    "takeover(id, expected_holder, reason) takes over live foreign claims with CAS binding, fresh claim, batch ownership transfer, and dual-surface audit",
+    "ADR 0008 amends ADR 0003 section 2.2; full suite green; PR #43 open"
+  ],
+  "context": "Approved final proposal after adversarial review by agy and codex (opus); all Required findings integrated. Implements the non-time-based method for taking over TODOs held by interrupted sessions.",
+  "description": "Implement audited claim takeover per the approved proposal: op_takeover with holder binding, service CAS retries, batch ownership transfer, session gate, takeover MCP tool, ADR 0008, schema snapshot and token budget updates.",
+  "links": [
+    "https://github.com/joeharris76/todo-db/pull/43"
+  ]
+}

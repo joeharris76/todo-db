@@ -166,6 +166,13 @@
       "status": "done",
       "title": "Require removal items to name a merged replacement and narrowed scope to be re-homed"
     },
+    "claim-takeover": {
+      "claim": null,
+      "needs": [],
+      "priority": "high",
+      "status": "open",
+      "title": "Implement audited claim takeover for dead sessions"
+    },
     "credential-provider-review-remediation": {
       "claim": null,
       "needs": [
