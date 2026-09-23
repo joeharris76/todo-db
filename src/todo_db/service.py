@@ -194,13 +194,17 @@ class TrackerService:
             items = []
             for item_id, entry in page:
                 runtime_ready = self._batch_runtime_ready(outcome.snapshot, item_id)
-                items.append({
+                row = {
                     "id": item_id,
                     "title": entry["title"],
                     "priority": entry["priority"],
                     "status": entry["status"],
                     "ready": S.is_ready(item_id, outcome.snapshot, now) and runtime_ready,
-                })
+                }
+                waiting = S.waiting_until(item_id, outcome.snapshot, now)
+                if waiting is not None:
+                    row["waiting_until"] = waiting
+                items.append(row)
             remaining = total - offset - len(page)
             data: dict[str, Any] = {"items": items, "total": total, "limit": limit, "cursor_offset": offset}
             if outcome.stale:
@@ -271,6 +275,9 @@ class TrackerService:
                 "unlocks": S.downstream_unlocks(item_id, snap),
                 "rev": outcome.rev,
             }
+            waiting = S.waiting_until(item_id, snap, now)
+            if waiting is not None:
+                data["waiting_until"] = waiting
             if entry.get("claim"):
                 claim = entry["claim"]
                 data["claim"] = {
@@ -763,7 +770,7 @@ class TrackerService:
         guarded = {key: kwargs[key] for key in self.UPDATE_GUARDED_FIELDS if key in kwargs}
         detail_guarded = {
             key: kwargs[key]
-            for key in ("description", "acceptance", "links", "context", "batch")
+            for key in ("description", "acceptance", "links", "context", "batch", "not_before")
             if key in kwargs
         }
         pre_image: dict[str, Any] | None = None
@@ -815,6 +822,15 @@ class TrackerService:
                 raise TodoError(
                     f"worker {worker!r} already holds a live claim on {held!r}; release or finish it first",
                     code=E_MULTIPLE_CLAIMS,
+                )
+            # A held task is refused rather than taken early: taking and
+            # finishing it would close the task before its wait ends.
+            waiting = S.waiting_until(item_id, snap, now)
+            if waiting is not None:
+                raise TodoError(
+                    f"task {item_id!r} is waiting until {waiting}; "
+                    "to override, clear it with update_item not_before=\"\"",
+                    code=E_NOTHING_READY,
                 )
             detail = snap.details.get(item_id, {})
             batch_meta = detail.get("batch") if isinstance(detail, dict) else None

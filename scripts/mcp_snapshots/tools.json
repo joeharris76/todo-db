@@ -153,6 +153,11 @@
           ],
           "default": null,
           "title": "Batch"
+        },
+        "not_before": {
+          "default": "",
+          "title": "Not Before",
+          "type": "string"
         }
       },
       "required": [
@@ -774,6 +779,18 @@
           ],
           "default": null,
           "title": "Status"
+        },
+        "not_before": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Not Before"
         }
       },
       "required": [
