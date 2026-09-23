@@ -722,8 +722,12 @@ class TrackerService:
         return checked
 
     def create_item(self, item_id: str, title: str, **kwargs: Any) -> dict[str, Any]:
+        # Judge a not_before hold against the request time, not the time of
+        # a retry after a competing push.
+        requested = datetime.now(timezone.utc)
+
         def apply(snap: S.Snapshot, op_id: str) -> dict[str, Any]:
-            S.op_create(snap, item_id=item_id, title=title, **kwargs)
+            S.op_create(snap, item_id=item_id, title=title, now=requested, **kwargs)
             self._record_session(snap, item_id, "create", op_id)
             return {"id": item_id, "status": "open"}
 
@@ -774,6 +778,7 @@ class TrackerService:
             if key in kwargs
         }
         pre_image: dict[str, Any] | None = None
+        requested = datetime.now(timezone.utc)
 
         def snapshot_pre_image(snap: S.Snapshot) -> dict[str, Any]:
             entry = snap.index["items"][item_id]
@@ -802,7 +807,7 @@ class TrackerService:
                             "re-read and retry deliberately",
                             code=E_CONFLICT,
                         )
-            out = S.op_update(snap, item_id, **kwargs)
+            out = S.op_update(snap, item_id, now=requested, **kwargs)
             # A content-identical update changes nothing: recording it would
             # turn the legacy "no state change" refusal into a commit, with
             # the outcome depending on whether a session is attached.

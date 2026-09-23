@@ -267,6 +267,7 @@ def normalize_not_before(raw: Any, now: datetime | None = None) -> str:
     writers, so unlike :func:`parse_ts` it is rejected rather than read as
     UTC. A time already past is rejected as a likely typo; stored values are
     never re-checked against the clock, since every hold eventually passes.
+    Fractional seconds round up so a hold never ends early.
     """
     if not isinstance(raw, str) or not raw.strip():
         raise TodoError("not_before must be an RFC 3339 timestamp", code=E_STATE)
@@ -277,15 +278,20 @@ def normalize_not_before(raw: Any, now: datetime | None = None) -> str:
     if moment.tzinfo is None:
         raise TodoError(f"not_before {raw!r} has no UTC offset; add Z or +hh:mm", code=E_STATE)
     moment = moment.astimezone(timezone.utc)
+    if moment.microsecond:
+        moment = moment.replace(microsecond=0) + timedelta(seconds=1)
     if moment <= (now or datetime.now(timezone.utc)):
         raise TodoError(f"not_before {raw!r} is not in the future", code=E_STATE)
     return moment.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def waiting_until(item_id: str, snapshot: Snapshot, now: datetime | None = None) -> str | None:
-    """Return the hold time while an open task is still waiting, else None."""
+    """Return the hold time while an open or blocked task is still waiting.
+
+    Blocked tasks count so that parking a held task cannot unlock ``take``.
+    """
     entry = snapshot.index["items"].get(item_id)
-    if entry is None or entry["status"] != "open":
+    if entry is None or entry["status"] not in ("open", "blocked"):
         return None
     raw = snapshot.details.get(item_id, {}).get("not_before")
     if not isinstance(raw, str):

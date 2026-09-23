@@ -34,20 +34,25 @@ stalled ones and needs someone to reopen each task by hand.
 3. **Format.** Input is RFC 3339 with `Z` or an explicit offset. Naive times
    are rejected because writers may be in different zones. A time that is
    not in the future is rejected on create and update as a likely mistake.
-   The stored form is `YYYY-MM-DDTHH:MM:SSZ`, matching `claim.expires_at`.
-   Stored values are never re-checked against the clock on load, because
-   every hold eventually passes.
+   The stored form is `YYYY-MM-DDTHH:MM:SSZ`, matching `claim.expires_at`;
+   fractional seconds round up so a hold never ends early. The service judges
+   "in the future" against the request time, so a retry after a competing
+   push cannot turn an accepted hold into a rejection. Stored values are never
+   re-checked against the clock on load, because every hold eventually passes.
 4. **take refuses a held task.** It returns the gate `E_NOTHING_READY`,
    naming the hold time and how to override it. Taking and finishing early
    would close the task before its wait ends, which is the failure the field
    exists to prevent. The check sits in the service `take`, beside the
-   batch-readiness refusal; `op_take` stays readiness-agnostic. `blocked`
-   tasks remain takeable because they carry no time contract.
+   batch-readiness refusal; `op_take` stays readiness-agnostic. The hold also
+   applies while a task is `blocked`, so parking a held task cannot unlock
+   `take`. A `blocked` task without a hold remains takeable, as before.
+   `drop` is not gated: abandoning a task is a separate human decision, and
+   the hold guards against early completion, not abandonment.
 5. **Clearing.** `not_before=""` clears the hold, as an empty string clears
    the other detail fields. MCP tools treat `None` as "not given", so null
    cannot mean clear. finish and drop leave the field alone. Readers report
-   a wait only for an `open` task whose time is still ahead, so a leftover
-   value on a closed task is inert.
+   a wait only for an `open` or `blocked` task whose time is still ahead, so
+   a leftover value on a closed task is inert.
 6. **Display.** `list_items` rows and `show_item` carry `waiting_until` only
    while the hold applies.
 7. **Unlock counts are unchanged.** A held task is non-terminal and still

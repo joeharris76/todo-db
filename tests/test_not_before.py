@@ -38,13 +38,22 @@ def test_ready_only_at_or_after_the_hold() -> None:
     assert [item_id for item_id, _ in store.ready_rows(snap, HOLD_AT)] == ["held"]
 
 
-def test_waiting_until_reports_only_open_future_holds() -> None:
+def test_waiting_until_reports_open_and_blocked_future_holds() -> None:
     snap = _held()
     assert store.waiting_until("held", snap, NOW) == HOLD
     assert store.waiting_until("held", snap, HOLD_AT) is None
     store.op_update(snap, "held", status="blocked")
-    assert store.waiting_until("held", snap, NOW) is None
+    assert store.waiting_until("held", snap, NOW) == HOLD
     assert store.is_ready("held", snap, HOLD_AT) is False
+
+
+def test_closed_task_keeps_an_inert_hold() -> None:
+    snap = _held()
+    take = store.op_take(snap, "held", "w1", now=NOW)
+    store.op_finish(snap, "held", "w1", take["claim"]["generation"])
+    assert snap.details["held"]["not_before"] == HOLD
+    assert store.waiting_until("held", snap, NOW) is None
+    store.validate_snapshot(snap.index, snap.details)
 
 
 def test_hold_combines_with_unmet_needs() -> None:
@@ -83,6 +92,14 @@ def test_update_sets_normalizes_and_clears() -> None:
     store.op_update(snap, "task", not_before="", now=NOW)
     assert "not_before" not in snap.details["task"]
     assert store.is_ready("task", snap, NOW) is True
+
+
+def test_fractional_seconds_round_up_so_a_hold_never_ends_early() -> None:
+    snap = _snap()
+    store.op_create(snap, item_id="task", title="Task", not_before="2026-09-24T11:59:59.25Z", now=NOW)
+    assert snap.details["task"]["not_before"] == HOLD
+    store.op_update(snap, "task", not_before="2026-09-24T12:00:00.000000Z", now=NOW)
+    assert snap.details["task"]["not_before"] == HOLD
 
 
 @pytest.mark.parametrize(
@@ -148,6 +165,13 @@ def test_service_hides_refuses_and_releases_a_held_task(tmp_path: Path) -> None:
     refused = svc.take("held")
     assert not refused["ok"] and refused["code"] == "E_NOTHING_READY" and refused["kind"] == "gate"
     assert far in refused["error"] and 'not_before=""' in refused["error"]
+
+    # Parking a held task must not unlock take.
+    assert svc.update_item("held", status="blocked")["ok"]
+    parked = svc.take("held")
+    assert not parked["ok"] and parked["code"] == "E_NOTHING_READY"
+    assert svc.show_item("held")["data"]["waiting_until"] == far
+    assert svc.update_item("held", status="open")["ok"]
 
     bad = svc.update_item("held", not_before="2026-09-24T12:00:00")
     assert not bad["ok"] and bad["code"] == "E_STATE"
