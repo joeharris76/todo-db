@@ -9,7 +9,9 @@ State layout inside a checked-out state revision::
 entry owns exactly ``title``, ``priority``, ``status``, ``claim``, and optional
 ``needs`` IDs. Detail files carry descriptions, acceptance criteria, links,
 and retained task context. Detail files must not contain independently
-editable copies of index-owned fields.
+editable copies of index-owned fields. An optional detail-owned
+``not_before`` (UTC ISO Z) holds an open task out of the ready queue until
+that moment; the status stays ``open`` so the task returns on its own.
 
 Lifecycle: ``open``, ``active``, ``blocked``, ``done``, ``dropped``.
 Priorities preserve the historical bands: ``critical``, ``high``,
@@ -252,6 +254,71 @@ def parse_ts(raw: str) -> datetime:
 
 def new_generation() -> str:
     return uuid4().hex
+
+
+#: Canonical stored form for ``not_before``, matching claim expiry stamps.
+NOT_BEFORE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+#: Accepted input grammar: RFC 3339 date-time with a required offset.
+#: ``fromisoformat`` alone also accepts ISO week dates and basic formats.
+RFC3339_INPUT_RE = re.compile(
+    r"^(\d{4}-\d{2}-\d{2})[Tt ](\d{2}:\d{2}:\d{2})(?:\.(\d+))?([Zz]|[+-]\d{2}:\d{2})$"
+)
+
+
+def normalize_not_before(raw: Any, now: datetime | None = None) -> str:
+    """Validate a caller-supplied hold time and return its stored form.
+
+    Input must carry an explicit offset: a naive time is ambiguous across
+    writers, so unlike :func:`parse_ts` it is rejected rather than read as
+    UTC. A time already past is rejected as a likely typo; stored values are
+    never re-checked against the clock, since every hold eventually passes.
+    Fractional seconds round up so a hold never ends early.
+    """
+    if not isinstance(raw, str) or not raw.strip():
+        raise TodoError("not_before must be an RFC 3339 timestamp", code=E_STATE)
+    text = raw.strip()
+    match = RFC3339_INPUT_RE.fullmatch(text)
+    if match is None:
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}[Tt ]\d{2}:\d{2}:\d{2}(?:\.\d+)?", text):
+            raise TodoError(f"not_before {raw!r} has no UTC offset; add Z or +hh:mm", code=E_STATE)
+        raise TodoError(f"invalid not_before {raw!r}: expected RFC 3339 with Z or an offset", code=E_STATE)
+    day, clock, fraction, offset = match.groups()
+    offset = "+00:00" if offset in ("Z", "z") else offset
+    try:
+        # Python 3.10's fromisoformat rejects most fraction lengths, so the
+        # fraction is handled here rather than parsed.
+        moment = datetime.fromisoformat(f"{day}T{clock}{offset}")
+    except ValueError as exc:
+        raise TodoError(f"invalid not_before {raw!r}: expected RFC 3339 with Z or an offset", code=E_STATE) from exc
+    moment = moment.astimezone(timezone.utc)
+    if fraction and fraction.strip("0"):
+        moment += timedelta(seconds=1)
+    if moment <= (now or datetime.now(timezone.utc)):
+        raise TodoError(f"not_before {raw!r} is not in the future", code=E_STATE)
+    return moment.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def hold_until(item_id: str, snapshot: Snapshot, now: datetime | None = None) -> str | None:
+    """Return a task's hold time while it is still in the future, whatever its status."""
+    if item_id not in snapshot.index["items"]:
+        return None
+    raw = snapshot.details.get(item_id, {}).get("not_before")
+    if not isinstance(raw, str):
+        return None
+    if parse_ts(raw) <= (now or datetime.now(timezone.utc)):
+        return None
+    return raw
+
+
+def waiting_until(item_id: str, snapshot: Snapshot, now: datetime | None = None) -> str | None:
+    """Return the hold time while an open or blocked task is still waiting.
+
+    Blocked tasks count so that parking a held task cannot unlock ``take``.
+    """
+    entry = snapshot.index["items"].get(item_id)
+    if entry is None or entry["status"] not in ("open", "blocked"):
+        return None
+    return hold_until(item_id, snapshot, now)
 
 
 def claim_is_live(claim: dict[str, Any] | None, now: datetime | None = None) -> bool:
@@ -701,6 +768,13 @@ def validate_snapshot(index: Any, details: dict[str, Any]) -> dict[str, Any]:
             if version < 3:
                 raise TodoError("final evidence requires index schema version 3", code=E_SCHEMA)
             _validate_final_evidence(item_id, detail["final_evidence"])
+        if "not_before" in detail:
+            # Additive like sessions: older readers load and preserve the
+            # key but do not enforce the hold.
+            value = detail["not_before"]
+            if not isinstance(value, str) or not NOT_BEFORE_RE.fullmatch(value):
+                raise TodoError(f"detail for {item_id!r}: 'not_before' must be UTC ISO Z", code=E_STATE)
+            parse_ts(value)
         if "sessions" in detail:
             # Additive session history: absence stays valid for
             # pre-history items, presence must validate.
@@ -847,6 +921,8 @@ def is_ready(item_id: str, snapshot: Snapshot, now: datetime | None = None) -> b
         return False
     if claim_is_live(entry.get("claim"), now):
         return False
+    if waiting_until(item_id, snapshot, now) is not None:
+        return False
     detail = snapshot.details.get(item_id, {})
     batch = detail.get("batch")
     implementation_deps = set(batch.get("implementation_dependencies", [])) if isinstance(batch, dict) else set()
@@ -935,8 +1011,11 @@ def op_create(
     links: list[str] | tuple[str, ...] = (),
     context: str = "",
     batch: dict[str, Any] | None = None,
+    not_before: str = "",
+    now: datetime | None = None,
 ) -> str:
     validate_id(item_id)
+    hold = normalize_not_before(not_before, now) if not_before else None
     items = snapshot.index["items"]
     if item_id in items:
         raise TodoError(f"duplicate task ID {item_id!r}", code=E_STATE)
@@ -967,6 +1046,8 @@ def op_create(
         detail["links"] = list(links)
     if context:
         detail["context"] = context
+    if hold is not None:
+        detail["not_before"] = hold
     if batch is not None:
         detail["batch"] = json.loads(json.dumps(batch))
     snapshot.details[item_id] = detail
@@ -1022,10 +1103,14 @@ def op_update(
     context: str | None = None,
     status: str | None = None,
     batch: dict[str, Any] | None = None,
+    not_before: str | None = None,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
     items = snapshot.index["items"]
     if item_id not in items:
         raise TodoError(f"unknown task {item_id!r}", code=E_STATE)
+    # An empty string clears the hold, as it clears the other detail fields.
+    hold = normalize_not_before(not_before, now) if not_before else None
     existing_batch = snapshot.details[item_id].get("batch")
     if batch is not None and isinstance(existing_batch, dict) and batch != existing_batch:
         raise TodoError(
@@ -1096,6 +1181,12 @@ def op_update(
         else:
             detail.pop("context", None)
         changed.append("context")
+    if not_before is not None:
+        if hold is not None:
+            detail["not_before"] = hold
+        else:
+            detail.pop("not_before", None)
+        changed.append("not_before")
     if batch is not None:
         if batch != existing_batch:
             if snapshot.index["schema_version"] < SCHEMA_VERSION:
