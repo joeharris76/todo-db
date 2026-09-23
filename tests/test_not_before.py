@@ -94,6 +94,13 @@ def test_update_sets_normalizes_and_clears() -> None:
     assert store.is_ready("task", snap, NOW) is True
 
 
+@pytest.mark.parametrize("good", ["2026-09-24T12:00:00Z", "2026-09-24t12:00:00z", "2026-09-24 12:00:00Z", "2026-09-24T08:00:00-04:00"])
+def test_accepts_rfc3339_variants(good: str) -> None:
+    snap = _snap()
+    store.op_create(snap, item_id="task", title="Task", not_before=good, now=NOW)
+    assert snap.details["task"]["not_before"] == HOLD
+
+
 def test_fractional_seconds_round_up_so_a_hold_never_ends_early() -> None:
     snap = _snap()
     store.op_create(snap, item_id="task", title="Task", not_before="2026-09-24T11:59:59.25Z", now=NOW)
@@ -104,7 +111,11 @@ def test_fractional_seconds_round_up_so_a_hold_never_ends_early() -> None:
 
 @pytest.mark.parametrize(
     "bad",
-    ["2026-09-24T12:00:00", "2026-09-24", "tomorrow", "2026-13-01T00:00:00Z", "   ", "2026-09-23T11:59:59Z", "2026-09-23T12:00:00Z"],
+    [
+        "2026-09-24T12:00:00", "2026-09-24", "tomorrow", "2026-13-01T00:00:00Z", "   ",
+        "2026-09-23T11:59:59Z", "2026-09-23T12:00:00Z",
+        "2026-W40-1T12:00:00Z", "20260924T120000+00:00", "2026-09-24T12:00Z", "2026-09-24T12:00:00+0000",
+    ],
 )
 def test_rejects_naive_malformed_and_past_holds(bad: str) -> None:
     snap = _snap()
@@ -180,3 +191,20 @@ def test_service_hides_refuses_and_releases_a_held_task(tmp_path: Path) -> None:
     assert shown["ready"] is True and "waiting_until" not in shown
     took = svc.take("held")
     assert took["ok"], took
+
+
+def test_hold_set_during_a_claim_blocks_finish(tmp_path: Path) -> None:
+    svc = _svc(tmp_path)
+    far = (datetime.now(timezone.utc) + timedelta(days=14)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    assert svc.create_item("watch", "Watch window")["ok"]
+    gen = svc.take("watch")["data"]["claim"]["generation"]
+    assert svc.update_item("watch", not_before=far)["ok"]
+    early = svc.finish("watch", gen)
+    assert not early["ok"] and early["code"] == "E_NOTHING_READY" and early["kind"] == "gate"
+    assert far in early["error"]
+    # The holder can still hand the claim back, and it comes back held.
+    assert svc.release("watch", gen)["ok"]
+    assert svc.take("watch")["code"] == "E_NOTHING_READY"
+    assert svc.update_item("watch", not_before="")["ok"]
+    gen = svc.take("watch")["data"]["claim"]["generation"]
+    assert svc.finish("watch", gen)["ok"]

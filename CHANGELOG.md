@@ -18,7 +18,7 @@ adheres to [Semantic Versioning](https://semver.org/).
 - Time-held readiness. `create_item` and `update_item` accept `not_before`,
   a future RFC 3339 time, which keeps an open task out of the ready queue
   until then. Rows and `show_item` show `waiting_until` while the hold
-  applies, `take` refuses a held task with `E_NOTHING_READY`, and
+  applies, `take` and `finish` refuse a held task with `E_NOTHING_READY`, and
   `not_before=""` clears it. Older clients load and keep the field but do
   not enforce it; upgrade them before relying on holds.
 

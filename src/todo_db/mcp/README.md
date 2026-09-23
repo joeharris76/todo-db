@@ -30,10 +30,10 @@ upgraded state, and there is no runtime capability negotiation.
 
 `create_item` and `update_item` accept `not_before`, a future RFC 3339 time
 with `Z` or an offset. It holds an open task out of the ready queue until that
-time, and `take` refuses the task until then; `not_before=""` clears it. The
-field lives in the detail file and does not change the schema version, so an
-older server loads and keeps it but does not enforce the hold. Upgrade every
-server with access to the branch before relying on it.
+time, and `take` and `finish` refuse the task until then; `not_before=""`
+clears it. The field lives in the detail file and does not change the schema
+version, so an older server loads and keeps it but does not enforce the hold.
+Upgrade every server with access to the branch before relying on it.
 
 ## SDK pin
 

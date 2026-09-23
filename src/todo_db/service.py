@@ -1049,6 +1049,14 @@ class TrackerService:
         worker = self.worker
 
         def apply(snap: S.Snapshot, op_id: str) -> dict[str, Any]:
+            # A hold set after the claim was taken still guards completion.
+            held = S.hold_until(item_id, snap, datetime.now(timezone.utc))
+            if held is not None:
+                raise TodoError(
+                    f"task {item_id!r} is held until {held}; finish after then, "
+                    "or clear it with update_item not_before=\"\"",
+                    code=E_NOTHING_READY,
+                )
             checked = final_evidence
             if checked is not None:
                 checked = self._validate_final_checkout(snap, item_id, checked)

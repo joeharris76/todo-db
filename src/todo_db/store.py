@@ -258,6 +258,11 @@ def new_generation() -> str:
 
 #: Canonical stored form for ``not_before``, matching claim expiry stamps.
 NOT_BEFORE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+#: Accepted input grammar: RFC 3339 date-time with a required offset.
+#: ``fromisoformat`` alone also accepts ISO week dates and basic formats.
+RFC3339_INPUT_RE = re.compile(
+    r"^(\d{4}-\d{2}-\d{2})[Tt ](\d{2}:\d{2}:\d{2})(?:\.(\d+))?([Zz]|[+-]\d{2}:\d{2})$"
+)
 
 
 def normalize_not_before(raw: Any, now: datetime | None = None) -> str:
@@ -271,18 +276,38 @@ def normalize_not_before(raw: Any, now: datetime | None = None) -> str:
     """
     if not isinstance(raw, str) or not raw.strip():
         raise TodoError("not_before must be an RFC 3339 timestamp", code=E_STATE)
+    text = raw.strip()
+    match = RFC3339_INPUT_RE.fullmatch(text)
+    if match is None:
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}[Tt ]\d{2}:\d{2}:\d{2}(?:\.\d+)?", text):
+            raise TodoError(f"not_before {raw!r} has no UTC offset; add Z or +hh:mm", code=E_STATE)
+        raise TodoError(f"invalid not_before {raw!r}: expected RFC 3339 with Z or an offset", code=E_STATE)
+    day, clock, fraction, offset = match.groups()
+    offset = "+00:00" if offset in ("Z", "z") else offset
     try:
-        moment = datetime.fromisoformat(raw.strip().replace("Z", "+00:00"))
+        # Python 3.10's fromisoformat rejects most fraction lengths, so the
+        # fraction is handled here rather than parsed.
+        moment = datetime.fromisoformat(f"{day}T{clock}{offset}")
     except ValueError as exc:
         raise TodoError(f"invalid not_before {raw!r}: expected RFC 3339 with Z or an offset", code=E_STATE) from exc
-    if moment.tzinfo is None:
-        raise TodoError(f"not_before {raw!r} has no UTC offset; add Z or +hh:mm", code=E_STATE)
     moment = moment.astimezone(timezone.utc)
-    if moment.microsecond:
-        moment = moment.replace(microsecond=0) + timedelta(seconds=1)
+    if fraction and fraction.strip("0"):
+        moment += timedelta(seconds=1)
     if moment <= (now or datetime.now(timezone.utc)):
         raise TodoError(f"not_before {raw!r} is not in the future", code=E_STATE)
     return moment.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def hold_until(item_id: str, snapshot: Snapshot, now: datetime | None = None) -> str | None:
+    """Return a task's hold time while it is still in the future, whatever its status."""
+    if item_id not in snapshot.index["items"]:
+        return None
+    raw = snapshot.details.get(item_id, {}).get("not_before")
+    if not isinstance(raw, str):
+        return None
+    if parse_ts(raw) <= (now or datetime.now(timezone.utc)):
+        return None
+    return raw
 
 
 def waiting_until(item_id: str, snapshot: Snapshot, now: datetime | None = None) -> str | None:
@@ -293,12 +318,7 @@ def waiting_until(item_id: str, snapshot: Snapshot, now: datetime | None = None)
     entry = snapshot.index["items"].get(item_id)
     if entry is None or entry["status"] not in ("open", "blocked"):
         return None
-    raw = snapshot.details.get(item_id, {}).get("not_before")
-    if not isinstance(raw, str):
-        return None
-    if parse_ts(raw) <= (now or datetime.now(timezone.utc)):
-        return None
-    return raw
+    return hold_until(item_id, snapshot, now)
 
 
 def claim_is_live(claim: dict[str, Any] | None, now: datetime | None = None) -> bool:

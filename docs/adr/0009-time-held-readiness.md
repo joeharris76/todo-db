@@ -31,8 +31,10 @@ stalled ones and needs someone to reopen each task by hand.
    - Consequence: an older client does not enforce the hold. It lists and
      takes a held task exactly as before this change. Upgrade every client
      with access to the state branch before relying on holds.
-3. **Format.** Input is RFC 3339 with `Z` or an explicit offset. Naive times
-   are rejected because writers may be in different zones. A time that is
+3. **Format.** Input is an RFC 3339 date-time with `Z` or an explicit offset,
+   checked against that grammar before parsing, because `fromisoformat` also
+   accepts ISO week dates and basic formats. Naive times are rejected because
+   writers may be in different zones. A time that is
    not in the future is rejected on create and update as a likely mistake.
    The stored form is `YYYY-MM-DDTHH:MM:SSZ`, matching `claim.expires_at`;
    fractional seconds round up so a hold never ends early. The service judges
@@ -46,6 +48,10 @@ stalled ones and needs someone to reopen each task by hand.
    batch-readiness refusal; `op_take` stays readiness-agnostic. The hold also
    applies while a task is `blocked`, so parking a held task cannot unlock
    `take`. A `blocked` task without a hold remains takeable, as before.
+   `finish` also refuses with `E_NOTHING_READY` while a future hold exists,
+   whatever the status, so a hold set on a task that is already claimed still
+   guards completion. The holder can release the claim; `take` does not check
+   active tasks, so a restarted worker can still re-adopt its own claim.
    `drop` is not gated: abandoning a task is a separate human decision, and
    the hold guards against early completion, not abandonment.
 5. **Clearing.** `not_before=""` clears the hold, as an empty string clears
