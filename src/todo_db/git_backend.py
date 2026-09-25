@@ -553,6 +553,32 @@ def _offline_cached(ns: Path, ref: StateRef) -> ReadOutcome:
     return ReadOutcome(snapshot=load_snapshot(ns / "revs" / rev), rev=rev, stale=True)
 
 
+def _fetch_tip_snapshot(tmp: Path, ref: StateRef) -> Path | None:
+    """Fetch only the state branch tip into a fresh repo.
+
+    A full clone transfers every ref of the remote — for remotes that also
+    carry code history that dominates read latency — while a read only
+    needs the tip tree of the one state branch. Returns the workdir, or
+    None when the remote flaked mid-read.
+    """
+    work = tmp / "w"
+    work.mkdir(parents=True, exist_ok=True)
+    if _git(["init", "--quiet", "-b", "main"], work).returncode != 0:
+        return None
+    if _git(["remote", "add", "origin", ref.remote], work).returncode != 0:
+        return None
+    fetch = _git(["fetch", "--quiet", "--depth", "1", "origin", ref.branch], work)
+    if fetch.returncode != 0:
+        # Servers without shallow support still serve a single-branch fetch
+        # of just the state branch's history: still no code refs.
+        fetch = _git(["fetch", "--quiet", "origin", ref.branch], work)
+    if fetch.returncode != 0:
+        return None
+    if _git(["checkout", "--quiet", "FETCH_HEAD"], work).returncode != 0:
+        return None
+    return work
+
+
 def read(ref: StateRef, cache_dir: str | Path) -> ReadOutcome:
     """Load the accepted tip, falling back to a cached revision offline.
 
@@ -560,6 +586,10 @@ def read(ref: StateRef, cache_dir: str | Path) -> ReadOutcome:
     after the fetch — never an earlier observation. Mutations never use
     this path: they go through :func:`mutate`, which fails offline rather
     than succeeding locally.
+
+    Fast paths: a snapshot cached under the resolved tip is served without
+    a fetch (content-addressed, so it cannot be stale); otherwise only the
+    state branch tip is fetched instead of cloning the whole remote.
     """
     ns = _ns_dir(cache_dir, ref)
     try:
@@ -570,19 +600,28 @@ def read(ref: StateRef, cache_dir: str | Path) -> ReadOutcome:
         raise TodoError(
             f"state branch {ref.branch!r} is missing; run bootstrap", code=E_STATE
         )
+    cached = ns / "revs" / tip
+    cached_present = (cached / INDEX_NAME).is_file()
+    if cached_present:
+        try:
+            snapshot = load_snapshot(cached)
+        except TodoError:
+            snapshot = None
+        if snapshot is not None:
+            _remember_rev(ns, tip)
+            return ReadOutcome(snapshot=snapshot, rev=tip, stale=False)
     tmp = Path(tempfile.mkdtemp(prefix="todo-read-"))
     try:
-        clone = _git(["clone", "--quiet", "--origin", "origin", ref.remote, str(tmp / "w")])
-        work = tmp / "w"
-        fetch = _git(["fetch", "--quiet", "origin", ref.branch], work)
-        checkout = _git(["checkout", "--quiet", "FETCH_HEAD"], work)
-        if clone.returncode != 0 or fetch.returncode != 0 or checkout.returncode != 0:
+        work = _fetch_tip_snapshot(tmp, ref)
+        if work is None:
             # The remote flaked mid-read; fall back to this branch's cache.
             return _offline_cached(ns, ref)
         actual = _git_ok(["rev-parse", "HEAD"], work)
         snapshot = load_snapshot(work)
         dest = ns / "revs" / actual
-        if not (dest / INDEX_NAME).is_file():
+        if (dest == cached and cached_present) or not (dest / INDEX_NAME).is_file():
+            # A corrupt cache entry under the loaded tip is replaced so the
+            # next read serves it directly instead of refetching every time.
             dest.mkdir(parents=True, exist_ok=True)
             save_snapshot(dest, snapshot)
         _remember_rev(ns, actual)
