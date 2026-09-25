@@ -361,8 +361,10 @@ def test_startup_schema_cost_is_small(tmp_path: Path) -> None:
                                       for t in tools.tools])
             tokens, tokenizer = count_tokens(schema_blob + INSTRUCTIONS)
             assert tokenizer == "o200k_base"
-            # 10 tools plus the full protocol guidance, against 3,344 for
-            # the old 26 tool definitions alone.
-            assert tokens <= 3500, tokens
+            # 15 tools plus the full protocol guidance, against 3,344 for
+            # the old 26 tool definitions alone. Bumped for the audited
+            # takeover tool (3-parameter schema plus one guidance line):
+            # deliberate, reviewed surface, still far below the old count.
+            assert tokens <= 3700, tokens
 
     anyio.run(go)

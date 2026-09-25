@@ -496,6 +496,8 @@ class TrackerService:
     def _record_session(
         self, snap: S.Snapshot, item_id: str, op: str, op_id: str,
         generation: str | None = None,
+        reason: str | None = None,
+        displaced: str | None = None,
     ) -> None:
         # History annotates; it never gates. Constructions without a
         # session (legacy callers, older tests) skip recording and the
@@ -505,7 +507,37 @@ class TrackerService:
         S.record_session(
             snap, item_id, actor=self.worker, session_id=self.session_id,
             client=self.client_name, op=op, op_id=op_id, generation=generation,
+            reason=reason, displaced=displaced,
         )
+
+    def _check_take_readiness(self, snap: S.Snapshot, item_id: str, now: datetime) -> None:
+        """Batch/dependency readiness shared by take and takeover.
+
+        Both acquire a live claim; both must refuse unready batch members
+        identically, or takeover would bypass the guards take enforces.
+        Both also honor the not_before hold: a held task is refused
+        rather than taken early.
+        """
+        # A held task is refused rather than taken early: taking and
+        # finishing it would close the task before its wait ends.
+        waiting = S.waiting_until(item_id, snap, now)
+        if waiting is not None:
+            raise TodoError(
+                f"task {item_id!r} is waiting until {waiting}; "
+                "to override, clear it with update_item not_before=\"\"",
+                code=E_NOTHING_READY,
+            )
+        detail = snap.details.get(item_id, {})
+        batch_meta = detail.get("batch") if isinstance(detail, dict) else None
+        if isinstance(batch_meta, dict):
+            entry = snap.index["items"].get(item_id, {})
+            implementation_deps = set(batch_meta.get("implementation_dependencies", []))
+            has_prepared_edge = any(
+                dep in implementation_deps and snap.index["items"][dep]["status"] != "done"
+                for dep in entry.get("needs", [])
+            )
+            if has_prepared_edge and (not S.is_ready(item_id, snap, now) or not self._batch_runtime_ready(snap, item_id)):
+                raise TodoError(f"task {item_id!r} is not ready at the current integration head", code=E_NOTHING_READY)
 
     def _mutate(
         self, op: str, summary: str,
@@ -758,7 +790,13 @@ class TrackerService:
 
     def abort_batch(self, batch_id: str, owner_generation: str) -> dict[str, Any]:
         def apply(snap: S.Snapshot, op_id: str) -> dict[str, Any]:
-            return S.op_abort_batch(snap, batch_id, self.worker, owner_generation)
+            out = S.op_abort_batch(snap, batch_id, self.worker, owner_generation)
+            # A repeat abort changes nothing: keep the legacy refusal by
+            # recording nothing, mirroring the no-op update path.
+            if not out.get("idempotent"):
+                for member in out.get("affected", []):
+                    self._record_session(snap, member, "abort", op_id)
+            return out
 
         return self._mutate("abort_batch", f"{self.worker} aborts batch {batch_id}", apply)
 
@@ -813,6 +851,11 @@ class TrackerService:
             # the outcome depending on whether a session is attached.
             if out.get("changed"):
                 self._record_session(snap, item_id, "update", op_id)
+            # Downstream members whose receipts this edit invalidated get
+            # their own entries under the same op_id, so one commit links
+            # the whole cascade.
+            for dependent in out.get("invalidated", []):
+                self._record_session(snap, dependent, "invalidate", op_id)
             return out
 
         return self._mutate("update", f"edit {item_id}", apply)
@@ -828,39 +871,12 @@ class TrackerService:
                     f"worker {worker!r} already holds a live claim on {held!r}; release or finish it first",
                     code=E_MULTIPLE_CLAIMS,
                 )
-            # A held task is refused rather than taken early: taking and
-            # finishing it would close the task before its wait ends.
-            waiting = S.waiting_until(item_id, snap, now)
-            if waiting is not None:
-                raise TodoError(
-                    f"task {item_id!r} is waiting until {waiting}; "
-                    "to override, clear it with update_item not_before=\"\"",
-                    code=E_NOTHING_READY,
-                )
-            detail = snap.details.get(item_id, {})
-            batch_meta = detail.get("batch") if isinstance(detail, dict) else None
-            if isinstance(batch_meta, dict):
-                entry = snap.index["items"].get(item_id, {})
-                implementation_deps = set(batch_meta.get("implementation_dependencies", []))
-                has_prepared_edge = any(
-                    dep in implementation_deps and snap.index["items"][dep]["status"] != "done"
-                    for dep in entry.get("needs", [])
-                )
-                if has_prepared_edge and (not S.is_ready(item_id, snap, now) or not self._batch_runtime_ready(snap, item_id)):
-                    raise TodoError(f"task {item_id!r} is not ready at the current integration head", code=E_NOTHING_READY)
+            self._check_take_readiness(snap, item_id, now)
             took = S.op_take(snap, item_id, worker, ttl_hours=self.ttl_hours)
             self._record_session(
                 snap, item_id, "take", op_id, generation=took["claim"]["generation"]
             )
             entry = snap.index["items"][item_id]
-            detail = snap.details[item_id]
-            needs = list(entry.get("needs", []))
-            unmet = [d for d in needs if snap.index["items"][d]["status"] != "done"]
-            description = detail.get("description", "")
-            # The claim is already committed by the time the acknowledgement
-            # is built, so the minimal ack — identity, claim, revision —
-            # always survives: context is trimmed to fit before publication,
-            # never after.
             ack: dict[str, Any] = {
                 "id": item_id,
                 "status": "active",
@@ -871,50 +887,134 @@ class TrackerService:
                     "expires_at": took["claim"]["expires_at"],
                 },
             }
-            context: dict[str, Any] = {}
-            if len(needs) <= NEEDS_INLINE:
-                context["needs"] = needs
-                context["unmet_needs"] = unmet
-            else:
-                context["needs"] = {
-                    "values": needs[:NEEDS_INLINE],
-                    "total": len(needs),
-                    "continuation": {"field": "needs", "offset": NEEDS_INLINE, "budget": SECTION_BUDGET},
-                }
-                context["unmet_needs"] = {
-                    "values": unmet[:NEEDS_INLINE],
-                    "total": len(unmet),
-                    "continuation": {"field": "unmet_needs", "offset": NEEDS_INLINE, "budget": SECTION_BUDGET},
-                }
-            excerpt = description[:TAKE_EXCERPT]
-            while excerpt and not _fits(ok({**ack, **context, "description_excerpt": excerpt})):
-                excerpt = excerpt[: len(excerpt) // 2]
-            context["description_excerpt"] = excerpt
-            if len(description) > len(excerpt):
-                context["description_continuation"] = {
-                    "field": "description",
-                    "offset": len(excerpt),
-                    "budget": SECTION_BUDGET,
-                }
-            # Size against the post-commit envelope: _mutate injects the
-            # 40-char revision afterwards, so a boundary fit here must not
-            # become an overflow there.
-            def fits_published(candidate: dict[str, Any]) -> bool:
-                return _fits(ok({"rev": "0" * 40, **candidate}))
-
-            candidate = {**ack, **context}
-            if fits_published(candidate):
-                return candidate
-            # Degenerate fallback: context that still overflows is dropped
-            # rather than stranding the worker without its generation.
-            del context["description_excerpt"]
-            context["description_continuation"] = {"field": "description", "offset": 0, "budget": SECTION_BUDGET}
-            candidate = {**ack, **context}
-            if fits_published(candidate):
-                return candidate
-            return ack
+            return self._claim_ack(snap, item_id, ack)
 
         return self._mutate("take", f"{worker} takes {item_id}", apply)
+
+    def _claim_ack(self, snap: S.Snapshot, item_id: str, ack: dict[str, Any]) -> dict[str, Any]:
+        """Attach working context to a claim ack without breaking the cap.
+
+        Shared by take and takeover: both hand a worker a live claim it
+        must immediately work from. The claim is already committed, so the
+        minimal ack — identity, claim, revision — always survives: context
+        is trimmed to fit before publication, never after.
+        """
+        entry = snap.index["items"][item_id]
+        detail = snap.details[item_id]
+        needs = list(entry.get("needs", []))
+        unmet = [d for d in needs if snap.index["items"][d]["status"] != "done"]
+        description = detail.get("description", "")
+        context: dict[str, Any] = {}
+        if len(needs) <= NEEDS_INLINE:
+            context["needs"] = needs
+            context["unmet_needs"] = unmet
+        else:
+            context["needs"] = {
+                "values": needs[:NEEDS_INLINE],
+                "total": len(needs),
+                "continuation": {"field": "needs", "offset": NEEDS_INLINE, "budget": SECTION_BUDGET},
+            }
+            context["unmet_needs"] = {
+                "values": unmet[:NEEDS_INLINE],
+                "total": len(unmet),
+                "continuation": {"field": "unmet_needs", "offset": NEEDS_INLINE, "budget": SECTION_BUDGET},
+            }
+        excerpt = description[:TAKE_EXCERPT]
+        while excerpt and not _fits(ok({**ack, **context, "description_excerpt": excerpt})):
+            excerpt = excerpt[: len(excerpt) // 2]
+        context["description_excerpt"] = excerpt
+        if len(description) > len(excerpt):
+            context["description_continuation"] = {
+                "field": "description",
+                "offset": len(excerpt),
+                "budget": SECTION_BUDGET,
+            }
+        # Size against the post-commit envelope: _mutate injects the
+        # 40-char revision afterwards, so a boundary fit here must not
+        # become an overflow there.
+        def fits_published(candidate: dict[str, Any]) -> bool:
+            return _fits(ok({"rev": "0" * 40, **candidate}))
+
+        candidate = {**ack, **context}
+        if fits_published(candidate):
+            return candidate
+        # Degenerate fallback: context that still overflows is dropped
+        # rather than stranding the worker without its generation.
+        del context["description_excerpt"]
+        context["description_continuation"] = {"field": "description", "offset": 0, "budget": SECTION_BUDGET}
+        candidate = {**ack, **context}
+        if fits_published(candidate):
+            return candidate
+        return ack
+
+    def takeover(self, item_id: str, expected_holder: str, reason: str) -> dict[str, Any]:
+        """Take over a live foreign claim whose session cannot resume.
+
+        Authority transfer, not re-adoption: the caller names the exact
+        holder it inspected (`expected_holder`) and asserts why that
+        session is dead (`reason`). The full claim image is pinned on the
+        first attempt so a renewal or handover under retry fails
+        `E_CONFLICT` instead of stealing the replacement claim. Unlike
+        every other mutation, history here gates: without a session the
+        transfer would be unattributed, so sessionless callers are
+        refused instead of recorded-skipped.
+        """
+        worker = self.worker
+        if self.session_id is None:
+            return err(E_STATE, "takeover requires a session-attributed caller")
+        pre_claim: dict[str, Any] | None = None
+        seen_claim = False
+
+        def apply(snap: S.Snapshot, op_id: str) -> dict[str, Any]:
+            nonlocal pre_claim, seen_claim
+            now = datetime.now(timezone.utc)
+            held = self._held_claim(snap, now)
+            if held is not None and held != item_id:
+                raise TodoError(
+                    f"worker {worker!r} already holds a live claim on {held!r}; release or finish it first",
+                    code=E_MULTIPLE_CLAIMS,
+                )
+            if item_id not in snap.index["items"]:
+                raise TodoError(f"unknown task {item_id!r}", code=E_STATE)
+            current = snap.index["items"][item_id].get("claim")
+            if not seen_claim:
+                # First attempt: pin the exact claim under transfer.
+                seen_claim = True
+                pre_claim = json.loads(json.dumps(current))
+            elif current != pre_claim:
+                # Renewal, release, or handover moved under us: the
+                # inspected claim is gone, so there is nothing audited
+                # left to transfer. Re-read and decide deliberately.
+                raise TodoError(
+                    f"claim on {item_id!r} changed concurrently; re-read with show and retry",
+                    code=E_CONFLICT,
+                )
+            self._check_take_readiness(snap, item_id, now)
+            took = S.op_takeover(
+                snap, item_id, worker, expected_holder, reason, ttl_hours=self.ttl_hours,
+            )
+            self._record_session(
+                snap, item_id, "takeover", op_id, generation=took["claim"]["generation"],
+                reason=reason, displaced=took["displaced"],
+            )
+            entry = snap.index["items"][item_id]
+            ack: dict[str, Any] = {
+                "id": item_id,
+                "status": "active",
+                "title": entry["title"],
+                "priority": entry["priority"],
+                "claim": {
+                    "generation": took["claim"]["generation"],
+                    "expires_at": took["claim"]["expires_at"],
+                },
+                "displaced": took["displaced"],
+                "transferred_batches": took["transferred_batches"],
+            }
+            return self._claim_ack(snap, item_id, ack)
+
+        return self._mutate(
+            "takeover", f"{worker} takes over {item_id} from {expected_holder}: {reason}", apply,
+        )
 
     def release(self, item_id: str, generation: str) -> dict[str, Any]:
         worker = self.worker

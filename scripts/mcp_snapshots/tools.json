@@ -654,6 +654,38 @@
     }
   },
   {
+    "name": "takeover",
+    "description": "Take over a live claim held by a session that cannot resume. Name the exact holder you inspected and why it is dead; the transfer is audited under your session.",
+    "inputSchema": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "expected_holder": {
+          "title": "Expected Holder",
+          "type": "string"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "expected_holder",
+        "reason"
+      ],
+      "title": "takeover_toolArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "takeover_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
     "name": "update_item",
     "description": "Edit task fields or move between open and blocked.",
     "inputSchema": {

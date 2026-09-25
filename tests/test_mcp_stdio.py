@@ -22,6 +22,7 @@ EXPECTED_TOOLS = {
     "register_batch",
     "show_item",
     "take",
+    "takeover",
     "update_item",
 }
 
