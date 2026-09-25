@@ -28,6 +28,13 @@ The first `register_batch` call that upgrades a state branch to schema 3 needs
 older process with access to that branch; schema-1 clients cannot read the
 upgraded state, and there is no runtime capability negotiation.
 
+`create_item` and `update_item` accept `not_before`, a future RFC 3339 time
+with `Z` or an offset. It holds an open task out of the ready queue until that
+time, and `take` and `finish` refuse the task until then; `not_before=""`
+clears it. The field lives in the detail file and does not change the schema
+version, so an older server loads and keeps it but does not enforce the hold.
+Upgrade every server with access to the branch before relying on it.
+
 ## SDK pin
 
 `mcp>=1.10.0,<2`. The 2.x major is a breaking rename

@@ -19,24 +19,23 @@ acknowledgement; lists return brief rows (id/title/priority/status).
 2. `show_item` -- one task with needs, readiness, and sections.
    Large fields arrive as section reads: field/offset/budget.
 3. `register_batch` -- register the immutable repository/integration contract
-   before any prepared member enrollment. The first schema-3 registration
-   requires `confirm_schema3_cutover=true` after every process with state-branch
-   access has been stopped or upgraded. Older clients cannot coexist after it.
-4. `create_item` -- id, title, priority (default medium),
-   description, needs, acceptance, links, context, and optional batch
-   metadata (`batch_id`, `member_id`, `implementation_dependencies`).
+   before enrolling prepared members. The first schema-3 registration needs
+   `confirm_schema3_cutover=true` once every process with state-branch access
+   is stopped or upgraded; older clients cannot coexist after it.
+4. `create_item` -- a task; optional batch metadata is `batch_id`,
+   `member_id`, `implementation_dependencies`.
 5. `take` -- claim a task; returns the claim generation plus enough
    context to begin work. One live claim per worker.
-6. `prepare` -- persist a member receipt and release its claim without
-   marking it done. It requires the registered batch, explicit same-batch edge,
-   actual member base, accepted/current heads, frozen scope, clean exact source
-   checkout, and passed bounded-suite evidence.
+6. `prepare` -- persist a member receipt and release its claim, not done.
+   Needs the registered batch, explicit same-batch edge, actual member base,
+   accepted/current heads, frozen scope, clean exact checkout, and passed
+   bounded-suite evidence.
 7. `bind_batch_pr` -- bind exactly one final PR identity after integration.
-8. `abort_batch` -- owner-authorized, resumable abort after all member claims
-   are released; invalidates prepared/final member evidence, retains any bound
-   final PR receipt, detaches non-terminal members from the archived batch,
-   and returns them to ordinary claim/finish. It refuses once a member is done
-   so partial closeout can resume without reopening it.
+8. `abort_batch` -- owner-only, resumable, after all member claims are
+   released. Invalidates prepared/final evidence, keeps any bound final PR
+   receipt, and returns non-terminal members to ordinary claim/finish outside
+   the archived batch. Refused once a member is done, so partial closeout
+   resumes without reopening it.
 9. `release` -- hand the claim back (needs the generation from take).
 10. `finish` -- close the task (needs the generation from take). Prepared
    tasks additionally require current combined-tree evidence covering every
@@ -50,6 +49,8 @@ acknowledgement; lists return brief rows (id/title/priority/status).
 is explicit, immutable after assignment, and never inferred from an ordinary
 dependency. A prepared member cannot be dropped while its batch is active;
 complete or abort the batch instead.
+
+`not_before` (future RFC 3339) holds an open task until then; `""` clears.
 
 ## Session history
 
@@ -66,9 +67,8 @@ invalidations, and dead-session takeovers record on members;
 
 `kind: "gate"` is an expected result to act on; `kind: "error"` is a
 failure -- stop and report it. Read `recovery` before improvising.
-Responses are capped at 16 KiB; lists page with cursors scoped to a
-state revision (a changed revision returns E_CURSOR_STALE: restart
-from the first page).
+Responses are capped at 16 KiB; list cursors are scoped to a state
+revision.
 
 ## Codes
 

@@ -39,10 +39,18 @@ a verification item, not a dismissal.
    commits, and PRs.
 3. Re-run the checks that prove each fix. This is implementation verification,
    not a new review scope.
-4. Turn unfixed Nit or Consider items into documented skips, or into follow-up
+4. Turn unfixed Nit or Consider items into documented skips (classified as
+   `DEFER` with a tracking reference or `REBUT` with rationale per
+   `shared-review-protocol/references/review-response.md`), or into follow-up
    items with `create_item(needs=[<batch item>])` rather than widening scope.
 
 ## Phase 3 — close tracker state
+
+Prepared feature members remain open until the integrator binds their commits
+to one current final tree and the member's final-tree verification passes.
+Then re-take each member and call `finish` with that evidence. Never close a
+member solely because its prepared receipt exists, its worker branch is an
+ancestor, or its PR is green.
 
 1. If you hold the claim, call `finish(id=..., generation=...)`.
 2. To close externally merged work without a live claim, `take` the item first,

@@ -194,13 +194,17 @@ class TrackerService:
             items = []
             for item_id, entry in page:
                 runtime_ready = self._batch_runtime_ready(outcome.snapshot, item_id)
-                items.append({
+                row = {
                     "id": item_id,
                     "title": entry["title"],
                     "priority": entry["priority"],
                     "status": entry["status"],
                     "ready": S.is_ready(item_id, outcome.snapshot, now) and runtime_ready,
-                })
+                }
+                waiting = S.waiting_until(item_id, outcome.snapshot, now)
+                if waiting is not None:
+                    row["waiting_until"] = waiting
+                items.append(row)
             remaining = total - offset - len(page)
             data: dict[str, Any] = {"items": items, "total": total, "limit": limit, "cursor_offset": offset}
             if outcome.stale:
@@ -271,6 +275,9 @@ class TrackerService:
                 "unlocks": S.downstream_unlocks(item_id, snap),
                 "rev": outcome.rev,
             }
+            waiting = S.waiting_until(item_id, snap, now)
+            if waiting is not None:
+                data["waiting_until"] = waiting
             if entry.get("claim"):
                 claim = entry["claim"]
                 data["claim"] = {
@@ -508,7 +515,18 @@ class TrackerService:
 
         Both acquire a live claim; both must refuse unready batch members
         identically, or takeover would bypass the guards take enforces.
+        Both also honor the not_before hold: a held task is refused
+        rather than taken early.
         """
+        # A held task is refused rather than taken early: taking and
+        # finishing it would close the task before its wait ends.
+        waiting = S.waiting_until(item_id, snap, now)
+        if waiting is not None:
+            raise TodoError(
+                f"task {item_id!r} is waiting until {waiting}; "
+                "to override, clear it with update_item not_before=\"\"",
+                code=E_NOTHING_READY,
+            )
         detail = snap.details.get(item_id, {})
         batch_meta = detail.get("batch") if isinstance(detail, dict) else None
         if isinstance(batch_meta, dict):
@@ -736,8 +754,12 @@ class TrackerService:
         return checked
 
     def create_item(self, item_id: str, title: str, **kwargs: Any) -> dict[str, Any]:
+        # Judge a not_before hold against the request time, not the time of
+        # a retry after a competing push.
+        requested = datetime.now(timezone.utc)
+
         def apply(snap: S.Snapshot, op_id: str) -> dict[str, Any]:
-            S.op_create(snap, item_id=item_id, title=title, **kwargs)
+            S.op_create(snap, item_id=item_id, title=title, now=requested, **kwargs)
             self._record_session(snap, item_id, "create", op_id)
             return {"id": item_id, "status": "open"}
 
@@ -790,10 +812,11 @@ class TrackerService:
         guarded = {key: kwargs[key] for key in self.UPDATE_GUARDED_FIELDS if key in kwargs}
         detail_guarded = {
             key: kwargs[key]
-            for key in ("description", "acceptance", "links", "context", "batch")
+            for key in ("description", "acceptance", "links", "context", "batch", "not_before")
             if key in kwargs
         }
         pre_image: dict[str, Any] | None = None
+        requested = datetime.now(timezone.utc)
 
         def snapshot_pre_image(snap: S.Snapshot) -> dict[str, Any]:
             entry = snap.index["items"][item_id]
@@ -822,7 +845,7 @@ class TrackerService:
                             "re-read and retry deliberately",
                             code=E_CONFLICT,
                         )
-            out = S.op_update(snap, item_id, **kwargs)
+            out = S.op_update(snap, item_id, now=requested, **kwargs)
             # A content-identical update changes nothing: recording it would
             # turn the legacy "no state change" refusal into a commit, with
             # the outcome depending on whether a session is attached.
@@ -1126,6 +1149,14 @@ class TrackerService:
         worker = self.worker
 
         def apply(snap: S.Snapshot, op_id: str) -> dict[str, Any]:
+            # A hold set after the claim was taken still guards completion.
+            held = S.hold_until(item_id, snap, datetime.now(timezone.utc))
+            if held is not None:
+                raise TodoError(
+                    f"task {item_id!r} is held until {held}; finish after then, "
+                    "or clear it with update_item not_before=\"\"",
+                    code=E_NOTHING_READY,
+                )
             checked = final_evidence
             if checked is not None:
                 checked = self._validate_final_checkout(snap, item_id, checked)

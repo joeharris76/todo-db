@@ -119,6 +119,7 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
         links: list[str] | None = None,
         context: str = "",
         batch: dict[str, Any] | None = None,
+        not_before: str = "",
         ctx: Context = None,  # type: ignore[assignment]
     ) -> dict[str, Any]:
         worker = _need_principal(holder, ctx)
@@ -128,6 +129,7 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
         return await asyncio.to_thread(
             svc.create_item, id, title, priority=priority, description=description,
             needs=needs or [], acceptance=acceptance or [], links=links or [], context=context, batch=batch,
+            not_before=not_before,
         )
 
     @server.tool(
@@ -179,6 +181,7 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
         context: str | None = None,
         batch: dict[str, Any] | None = None,
         status: str | None = None,
+        not_before: str | None = None,
         ctx: Context = None,  # type: ignore[assignment]
     ) -> dict[str, Any]:
         worker = _need_principal(holder, ctx)
@@ -204,6 +207,8 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
             kwargs["batch"] = batch
         if status is not None:
             kwargs["status"] = status
+        if not_before is not None:
+            kwargs["not_before"] = not_before
         return await asyncio.to_thread(svc.update_item, id, **kwargs)
 
     @server.tool(

@@ -4,7 +4,24 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.8.1] - 2026-09-25
+
+### Added
+
+- The audited claim takeover announced in 0.8.0 now actually ships in this
+  release: the implementation missed the 0.8.0 merge. `takeover(id,
+  expected_holder, reason)` lets a session take over a live foreign claim
+  whose holder cannot resume (see ADR 0008, amending ADR 0003 §2.2).
+
+### Fixed
+
+- Reads fetch only the state branch tip instead of cloning the whole
+  remote, and repeat reads at the same tip serve the cached snapshot.
+  Against production-scale state sharing a remote with code history this
+  cuts `list_items` from ~110s (past the 30s MCP client timeout) to
+  seconds cold and under a second warm.
+
+## [0.8.0] - 2026-09-23
 
 ### Added
 
@@ -21,6 +38,12 @@ adheres to [Semantic Versioning](https://semver.org/).
   members. State commits now also carry a
   `Todo-Session` trailer next to `Todo-Actor`, surfaced by history
   and recovery output.
+- Time-held readiness. `create_item` and `update_item` accept `not_before`,
+  a future RFC 3339 time, which keeps an open task out of the ready queue
+  until then. Rows and `show_item` show `waiting_until` while the hold
+  applies, `take` and `finish` refuse a held task with `E_NOTHING_READY`, and
+  `not_before=""` clears it. Older clients load and keep the field but do
+  not enforce it; upgrade them before relying on holds.
 
 ### Fixed
 
