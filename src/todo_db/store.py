@@ -109,12 +109,15 @@ SCOPE_HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 UPDATE_STATUSES = frozenset({"open", "blocked"})
 
 #: Item-level operations this version writes into the per-task session
-#: history. Batch registry operations (register/abort/bind) name no single
-#: item and are attributed through commit trailers instead. Readers stay
-#: lenient — an unknown op is a bounded token, never a load failure — so a
-#: future operation cannot strand older clients; only writers are bound to
-#: this allowlist.
-SESSION_OPS = frozenset({"create", "take", "renew", "release", "prepare", "finish", "drop", "update"})
+#: history. `abort`/`invalidate` name the member tasks a batch lifecycle
+#: path rewrote; register/bind touch no member details and stay
+#: trailer-only. Readers stay lenient — an unknown op is a bounded token,
+#: never a load failure — so a future operation cannot strand older
+#: clients; only writers are bound to this allowlist.
+SESSION_OPS = frozenset({
+    "create", "take", "renew", "release", "prepare", "finish", "drop", "update",
+    "abort", "invalidate",
+})
 
 OP_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 GENERATION_RE = re.compile(r"^[0-9a-f]{32}$")
@@ -1336,8 +1339,10 @@ def op_abort_batch(snapshot: Snapshot, batch_id: str, worker: str, owner_generat
         raise TodoError(f"batch {batch_id!r} has a live member claim; release it before abort", code=E_ACTIVE_CLAIMS)
     if any(snapshot.index["items"].get(member, {}).get("status") == "done" for member in batch["members"]):
         raise TodoError(f"batch {batch_id!r} has completed members; resume closeout instead of aborting", code=E_STATE)
+    affected: list[str] = []
     for member in batch["members"]:
         detail = snapshot.details.get(member, {})
+        lost_receipt = any(key in detail for key in ("prepared", "final_evidence", "batch"))
         detail.pop("prepared", None)
         detail.pop("final_evidence", None)
         # Keep the aborted registry as an audit record, but detach every
@@ -1347,14 +1352,21 @@ def op_abort_batch(snapshot: Snapshot, batch_id: str, worker: str, owner_generat
         detail.pop("batch", None)
         entry = snapshot.index["items"].get(member)
         if entry is not None:
+            had_claim = entry.get("claim") is not None
+            status_reset = entry.get("status") in ("blocked", "active")
             entry["claim"] = None
             if entry["status"] in ("open", "blocked", "active"):
                 entry["status"] = "open"
+            # Registry members without an index entry (phantom members)
+            # are skipped: only tasks that actually changed qualify, and
+            # recording on an unknown task would fail the whole abort.
+            if lost_receipt or had_claim or status_reset:
+                affected.append(member)
     batch["accepted_members"] = {}
     batch["integrated_members"] = {}
     batch["lifecycle"] = "aborted"
     validate_snapshot(snapshot.index, snapshot.details)
-    return {"batch_id": batch_id, "lifecycle": "aborted", "idempotent": False}
+    return {"batch_id": batch_id, "lifecycle": "aborted", "idempotent": False, "affected": affected}
 
 
 def _require_entry(snapshot: Snapshot, item_id: str) -> dict[str, Any]:

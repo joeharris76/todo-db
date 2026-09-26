@@ -758,7 +758,13 @@ class TrackerService:
 
     def abort_batch(self, batch_id: str, owner_generation: str) -> dict[str, Any]:
         def apply(snap: S.Snapshot, op_id: str) -> dict[str, Any]:
-            return S.op_abort_batch(snap, batch_id, self.worker, owner_generation)
+            out = S.op_abort_batch(snap, batch_id, self.worker, owner_generation)
+            # A repeat abort changes nothing: keep the legacy refusal by
+            # recording nothing, mirroring the no-op update path.
+            if not out.get("idempotent"):
+                for member in out.get("affected", []):
+                    self._record_session(snap, member, "abort", op_id)
+            return out
 
         return self._mutate("abort_batch", f"{self.worker} aborts batch {batch_id}", apply)
 
@@ -813,6 +819,11 @@ class TrackerService:
             # the outcome depending on whether a session is attached.
             if out.get("changed"):
                 self._record_session(snap, item_id, "update", op_id)
+            # Downstream members whose receipts this edit invalidated get
+            # their own entries under the same op_id, so one commit links
+            # the whole cascade.
+            for dependent in out.get("invalidated", []):
+                self._record_session(snap, dependent, "invalidate", op_id)
             return out
 
         return self._mutate("update", f"edit {item_id}", apply)

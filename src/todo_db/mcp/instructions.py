@@ -56,7 +56,8 @@ complete or abort the batch instead.
 
 Mutations record actor, session, operation, and operation ID per task.
 After `take`, read `show_item`'s `sessions`; before
-`release`/`finish`, leave resumption notes in `context`.
+`release`/`finish`, leave resumption notes in `context`. Batch aborts
+and evidence invalidations record `abort`/`invalidate` on members.
 
 ## Responses
 
