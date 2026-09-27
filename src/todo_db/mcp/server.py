@@ -3,7 +3,7 @@
 This module builds the server: launch-arg parsing, stderr-only logging,
 state-target resolution plus a read-only startup reachability check that
 never bootstraps or migrates, explicit identity, the instructions
-surface, and the nine tool registrations.
+surface, and the eighteen task-tool registrations plus `get_instructions`.
 """
 
 from __future__ import annotations

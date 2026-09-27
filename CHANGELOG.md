@@ -4,6 +4,25 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.9.0] - 2026-09-27
+
+### Added
+
+- First-class deferral verbs. `defer(id, summary, reason)` records
+  deferred work on a task without changing its status; `list_deferrals`
+  reads the queue (open by default, `all` for every resolution,
+  `from_item` to scope one task, stable cursors like `list_items`);
+  `promote_deferral(id, deferral_id, ...)` resolves an open deferral
+  into a linked planning item (created, or an existing `to_item`);
+  `dismiss_deferral(id, deferral_id, reason)` drops one with a recorded
+  reason. Deferrals are detail-owned and additive, so no schema bump
+  and no migration: older readers load snapshots that carry them.
+  Every resolution records a session-history entry on the source task
+  (see ADR 0010).
+- `E_OPEN_DEFERRALS` finish gate. `finish` refuses while open deferrals
+  exist for the task, naming the blocking ids; `show_item` reports them
+  as `open_deferrals` and `get_instructions` documents the loop.
+
 ## [0.8.1] - 2026-09-25
 
 ### Added
