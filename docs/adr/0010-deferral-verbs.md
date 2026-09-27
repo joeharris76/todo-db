@@ -23,7 +23,9 @@ tools over shared service operations:
   changing its status or claim.
 - `list_deferrals(from_item?, resolution?, limit?, cursor?)` reads the
   queue: open rows by default, `all` for every resolution, paged with
-  stable cursors scoped to the state revision plus the query.
+  stable cursors scoped to the state revision plus the query. Rows
+  carry `reason` always, plus `resolved_item`/`resolved_reason` when
+  set, so triage needs no second read.
 - `promote_deferral(id, deferral_id, to_item?, title?, priority?)`
   resolves an open row into a linked planning item: it creates the
   successor (or links an existing `to_item`) and flips the row to
@@ -44,7 +46,9 @@ Rules:
   hitting it.
 - **No claim required.** Resolving a deferral needs no claim on the
   source item, by analogy with `drop` on unclaimed tasks. Promotion
-  validates the successor exactly like `create_item`.
+  validates the successor exactly like `create_item`; summaries share
+  the 200-char title bound so every recorded deferral is promotable
+  with its default title.
 - **Audited.** `defer`/`promote`/`dismiss` record session-history
   entries on the source task; a promotion that creates its successor
   annotates the new item under the same operation id. Linking to a

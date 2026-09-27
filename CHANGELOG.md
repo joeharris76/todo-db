@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- `list_deferrals` rows carry `reason` always, plus
+  `resolved_item`/`resolved_reason` when set, so triage needs no
+  second read per task. Summaries share the 200-char item title bound
+  so every recorded deferral promotes with its default title.
+
 ## [0.9.0] - 2026-09-27
 
 ### Added
