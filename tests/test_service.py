@@ -386,8 +386,17 @@ def test_update_retry_conflicts_on_touched_fields(tmp_path: Path, monkeypatch) -
 
 def test_take_with_huge_needs_keeps_generation(tmp_path: Path) -> None:
     svc = _svc(tmp_path)
-    for i in range(500):
-        assert svc.create_item(f"d{i:03d}", f"dep {i}")["ok"]
+    dep_ids = [f"d{i:03d}" for i in range(500)]
+
+    def seed(snapshot: object) -> dict[str, str]:
+        for dep_id in dep_ids:
+            S.op_create(snapshot, item_id=dep_id, title=f"dep {dep_id}")
+        return {"id": "seed"}
+
+    assert git_backend.mutate(
+        svc.ref, op="update", summary="seed huge-needs fixture",
+        worker="seeder", apply=seed,
+    ).ok
     assert svc.create_item("hub", "Hub", needs=[f"d{i:03d}" for i in range(500)])["ok"]
     took = svc.take("hub")
     assert took["ok"], took
