@@ -120,6 +120,37 @@ def test_sessions_validation_covers_shape_dedup_and_absence() -> None:
             store.validate_snapshot(snap.index, snap.details)
 
 
+def test_takeover_reason_validation() -> None:
+    assert store.validate_takeover_reason("holder session exhausted") == "holder session exhausted"
+    assert store.validate_takeover_reason("  padded  ") == "padded"
+    for bad in ("", "   ", "x" * 281, "has\nnewline", "has\rtab", "a\u0085b", "a\u2028b", "a\u2029b"):
+        with pytest.raises(TodoError):
+            store.validate_takeover_reason(bad)
+
+
+def test_op_takeover_guards_and_fresh_claim() -> None:
+    snap = _snap()
+    store.op_create(snap, item_id="task", title="Task")
+    with pytest.raises(TodoError):
+        store.op_takeover(snap, "task", "taker", "victim", "dead session")
+    took = store.op_take(snap, "task", "victim")
+    gen = took["claim"]["generation"]
+    with pytest.raises(TodoError):
+        store.op_takeover(snap, "task", "victim", "victim", "dead session")
+    with pytest.raises(TodoError) as exc:
+        store.op_takeover(snap, "task", "taker", "someone-else", "dead session")
+    assert exc.value.code == "E_CONFLICT"
+    out = store.op_takeover(snap, "task", "taker", "victim", "session exhausted")
+    assert out["displaced"] == "victim"
+    assert out["claim"]["worker"] == "taker"
+    assert out["claim"]["generation"] != gen
+    assert out["claim"]["renewals"] == 0
+    assert out["transferred_batches"] == []
+    assert snap.index["items"]["task"]["status"] == "active"
+    with pytest.raises(TodoError):
+        store.op_renew(snap, "task", "victim", gen)
+
+
 def test_sessions_accept_future_operations_leniently() -> None:
     snap = _snap()
     store.op_create(snap, item_id="task", title="Task")

@@ -373,3 +373,53 @@ def test_readers_stay_on_one_accepted_snapshot(tmp_path: Path) -> None:
     ro2 = git_backend.read(ref, tmp_path / "cache")
     assert ro2.snapshot.index["items"]["t"]["title"] == "v2"
     assert ro.rev != ro2.rev
+
+
+def test_read_never_clones_the_whole_remote(tmp_path: Path, monkeypatch) -> None:
+    """Reads must fetch only the state branch, never clone all refs.
+
+    Regression guard for the production slow read: remotes that also carry
+    code history make a full clone dominate read latency, while reads only
+    need the state branch tip.
+    """
+    ref = _remote(tmp_path)
+    git_backend.bootstrap(ref)
+    seen: list[list[str]] = []
+    real_git = git_backend._git
+
+    def spy(args: list[str], cwd=None, timeout=git_backend.GIT_TIMEOUT_S):
+        if args and args[0] == "clone":
+            seen.append(list(args))
+            raise AssertionError(f"read() must not clone: git {args}")
+        return real_git(args, cwd, timeout)
+
+    monkeypatch.setattr(git_backend, "_git", spy)
+    ro = git_backend.read(ref, tmp_path / "cache")
+    assert ro.stale is False
+    assert seen == []
+
+
+def test_read_reuses_tip_snapshot_without_network(tmp_path: Path, monkeypatch) -> None:
+    """A repeat read at the same tip serves the cache without git transport."""
+    ref = _remote(tmp_path)
+    git_backend.bootstrap(ref)
+    git_backend.mutate(
+        ref, op="create", summary="add t", worker="w",
+        apply=lambda snap: (S.op_create(snap, item_id="t", title="v1"), {}),
+    )
+    cache = tmp_path / "cache"
+    first = git_backend.read(ref, cache)
+    assert first.stale is False
+
+    # Same tip, dead transport past the tip check: the cached snapshot
+    # must serve without any fetch.
+    monkeypatch.setattr(git_backend, "ls_remote_tip", lambda r: first.rev)
+
+    def dead_git(args: list[str], cwd=None, timeout=git_backend.GIT_TIMEOUT_S):
+        raise AssertionError(f"cached-tip read must not run git: {args}")
+
+    monkeypatch.setattr(git_backend, "_git", dead_git)
+    second = git_backend.read(ref, cache)
+    assert second.rev == first.rev and second.stale is False
+    assert second.snapshot.index == first.snapshot.index
+    assert second.snapshot.details == first.snapshot.details

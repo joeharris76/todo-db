@@ -226,6 +226,26 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
         return await asyncio.to_thread(svc.take, id)
 
     @server.tool(
+        name="takeover",
+        description=(
+            "Take over a live claim held by a session that cannot resume. "
+            "Name the exact holder you inspected and why it is dead; the "
+            "transfer is audited under your session."
+        ),
+    )
+    async def takeover_tool(
+        id: str,
+        expected_holder: str,
+        reason: str,
+        ctx: Context = None,  # type: ignore[assignment]
+    ) -> dict[str, Any]:
+        worker = _need_principal(holder, ctx)
+        if not isinstance(worker, str):
+            return worker
+        svc = _service(target, worker, holder, ctx)
+        return await asyncio.to_thread(svc.takeover, id, expected_holder, reason)
+
+    @server.tool(
         name="release",
         description="Release a claim by generation without finishing.",
     )

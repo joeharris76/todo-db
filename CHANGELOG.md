@@ -4,15 +4,38 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.8.1] - 2026-09-25
+
+### Added
+
+- The audited claim takeover announced in 0.8.0 now actually ships in this
+  release: the implementation missed the 0.8.0 merge. `takeover(id,
+  expected_holder, reason)` lets a session take over a live foreign claim
+  whose holder cannot resume (see ADR 0008, amending ADR 0003 §2.2).
+
+### Fixed
+
+- Reads fetch only the state branch tip instead of cloning the whole
+  remote, and repeat reads at the same tip serve the cached snapshot.
+  Against production-scale state sharing a remote with code history this
+  cuts `list_items` from ~110s (past the 30s MCP client timeout) to
+  seconds cold and under a second warm.
+
 ## [0.8.0] - 2026-09-23
 
 ### Added
 
+- Audited claim takeover. `takeover(id, expected_holder, reason)` lets a
+  session take over a live foreign claim whose holder cannot resume, bound
+  to the inspected holder with compare-and-swap retries, batch ownership
+  transfer, and dual-surface audit (see ADR 0008, amending ADR 0003 §2.2).
 - Per-task session history. Every create, claim, renewal, release,
   preparation, finish, drop, and update records its actor, session,
   operation, and operation ID in an append-only log on the touched
   task, readable through `show_item`'s `sessions` summary and paged
-  `field="sessions"` section reads. State commits now also carry a
+  `field="sessions"` section reads. Batch aborts and evidence
+  invalidations record `abort`/`invalidate` entries on the rewritten
+  members. State commits now also carry a
   `Todo-Session` trailer next to `Todo-Actor`, surfaced by history
   and recovery output.
 - Time-held readiness. `create_item` and `update_item` accept `not_before`,
