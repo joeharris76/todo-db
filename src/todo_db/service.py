@@ -112,6 +112,11 @@ def _query_fingerprint(status: str | None, priority: str | None, text: str | Non
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
 
 
+def _deferral_fingerprint(from_item: str | None, resolution: str | None, limit: int) -> str:
+    raw = _compact({"f": from_item, "r": resolution, "l": limit})
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+
 def encode_cursor(rev: str, offset: int, fingerprint: str) -> str:
     raw = _compact({"rev": rev, "offset": offset, "q": fingerprint})
     return base64.urlsafe_b64encode(raw.encode()).decode()
@@ -278,6 +283,9 @@ class TrackerService:
             waiting = S.waiting_until(item_id, snap, now)
             if waiting is not None:
                 data["waiting_until"] = waiting
+            open_def = S.open_deferrals(snap, item_id)
+            if open_def:
+                data["open_deferrals"] = sorted(row["id"] for row in open_def)
             if entry.get("claim"):
                 claim = entry["claim"]
                 data["claim"] = {
@@ -490,6 +498,63 @@ class TrackerService:
                 recovery=["retry with a smaller budget"],
             )
         return env
+
+    def list_deferrals(
+        self,
+        *,
+        from_item: str | None = None,
+        resolution: str | None = None,
+        limit: int = LIST_DEFAULT_LIMIT,
+        cursor: str | None = None,
+    ) -> dict[str, Any]:
+        """List deferral rows: open by default, `all` for every resolution."""
+        try:
+            outcome = self._read()
+            try:
+                rows = S.query_deferrals(outcome.snapshot, from_item=from_item, resolution=resolution)
+            except TodoError as exc:
+                return err(exc.code or E_STATE, str(exc))
+            total = len(rows)
+            limit = max(1, min(int(limit), LIST_MAX_LIMIT))
+            fingerprint = _deferral_fingerprint(from_item, resolution, limit)
+            offset = 0
+            if cursor:
+                rev, offset, seen = decode_cursor(cursor)
+                if rev != outcome.rev or seen != fingerprint:
+                    return err(
+                        E_CURSOR_STALE,
+                        "cursor is stale (state moved) or was made for different filters; "
+                        "retry from the first page",
+                        recovery=["call list_deferrals without a cursor"],
+                    )
+            page = [
+                {
+                    "id": row["id"],
+                    "from_item": row["from_item"],
+                    "summary": row["summary"],
+                    "resolution": row.get("resolution", "open"),
+                }
+                for row in rows[offset : offset + limit]
+            ]
+            data: dict[str, Any] = {"deferrals": page, "total": total, "limit": limit, "cursor_offset": offset}
+            if outcome.stale:
+                data["cached_rev"] = outcome.rev
+                data["stale"] = True
+            else:
+                data["rev"] = outcome.rev
+            remaining = total - offset - len(page)
+            if remaining > 0:
+                data["next_cursor"] = encode_cursor(outcome.rev, offset + len(page), fingerprint)
+            env = ok(data)
+            if not _fits(env):
+                return err(
+                    E_OUTPUT_TRUNCATED,
+                    "deferral list exceeds the byte cap; narrow with from_item/resolution filters",
+                    recovery=["retry with from_item set"],
+                )
+            return env
+        except TodoError as exc:
+            return err(exc.code or E_STATE, str(exc))
 
     # -- mutations --
 
@@ -1185,3 +1250,79 @@ class TrackerService:
             return out
 
         return self._mutate("drop", f"{worker} drops {item_id}", apply)
+
+    def defer_item(self, item_id: str, summary: str, reason: str) -> dict[str, Any]:
+        """Record deferred work on a task without changing its lifecycle."""
+
+        def apply(snap: S.Snapshot, op_id: str) -> dict[str, Any]:
+            row = S.op_defer(snap, item_id, summary=summary, reason=reason)
+            self._record_session(snap, item_id, "defer", op_id)
+            return {"id": item_id, "deferral": {"id": row["id"], "resolution": "open"}}
+
+        return self._mutate("defer", f"{self.worker} defers work on {item_id}", apply)
+
+    def promote_deferral(
+        self,
+        item_id: str,
+        deferral_id: int,
+        *,
+        to_item: str | None = None,
+        title: str | None = None,
+        priority: str = "medium",
+        description: str = "",
+        needs: list[str] | None = None,
+        acceptance: list[str] | None = None,
+        links: list[str] | None = None,
+        context: str = "",
+        batch: dict[str, Any] | None = None,
+        not_before: str = "",
+    ) -> dict[str, Any]:
+        """Resolve an open deferral into a linked planning item, atomically."""
+        requested = datetime.now(timezone.utc)
+        seen: dict[str, Any] = {}
+
+        def apply(snap: S.Snapshot, op_id: str) -> dict[str, Any]:
+            if seen:
+                # Retry after a competing push: the row must still be the
+                # open row we resolved, or this retry would re-promote a
+                # resolution that already landed.
+                current = S.query_deferrals(snap, from_item=item_id, resolution="all")
+                match = next((row for row in current if row["id"] == deferral_id), None)
+                if match is None or match.get("resolution", "open") != "open":
+                    raise TodoError(
+                        f"deferral {deferral_id} for {item_id!r} changed concurrently; "
+                        "re-read and retry deliberately",
+                        code=E_CONFLICT,
+                    )
+            out = S.op_promote_deferral(
+                snap, item_id, deferral_id,
+                to_item=to_item, title=title, priority=priority,
+                description=description, needs=needs or [],
+                acceptance=acceptance or [], links=links or [],
+                context=context, batch=batch, not_before=not_before,
+                now=requested,
+            )
+            seen.update(out)
+            self._record_session(snap, item_id, "promote", op_id)
+            if to_item is None:
+                # This promotion created the successor: annotate its
+                # history under the same operation ID so one commit links
+                # both sides. Linking to a pre-existing item annotates
+                # only the source task.
+                try:
+                    self._record_session(snap, out["resolved_item"], "promote", op_id)
+                except TodoError:
+                    pass
+            return out
+
+        return self._mutate("promote", f"{self.worker} promotes deferral {deferral_id} on {item_id}", apply)
+
+    def dismiss_deferral(self, item_id: str, deferral_id: int, reason: str) -> dict[str, Any]:
+        """Resolve an open deferral as deliberately dropped, with a reason."""
+
+        def apply(snap: S.Snapshot, op_id: str) -> dict[str, Any]:
+            out = S.op_dismiss_deferral(snap, item_id, deferral_id, reason=reason)
+            self._record_session(snap, item_id, "dismiss", op_id)
+            return out
+
+        return self._mutate("dismiss", f"{self.worker} dismisses deferral {deferral_id} on {item_id}", apply)

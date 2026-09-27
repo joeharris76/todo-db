@@ -2,10 +2,11 @@
 
 ``list_items`` / ``show_item`` / ``create_item`` / ``register_batch`` /
 ``update_item`` / ``take`` / ``prepare`` / ``bind_batch_pr`` /
-``abort_batch`` / ``release`` / ``finish`` / ``renew`` are backed by
-:mod:`todo_db.service`, the same operations the human/CI CLI uses.
-Blocking Git work runs via ``asyncio.to_thread``; there is no shared
-mutable connection to guard.
+``abort_batch`` / ``release`` / ``finish`` / ``renew`` /
+``list_deferrals`` / ``defer`` / ``promote_deferral`` /
+``dismiss_deferral`` are backed by :mod:`todo_db.service`, the same
+operations the human/CI CLI uses. Blocking Git work runs via
+``asyncio.to_thread``; there is no shared mutable connection to guard.
 """
 
 from __future__ import annotations
@@ -379,3 +380,94 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
             return worker
         svc = _service(target, worker, holder, ctx)
         return await asyncio.to_thread(svc.drop, id, generation)
+
+    @server.tool(
+        name="list_deferrals",
+        description="List deferral rows: open by default, all for every resolution.",
+    )
+    async def list_deferrals_tool(
+        from_item: str | None = None,
+        resolution: str | None = None,
+        limit: int = 5,
+        cursor: str | None = None,
+        ctx: Context = None,  # type: ignore[assignment]
+    ) -> dict[str, Any]:
+        worker = _need_principal(holder, ctx)
+        if not isinstance(worker, str):
+            return worker
+        svc = _service(target, worker, holder, ctx)
+        return await asyncio.to_thread(
+            svc.list_deferrals, from_item=from_item, resolution=resolution,
+            limit=limit, cursor=cursor,
+        )
+
+    @server.tool(
+        name="defer",
+        description="Record deferred work on a task without changing its lifecycle.",
+    )
+    async def defer_tool(
+        id: str,
+        summary: str,
+        reason: str,
+        ctx: Context = None,  # type: ignore[assignment]
+    ) -> dict[str, Any]:
+        worker = _need_principal(holder, ctx)
+        if not isinstance(worker, str):
+            return worker
+        svc = _service(target, worker, holder, ctx)
+        return await asyncio.to_thread(svc.defer_item, id, summary, reason)
+
+    @server.tool(
+        name="promote_deferral",
+        description="Resolve an open deferral into a linked planning item.",
+    )
+    async def promote_deferral_tool(
+        id: str,
+        deferral_id: int,
+        to_item: str | None = None,
+        title: str | None = None,
+        priority: str = "medium",
+        description: str = "",
+        needs: list[str] | None = None,
+        acceptance: list[str] | None = None,
+        links: list[str] | None = None,
+        context: str = "",
+        batch: dict[str, Any] | None = None,
+        not_before: str = "",
+        ctx: Context = None,  # type: ignore[assignment]
+    ) -> dict[str, Any]:
+        worker = _need_principal(holder, ctx)
+        if not isinstance(worker, str):
+            return worker
+        svc = _service(target, worker, holder, ctx)
+        return await asyncio.to_thread(
+            svc.promote_deferral,
+            id,
+            deferral_id,
+            to_item=to_item,
+            title=title,
+            priority=priority,
+            description=description,
+            needs=needs or [],
+            acceptance=acceptance or [],
+            links=links or [],
+            context=context,
+            batch=batch,
+            not_before=not_before,
+        )
+
+    @server.tool(
+        name="dismiss_deferral",
+        description="Resolve an open deferral as deliberately dropped, with a reason.",
+    )
+    async def dismiss_deferral_tool(
+        id: str,
+        deferral_id: int,
+        reason: str,
+        ctx: Context = None,  # type: ignore[assignment]
+    ) -> dict[str, Any]:
+        worker = _need_principal(holder, ctx)
+        if not isinstance(worker, str):
+            return worker
+        svc = _service(target, worker, holder, ctx)
+        return await asyncio.to_thread(svc.dismiss_deferral, id, deferral_id, reason)

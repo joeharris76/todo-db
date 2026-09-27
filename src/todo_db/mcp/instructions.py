@@ -50,6 +50,14 @@ is explicit, immutable after assignment, and never inferred from an ordinary
 dependency. A prepared member cannot be dropped while its batch is active;
 complete or abort the batch instead.
 
+`defer` records deferred work on a task without changing its status;
+`list_deferrals` reads the queue (open by default, `all` for every
+resolution, `from_item` to scope one task). `promote_deferral` resolves
+an open deferral into a linked planning item (created, or an existing
+`to_item`); `dismiss_deferral` drops one with a recorded reason.
+`finish` refuses while open deferrals exist (`E_OPEN_DEFERRALS` names
+the blocking ids); `show_item` reports them as `open_deferrals`.
+
 `not_before` (future RFC 3339) holds an open task until then; `""` clears.
 
 ## Session history
@@ -58,7 +66,9 @@ Mutations record actor, session, operation, and operation ID per task.
 After `take`, read `show_item`'s `sessions`; before
 `release`/`finish`, leave resumption notes in `context`. Aborts,
 invalidations, and dead-session takeovers record on members;
-`takeover` needs the holder seen plus why it is dead.
+`takeover` needs the holder seen plus why it is dead. Deferrals record
+`defer`/`promote`/`dismiss` on the source task; a promotion that
+creates its successor annotates the new item too.
 
 ## Responses
 
@@ -73,6 +83,8 @@ revision.
 ## Codes
 
 - `E_NOTHING_READY` -- nothing claimable. Report it; do not invent work.
+- `E_OPEN_DEFERRALS` -- open deferrals block finish. Promote or dismiss
+  the named ids, then retry.
 - `E_MULTIPLE_CLAIMS` -- you already hold a claim. Finish or release it.
 - `E_CLAIM_STALE` -- wrong generation or another holder. Show and retry.
 - `E_CONFLICT` -- someone changed the task first. Re-read, re-evaluate.

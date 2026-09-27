@@ -53,6 +53,7 @@ from .errors import (
     E_CLAIM_STALE,
     E_CONFLICT,
     E_FINAL_EVIDENCE,
+    E_OPEN_DEFERRALS,
     E_SCHEMA,
     E_STATE,
     TodoError,
@@ -111,15 +112,27 @@ SCOPE_HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 #: claim protocol cannot be bypassed.
 UPDATE_STATUSES = frozenset({"open", "blocked"})
 
+#: Bounds for deferral text: summaries name the deferred work, reasons
+#: justify resolution. Multi-line bodies are allowed so agents can quote
+#: context; trailer forgery is not a risk here because deferral text never
+#: lands in a commit trailer (only the op summary does, quoted separately).
+MAX_DEFERRAL_SUMMARY_LEN = 280
+MAX_DEFERRAL_REASON_LEN = 2000
+
+#: Deferral resolutions. `open` is the only actionable state; `promoted`
+#: and `dismissed` are terminal and record how the deferral left the queue.
+DEFERRAL_RESOLUTIONS = ("open", "promoted", "dismissed")
+
 #: Item-level operations this version writes into the per-task session
 #: history. `abort`/`invalidate` name the member tasks a batch lifecycle
 #: path rewrote; register/bind touch no member details and stay
-#: trailer-only. Readers stay lenient — an unknown op is a bounded token,
-#: never a load failure — so a future operation cannot strand older
-#: clients; only writers are bound to this allowlist.
+#: trailer-only. `defer`/`promote`/`dismiss` record deferral resolution on
+#: the source task in the same way. Readers stay lenient — an unknown op
+#: is a bounded token, never a load failure — so a future operation cannot
+#: strand older clients; only writers are bound to this allowlist.
 SESSION_OPS = frozenset({
     "create", "take", "renew", "release", "prepare", "finish", "drop", "update",
-    "abort", "invalidate", "takeover",
+    "abort", "invalidate", "takeover", "defer", "promote", "dismiss",
 })
 
 OP_ID_RE = re.compile(r"^[0-9a-f]{32}$")
@@ -425,6 +438,40 @@ def validate_client_name(client: str) -> str:
     return cleaned
 
 
+def validate_deferral_summary(summary: str) -> str:
+    """Validate a deferral summary: bounded, never empty, single line.
+
+    Summaries name the deferred work in list rows and commit lines, so
+    they share the worker-identity single-line rule.
+    """
+    if not isinstance(summary, str) or not summary.strip():
+        raise TodoError("deferral summary must be a non-empty string", code=E_STATE)
+    cleaned = summary.strip()
+    if len(cleaned) > MAX_DEFERRAL_SUMMARY_LEN:
+        raise TodoError(f"deferral summary exceeds {MAX_DEFERRAL_SUMMARY_LEN} chars", code=E_STATE)
+    if any(ord(char) < 32 for char in cleaned) or _has_forbidden_breaks(cleaned):
+        raise TodoError("deferral summary must be a single line without control characters", code=E_STATE)
+    return cleaned
+
+
+def validate_deferral_reason(reason: str) -> str:
+    """Validate a deferral reason: bounded, never empty, multi-line allowed.
+
+    Reasons justify deferral and dismissal in detail views, so bodies may
+    span lines; control characters other than newline/tab are rejected.
+    """
+    if not isinstance(reason, str) or not reason.strip():
+        raise TodoError("deferral reason must be a non-empty string", code=E_STATE)
+    cleaned = reason.strip()
+    if len(cleaned) > MAX_DEFERRAL_REASON_LEN:
+        raise TodoError(f"deferral reason exceeds {MAX_DEFERRAL_REASON_LEN} chars", code=E_STATE)
+    if any(char in FORBIDDEN_BREAKS for char in cleaned):
+        raise TodoError("deferral reason must not contain Unicode line separators", code=E_STATE)
+    if any(ord(char) < 32 and char not in ("\n", "\t") for char in cleaned):
+        raise TodoError("deferral reason must not contain control characters", code=E_STATE)
+    return cleaned
+
+
 def empty_index() -> dict[str, Any]:
     return {"schema_version": SCHEMA_VERSION, "items": {}, "batches": {}}
 
@@ -483,6 +530,72 @@ def _validate_revision(value: Any, label: str) -> str:
     if not REVISION_RE.fullmatch(revision):
         raise TodoError(f"{label} must be a full lowercase Git revision", code=E_STATE)
     return revision
+
+
+def _validate_deferral(item_id: str, pos: int, row: Any) -> dict[str, Any]:
+    """Validate one detail-owned deferral row on its source task."""
+    if not isinstance(row, dict):
+        raise TodoError(f"deferral {pos} for {item_id!r} must be an object", code=E_STATE)
+    number = row.get("id")
+    if not isinstance(number, int) or isinstance(number, bool) or number <= 0:
+        raise TodoError(f"deferral {pos} for {item_id!r} has an invalid id", code=E_STATE)
+    if row.get("from_item") != item_id:
+        raise TodoError(f"deferral {number} for {item_id!r} names a foreign source", code=E_STATE)
+    summary = row.get("summary")
+    if not isinstance(summary, str) or not summary.strip() or len(summary) > MAX_DEFERRAL_SUMMARY_LEN:
+        raise TodoError(f"deferral {number} for {item_id!r} has an invalid summary", code=E_STATE)
+    if any(ord(char) < 32 for char in summary) or _has_forbidden_breaks(summary):
+        raise TodoError(f"deferral {number} for {item_id!r} has an invalid summary", code=E_STATE)
+    reason = row.get("reason")
+    if not isinstance(reason, str) or not reason.strip() or len(reason) > MAX_DEFERRAL_REASON_LEN:
+        raise TodoError(f"deferral {number} for {item_id!r} has an invalid reason", code=E_STATE)
+    resolution = row.get("resolution", "open")
+    if resolution not in DEFERRAL_RESOLUTIONS:
+        raise TodoError(f"deferral {number} for {item_id!r} has an unknown resolution", code=E_STATE)
+    resolved_item = row.get("resolved_item")
+    if resolved_item is not None and not isinstance(resolved_item, str):
+        raise TodoError(f"deferral {number} for {item_id!r} has an invalid resolved_item", code=E_STATE)
+    resolved_reason = row.get("resolved_reason")
+    if resolved_reason is not None and not isinstance(resolved_reason, str):
+        raise TodoError(f"deferral {number} for {item_id!r} has an invalid resolved_reason", code=E_STATE)
+    if resolution == "open":
+        if resolved_item is not None or resolved_reason is not None:
+            raise TodoError(f"open deferral {number} for {item_id!r} must not carry a resolution", code=E_STATE)
+    elif resolution == "promoted":
+        if not resolved_item:
+            raise TodoError(f"promoted deferral {number} for {item_id!r} needs its successor item", code=E_STATE)
+        if resolved_reason is not None:
+            raise TodoError(f"promoted deferral {number} for {item_id!r} must not carry a dismissal reason", code=E_STATE)
+    else:  # dismissed
+        if resolved_item is not None:
+            raise TodoError(f"dismissed deferral {number} for {item_id!r} must not carry a successor item", code=E_STATE)
+        if not isinstance(resolved_reason, str) or not resolved_reason.strip():
+            raise TodoError(f"dismissed deferral {number} for {item_id!r} needs a reason", code=E_STATE)
+    created_at = row.get("created_at")
+    if not isinstance(created_at, str):
+        raise TodoError(f"deferral {number} for {item_id!r} needs a creation timestamp", code=E_STATE)
+    parse_ts(created_at)
+    resolved_at = row.get("resolved_at")
+    if resolved_at is not None:
+        if not isinstance(resolved_at, str):
+            raise TodoError(f"deferral {number} for {item_id!r} has an invalid resolution timestamp", code=E_STATE)
+        parse_ts(resolved_at)
+    elif resolution != "open":
+        raise TodoError(f"resolved deferral {number} for {item_id!r} needs a resolution timestamp", code=E_STATE)
+    return row
+
+
+def _deferrals_of(detail: dict[str, Any]) -> list[dict[str, Any]]:
+    rows = detail.get("deferrals", [])
+    if not isinstance(rows, list):
+        raise TodoError("deferrals must be a list", code=E_STATE)
+    return rows
+
+
+def open_deferrals(snapshot: Snapshot, item_id: str) -> list[dict[str, Any]]:
+    """Return the open deferral rows recorded on one task."""
+    detail = snapshot.details.get(item_id, {})
+    return [row for row in _deferrals_of(detail) if isinstance(row, dict) and row.get("resolution", "open") == "open"]
 
 
 def scope_digest(scope: dict[str, list[str]]) -> str:
@@ -817,6 +930,22 @@ def validate_snapshot(index: Any, details: dict[str, Any]) -> dict[str, Any]:
             # Additive session history: absence stays valid for
             # pre-history items, presence must validate.
             _validate_sessions(item_id, detail["sessions"])
+        if "deferrals" in detail:
+            # Additive deferral log: absence stays valid, presence must be
+            # a list of rows keyed by unique positive integer ids scoped
+            # to the source task.
+            rows = detail["deferrals"]
+            if not isinstance(rows, list):
+                raise TodoError(f"detail for {item_id!r}: 'deferrals' must be a list", code=E_STATE)
+            seen: set[int] = set()
+            for pos, row in enumerate(rows):
+                checked = _validate_deferral(item_id, pos, row)
+                if checked["id"] in seen:
+                    raise TodoError(
+                        f"detail for {item_id!r} has a duplicate deferral id {checked['id']!r}",
+                        code=E_STATE,
+                    )
+                seen.add(checked["id"])
         _validate_batch_detail(item_id, detail, list(items[item_id].get("needs", [])))
 
     # A prepared receipt is useful only to an explicitly registered member of
@@ -1712,6 +1841,13 @@ def op_finish(
     ):
         raise TodoError(f"stale claim for {item_id!r}: only the holder can finish", code=E_CLAIM_STALE)
     detail = snapshot.details[item_id]
+    blocking = [row["id"] for row in open_deferrals(snapshot, item_id)]
+    if blocking:
+        raise TodoError(
+            f"task {item_id!r} has open deferrals {sorted(blocking)}; "
+            "promote or dismiss them before finish",
+            code=E_OPEN_DEFERRALS,
+        )
     batch = snapshot.index.get("batches", {}).get((detail.get("batch") or {}).get("batch_id"))
     if isinstance(batch, dict) and batch.get("lifecycle", "active") != "active":
         raise TodoError(f"batch {(detail.get('batch') or {}).get('batch_id')!r} is no longer active", code=E_STATE)
@@ -1747,6 +1883,205 @@ def op_finish(
             snapshot.index["batches"][batch["batch_id"]] = previous_batch
         raise
     return {"id": item_id, "status": "done"}
+
+
+def _next_deferral_id(detail: dict[str, Any]) -> int:
+    rows = detail.get("deferrals")
+    if not rows:
+        return 1
+    return max(row["id"] for row in rows if isinstance(row, dict)) + 1
+
+
+def _find_deferral(detail: dict[str, Any], deferral_id: int) -> dict[str, Any]:
+    for row in _deferrals_of(detail):
+        if isinstance(row, dict) and row.get("id") == deferral_id:
+            return row
+    raise TodoError(f"unknown deferral {deferral_id}", code=E_STATE)
+
+
+def query_deferrals(
+    snapshot: Snapshot,
+    *,
+    from_item: str | None = None,
+    resolution: str | None = None,
+) -> list[dict[str, Any]]:
+    """Return deferral rows across tasks, ordered by source then id.
+
+    ``resolution`` defaults to ``open`` when omitted so the queue view
+    stays actionable; pass ``"all"`` for every row.
+    """
+    wanted = "open" if resolution is None else resolution
+    if wanted != "all" and wanted not in DEFERRAL_RESOLUTIONS:
+        raise TodoError(f"unknown deferral resolution {resolution!r}", code=E_STATE)
+    if from_item is not None:
+        if from_item not in snapshot.index["items"]:
+            raise TodoError(f"unknown task {from_item!r}", code=E_STATE)
+        sources = [from_item]
+    else:
+        sources = sorted(snapshot.index["items"])
+    rows: list[dict[str, Any]] = []
+    for item_id in sources:
+        for row in _deferrals_of(snapshot.details.get(item_id, {})):
+            if wanted != "all" and row.get("resolution", "open") != wanted:
+                continue
+            rows.append(json.loads(json.dumps(row)))
+    return rows
+
+
+def op_defer(
+    snapshot: Snapshot,
+    item_id: str,
+    *,
+    summary: str,
+    reason: str,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Record deferred work on a task. The task keeps its status and claim."""
+    entry = _require_entry(snapshot, item_id)
+    if entry["status"] in TERMINAL_STATUSES:
+        raise TodoError(f"cannot defer on {entry['status']} task {item_id!r}", code=E_STATE)
+    summary = validate_deferral_summary(summary)
+    reason = validate_deferral_reason(reason)
+    detail = snapshot.details[item_id]
+    rows = detail.setdefault("deferrals", [])
+    if not isinstance(rows, list):
+        raise TodoError(f"detail for {item_id!r}: 'deferrals' must be a list", code=E_STATE)
+    number = _next_deferral_id(detail)
+    moment = now or datetime.now(timezone.utc)
+    row = {
+        "id": number,
+        "from_item": item_id,
+        "summary": summary,
+        "reason": reason,
+        "resolution": "open",
+        "created_at": moment.strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+    rows.append(row)
+    try:
+        validate_snapshot(snapshot.index, snapshot.details)
+    except TodoError:
+        rows.pop()
+        if not rows:
+            detail.pop("deferrals", None)
+        raise
+    return json.loads(json.dumps(row))
+
+
+def op_promote_deferral(
+    snapshot: Snapshot,
+    item_id: str,
+    deferral_id: int,
+    *,
+    to_item: str | None = None,
+    title: str | None = None,
+    priority: str = "medium",
+    description: str = "",
+    needs: list[str] | tuple[str, ...] = (),
+    acceptance: list[str] | tuple[str, ...] = (),
+    links: list[str] | tuple[str, ...] = (),
+    context: str = "",
+    batch: dict[str, Any] | None = None,
+    not_before: str = "",
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Resolve an open deferral by creating (or linking) its successor item.
+
+    The successor is created first with the ordinary create validation,
+    then the deferral row flips to ``promoted`` with ``resolved_item`` —
+    one atomic snapshot change, so a failure leaves neither a stray item
+    nor a half-resolved row.
+    """
+    _require_entry(snapshot, item_id)
+    if not isinstance(deferral_id, int) or isinstance(deferral_id, bool):
+        raise TodoError(f"invalid deferral id {deferral_id!r}", code=E_STATE)
+    detail = snapshot.details[item_id]
+    row = _find_deferral(detail, deferral_id)
+    if row.get("resolution", "open") != "open":
+        raise TodoError(
+            f"deferral {deferral_id} for {item_id!r} is already {row.get('resolution')}",
+            code=E_STATE,
+        )
+    moment = now or datetime.now(timezone.utc)
+    if to_item is not None:
+        validate_id(to_item)
+        if to_item not in snapshot.index["items"]:
+            raise TodoError(f"promotion target {to_item!r} is unknown", code=E_STATE)
+        if to_item == item_id:
+            raise TodoError("promotion target must differ from its source task", code=E_STATE)
+        successor = to_item
+        created = False
+    else:
+        successor = f"{item_id}-deferral-{deferral_id}"
+        if successor in snapshot.index["items"]:
+            raise TodoError(
+                f"promotion target {successor!r} already exists; pass to_item explicitly",
+                code=E_CONFLICT,
+            )
+        op_create(
+            snapshot,
+            item_id=successor,
+            title=title or row["summary"],
+            priority=priority,
+            description=description or f"Promoted from deferral {deferral_id} on {item_id}: {row['reason']}",
+            needs=list(needs),
+            acceptance=list(acceptance),
+            links=list(links),
+            context=context,
+            batch=batch,
+            not_before=not_before,
+            now=moment,
+        )
+        created = True
+    previous = json.loads(json.dumps(row))
+    row["resolution"] = "promoted"
+    row["resolved_item"] = successor
+    row.pop("resolved_reason", None)
+    row["resolved_at"] = moment.strftime("%Y-%m-%dT%H:%M:%SZ")
+    try:
+        validate_snapshot(snapshot.index, snapshot.details)
+    except TodoError:
+        if created:
+            del snapshot.index["items"][successor]
+            del snapshot.details[successor]
+        row.clear()
+        row.update(previous)
+        raise
+    return {"id": deferral_id, "from_item": item_id, "resolution": "promoted", "resolved_item": successor}
+
+
+def op_dismiss_deferral(
+    snapshot: Snapshot,
+    item_id: str,
+    deferral_id: int,
+    *,
+    reason: str,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Resolve an open deferral as deliberately dropped, with a reason."""
+    _require_entry(snapshot, item_id)
+    if not isinstance(deferral_id, int) or isinstance(deferral_id, bool):
+        raise TodoError(f"invalid deferral id {deferral_id!r}", code=E_STATE)
+    reason = validate_deferral_reason(reason)
+    detail = snapshot.details[item_id]
+    row = _find_deferral(detail, deferral_id)
+    if row.get("resolution", "open") != "open":
+        raise TodoError(
+            f"deferral {deferral_id} for {item_id!r} is already {row.get('resolution')}",
+            code=E_STATE,
+        )
+    moment = now or datetime.now(timezone.utc)
+    previous = json.loads(json.dumps(row))
+    row["resolution"] = "dismissed"
+    row.pop("resolved_item", None)
+    row["resolved_reason"] = reason
+    row["resolved_at"] = moment.strftime("%Y-%m-%dT%H:%M:%SZ")
+    try:
+        validate_snapshot(snapshot.index, snapshot.details)
+    except TodoError:
+        row.clear()
+        row.update(previous)
+        raise
+    return {"id": deferral_id, "from_item": item_id, "resolution": "dismissed"}
 
 
 def op_drop(
