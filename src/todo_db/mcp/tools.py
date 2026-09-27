@@ -419,7 +419,13 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
 
     @server.tool(
         name="promote_deferral",
-        description="Resolve an open deferral into a linked planning item.",
+        description=(
+            "Resolve an open deferral into a linked planning item. "
+            "Creates the successor from the deferral by default; pass "
+            "to_item to link an existing item, or title/priority to shape "
+            "the created one. For full successor control, create the item "
+            "first and link it with to_item."
+        ),
     )
     async def promote_deferral_tool(
         id: str,
@@ -427,13 +433,6 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
         to_item: str | None = None,
         title: str | None = None,
         priority: str = "medium",
-        description: str = "",
-        needs: list[str] | None = None,
-        acceptance: list[str] | None = None,
-        links: list[str] | None = None,
-        context: str = "",
-        batch: dict[str, Any] | None = None,
-        not_before: str = "",
         ctx: Context = None,  # type: ignore[assignment]
     ) -> dict[str, Any]:
         worker = _need_principal(holder, ctx)
@@ -447,13 +446,6 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
             to_item=to_item,
             title=title,
             priority=priority,
-            description=description,
-            needs=needs or [],
-            acceptance=acceptance or [],
-            links=links or [],
-            context=context,
-            batch=batch,
-            not_before=not_before,
         )
 
     @server.tool(

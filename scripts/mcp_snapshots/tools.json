@@ -174,6 +174,70 @@
     }
   },
   {
+    "name": "defer",
+    "description": "Record deferred work on a task without changing its lifecycle.",
+    "inputSchema": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "summary": {
+          "title": "Summary",
+          "type": "string"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "summary",
+        "reason"
+      ],
+      "title": "defer_toolArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "defer_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "name": "dismiss_deferral",
+    "description": "Resolve an open deferral as deliberately dropped, with a reason.",
+    "inputSchema": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "deferral_id": {
+          "title": "Deferral Id",
+          "type": "integer"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "deferral_id",
+        "reason"
+      ],
+      "title": "dismiss_deferral_toolArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "dismiss_deferral_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
     "name": "drop",
     "description": "Abandon a task as dropped. Unclaimed tasks drop freely; a live claim needs its generation.",
     "inputSchema": {
@@ -266,6 +330,62 @@
         "result"
       ],
       "title": "get_instructionsOutput",
+      "type": "object"
+    }
+  },
+  {
+    "name": "list_deferrals",
+    "description": "List deferral rows: open by default, all for every resolution.",
+    "inputSchema": {
+      "properties": {
+        "from_item": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "From Item"
+        },
+        "resolution": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Resolution"
+        },
+        "limit": {
+          "default": 5,
+          "title": "Limit",
+          "type": "integer"
+        },
+        "cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cursor"
+        }
+      },
+      "title": "list_deferrals_toolArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "list_deferrals_toolDictOutput",
       "type": "object"
     }
   },
@@ -427,6 +547,62 @@
     "outputSchema": {
       "additionalProperties": true,
       "title": "prepare_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "name": "promote_deferral",
+    "description": "Resolve an open deferral into a linked planning item. Creates the successor from the deferral by default; pass to_item to link an existing item, or title/priority to shape the created one. For full successor control, create the item first and link it with to_item.",
+    "inputSchema": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "deferral_id": {
+          "title": "Deferral Id",
+          "type": "integer"
+        },
+        "to_item": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To Item"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        },
+        "priority": {
+          "default": "medium",
+          "title": "Priority",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "deferral_id"
+      ],
+      "title": "promote_deferral_toolArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "promote_deferral_toolDictOutput",
       "type": "object"
     }
   },

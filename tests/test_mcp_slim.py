@@ -352,6 +352,40 @@ def test_token_targets_on_actual_surfaces(tmp_path: Path) -> None:
     anyio.run(go)
 
 
+def test_deferral_verbs_over_tools(tmp_path: Path) -> None:
+    async def go():
+        server = build_server(_launch(tmp_path))
+        async with connect(server, client_info=types.Implementation(name="w1", version="0")) as session:
+            assert _payload(await session.call_tool(
+                "create_item", {"id": "d", "title": "Deferred work"}))["ok"]
+            deferred = _payload(await session.call_tool(
+                "defer", {"id": "d", "summary": "Later", "reason": "needs infra"}))
+            assert deferred["ok"] and deferred["data"]["deferral"]["id"] == 1, deferred
+            queued = _payload(await session.call_tool("list_deferrals", {}))
+            assert queued["ok"] and queued["data"]["total"] == 1, queued
+            took = _payload(await session.call_tool("take", {"id": "d"}))
+            assert took["ok"], took
+            blocked = _payload(await session.call_tool(
+                "finish", {"id": "d", "generation": took["data"]["claim"]["generation"]}))
+            assert not blocked["ok"] and blocked["code"] == "E_OPEN_DEFERRALS", blocked
+            promoted = _payload(await session.call_tool(
+                "promote_deferral", {"id": "d", "deferral_id": 1}))
+            assert promoted["ok"], promoted
+            assert promoted["data"]["resolved_item"] == "d-deferral-1"
+            empty = _payload(await session.call_tool("list_deferrals", {}))
+            assert empty["ok"] and empty["data"]["total"] == 0, empty
+            assert _payload(await session.call_tool("defer", {
+                "id": "d", "summary": "More", "reason": "waiting"}))["ok"]
+            dismissed = _payload(await session.call_tool(
+                "dismiss_deferral", {"id": "d", "deferral_id": 2, "reason": "not needed"}))
+            assert dismissed["ok"], dismissed
+            finished = _payload(await session.call_tool(
+                "finish", {"id": "d", "generation": took["data"]["claim"]["generation"]}))
+            assert finished["ok"], finished
+
+    anyio.run(go)
+
+
 def test_startup_schema_cost_is_small(tmp_path: Path) -> None:
     async def go():
         server = build_server(_launch(tmp_path))
@@ -361,10 +395,12 @@ def test_startup_schema_cost_is_small(tmp_path: Path) -> None:
                                       for t in tools.tools])
             tokens, tokenizer = count_tokens(schema_blob + INSTRUCTIONS)
             assert tokenizer == "o200k_base"
-            # 15 tools plus the full protocol guidance, against 3,344 for
+            # 19 tools plus the full protocol guidance, against 3,344 for
             # the old 26 tool definitions alone. Bumped for the audited
-            # takeover tool (3-parameter schema plus one guidance line):
-            # deliberate, reviewed surface, still far below the old count.
-            assert tokens <= 3700, tokens
+            # takeover tool (3-parameter schema plus one guidance line),
+            # then for the four deferral verbs (list/defer/promote/dismiss
+            # plus the finish-gate guidance): deliberate, reviewed surface,
+            # still far below the old count.
+            assert tokens <= 4600, tokens
 
     anyio.run(go)
