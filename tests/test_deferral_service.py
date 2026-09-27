@@ -59,6 +59,24 @@ def test_dismiss_resolves_and_records_history(tmp_path: Path) -> None:
     assert svc.show_item("alpha")["data"].get("open_deferrals") is None
 
 
+def test_list_rows_carry_reason_and_resolution_links(tmp_path: Path) -> None:
+    svc = _svc(tmp_path)
+    assert svc.create_item("alpha", "Alpha task")["ok"]
+    assert svc.defer_item("alpha", "Later", "needs infra")["ok"]
+    assert svc.defer_item("alpha", "Maybe", "undecided")["ok"]
+    assert svc.promote_deferral("alpha", 1)["ok"]
+    assert svc.dismiss_deferral("alpha", 2, "not needed")["ok"]
+    listed = svc.list_deferrals(resolution="all")
+    assert listed["ok"]
+    by_id = {row["id"]: row for row in listed["data"]["deferrals"]}
+    assert by_id[1]["reason"] == "needs infra"
+    assert by_id[1]["resolved_item"] == "alpha-deferral-1"
+    assert "resolved_reason" not in by_id[1]
+    assert by_id[2]["reason"] == "undecided"
+    assert by_id[2]["resolved_reason"] == "not needed"
+    assert "resolved_item" not in by_id[2]
+
+
 def test_list_deferrals_pages_with_stable_cursors(tmp_path: Path) -> None:
     svc = _svc(tmp_path)
     assert svc.create_item("alpha", "Alpha task")["ok"]

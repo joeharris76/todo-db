@@ -527,15 +527,20 @@ class TrackerService:
                         "retry from the first page",
                         recovery=["call list_deferrals without a cursor"],
                     )
-            page = [
-                {
+            page = []
+            for row in rows[offset : offset + limit]:
+                entry: dict[str, Any] = {
                     "id": row["id"],
                     "from_item": row["from_item"],
                     "summary": row["summary"],
+                    "reason": row["reason"],
                     "resolution": row.get("resolution", "open"),
                 }
-                for row in rows[offset : offset + limit]
-            ]
+                if row.get("resolved_item") is not None:
+                    entry["resolved_item"] = row["resolved_item"]
+                if row.get("resolved_reason") is not None:
+                    entry["resolved_reason"] = row["resolved_reason"]
+                page.append(entry)
             data: dict[str, Any] = {"deferrals": page, "total": total, "limit": limit, "cursor_offset": offset}
             if outcome.stale:
                 data["cached_rev"] = outcome.rev
