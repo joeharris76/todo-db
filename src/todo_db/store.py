@@ -112,11 +112,12 @@ SCOPE_HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 #: claim protocol cannot be bypassed.
 UPDATE_STATUSES = frozenset({"open", "blocked"})
 
-#: Bounds for deferral text: summaries name the deferred work, reasons
-#: justify resolution. Multi-line bodies are allowed so agents can quote
-#: context; trailer forgery is not a risk here because deferral text never
-#: lands in a commit trailer (only the op summary does, quoted separately).
-MAX_DEFERRAL_SUMMARY_LEN = 280
+#: Bounds for deferral text. Summaries double as default promotion
+#: titles, so they share the item title bound. Reasons justify
+#: resolution and may span lines; trailer forgery is not a risk here
+#: because deferral text never lands in a commit trailer (only the op
+#: summary does, quoted separately).
+MAX_DEFERRAL_SUMMARY_LEN = 200
 MAX_DEFERRAL_REASON_LEN = 2000
 
 #: Deferral resolutions. `open` is the only actionable state; `promoted`

@@ -108,6 +108,15 @@ def test_query_deferrals_filters_and_orders() -> None:
         store.query_deferrals(snap, from_item="ghost")
 
 
+def test_max_length_summary_promotes_with_default_title() -> None:
+    snap = _snap()
+    row = store.op_defer(snap, "alpha", summary="x" * 200, reason="at the bound")
+    out = store.op_promote_deferral(snap, "alpha", row["id"])
+    assert out["resolved_item"] == "alpha-deferral-1"
+    with pytest.raises(TodoError):
+        store.op_defer(snap, "alpha", summary="x" * 201, reason="over")
+
+
 def test_snapshot_validation_rejects_malformed_rows() -> None:
     snap = _snap()
     store.op_defer(snap, "alpha", summary="ok", reason="ok")
