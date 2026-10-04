@@ -43,11 +43,14 @@ serialization. A 60 KB description stays bounded: `show_item` spills it to
 | Single publish (create/take/finish) | ~0.28 s | ~2.9 s |
 | Bare-remote growth per item | ~45 B | ~47 B |
 
-Each operation currently clones the state remote into a private workspace,
-so clone cost dominates at 10,000 items (~3 s locally). That is the known
-scaling cost of per-writer isolation; a persistent worktree plus fetch
-would reduce it, at the price of shared scratch state. Not implemented:
-at ordinary tracker sizes the cost is sub-second.
+Each operation fetches the state branch into a private workspace, so
+fetch cost grows with the branch's size (~3 s locally at 10,000 items).
+That is the scaling cost of per-writer isolation; a persistent worktree
+plus fetch would reduce it, at the price of shared scratch state. Not
+implemented: at ordinary tracker sizes the cost is sub-second. The
+latency figures above predate the change from a full clone to a
+single-branch fetch and have not been re-measured; the change matters
+most when the remote also carries code history.
 
 ## Footprint
 

@@ -8,6 +8,17 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Writes no longer clone the whole state remote. `create_item`, `take`,
+  `finish` and every other mutation, plus `recover`/`history`,
+  `reconcile` and restore, fetch only the state branch. Against a remote
+  that also carries code history the clone alone could exceed the 60s git
+  timeout, so a create failed at random, whatever its `needs`.
+- A timeout while confirming a push that already landed, or while
+  reconciling it, now returns the `unknown` outcome with its operation ID
+  instead of raising, so a retry cannot apply the operation twice.
+- `recover`, history and restore report a missing state branch as
+  `E_STATE` ("run bootstrap"), and relative local remote paths resolve
+  correctly for these operations.
 - `list_deferrals` rows carry `reason` always, plus
   `resolved_item`/`resolved_reason` when set, so triage needs no
   second read per task. Summaries share the 200-char item title bound

@@ -375,6 +375,120 @@ def test_readers_stay_on_one_accepted_snapshot(tmp_path: Path) -> None:
     assert ro.rev != ro2.rev
 
 
+def test_state_operations_never_clone_the_whole_remote(tmp_path: Path, monkeypatch) -> None:
+    """Writes, reconcile, history and restore fetch only the state branch.
+
+    A full clone pulls every ref of a remote that also carries code
+    history; against production state that exceeded the git timeout and
+    made item creation fail.
+    """
+    ref = _remote(tmp_path)
+    git_backend.bootstrap(ref)
+    real_git = git_backend._git
+
+    def spy(args: list[str], cwd=None, timeout=git_backend.GIT_TIMEOUT_S):
+        if args and args[0] == "clone":
+            raise AssertionError(f"state operations must not clone: git {args}")
+        if args and args[0] == "fetch":
+            # Name the one branch: a bare fetch (or --all) pulls every ref.
+            assert args[-2:] == ["origin", ref.branch] and "--all" not in args, args
+        return real_git(args, cwd, timeout)
+
+    monkeypatch.setattr(git_backend, "_git", spy)
+    out = git_backend.mutate(
+        ref, op="create", summary="add t", worker="w",
+        apply=lambda snap: (S.op_create(snap, item_id="t", title="v1"), {"id": "t"}),
+    )
+    assert out.ok, out.error
+    assert git_backend.reconcile(ref, out.op_id).state == "applied"
+    assert git_backend.history(ref, limit=5)[0]["op_id"] == out.op_id
+    first = git_backend.history(ref, limit=5)[-1]["sha"]
+    assert git_backend.restore_rev(ref, first, "w").ok
+
+
+def _create(snap, item_id: str = "t"):
+    S.op_create(snap, item_id=item_id, title="v1")
+    return {"id": item_id}
+
+
+def _fail_after_push(monkeypatch, *, failing: set[str]) -> None:
+    """Make the named git subcommands time out once a push has been sent."""
+    real_git = git_backend._git
+    state = {"pushed": False}
+
+    def spy(args: list[str], cwd=None, timeout=git_backend.GIT_TIMEOUT_S):
+        proc = real_git(args, cwd, timeout)
+        if args and args[0] == "push":
+            state["pushed"] = True
+        elif state["pushed"] and args and args[0] in failing:
+            raise subprocess.TimeoutExpired(["git", *args], timeout)
+        return proc
+
+    monkeypatch.setattr(git_backend, "_git", spy)
+
+
+def test_mutate_reports_fetch_timeout_as_offline(tmp_path: Path, monkeypatch) -> None:
+    ref = _remote(tmp_path)
+    git_backend.bootstrap(ref)
+    real_git = git_backend._git
+
+    def spy(args: list[str], cwd=None, timeout=git_backend.GIT_TIMEOUT_S):
+        if args and args[0] == "fetch":
+            raise subprocess.TimeoutExpired(["git", *args], timeout)
+        return real_git(args, cwd, timeout)
+
+    monkeypatch.setattr(git_backend, "_git", spy)
+    out = git_backend.mutate(ref, op="create", summary="add t", worker="w", apply=_create)
+    assert not out.ok and out.outcome == "offline"
+    assert out.op_id in (out.error or "")
+
+
+def test_timeout_confirming_a_landed_push_still_reports_applied(tmp_path: Path, monkeypatch) -> None:
+    """A confirm timeout after a successful push reconciles instead of raising."""
+    ref = _remote(tmp_path)
+    git_backend.bootstrap(ref)
+    _fail_after_push(monkeypatch, failing={"ls-remote"})
+    out = git_backend.mutate(ref, op="create", summary="add t", worker="w", apply=_create)
+    assert out.ok and out.outcome == "applied", out.error
+
+
+def test_timeout_during_reconcile_returns_unknown_with_operation_id(tmp_path: Path, monkeypatch) -> None:
+    """When the push landed but nothing can confirm it, hand back the op ID."""
+    ref = _remote(tmp_path)
+    git_backend.bootstrap(ref)
+    _fail_after_push(monkeypatch, failing={"ls-remote", "fetch"})
+    out = git_backend.mutate(ref, op="create", summary="add t", worker="w", apply=_create)
+    assert not out.ok and out.outcome == "unknown"
+    assert out.op_id in (out.error or "")
+    monkeypatch.undo()
+    assert git_backend.reconcile(ref, out.op_id).state == "applied"
+
+
+def test_missing_state_branch_points_at_bootstrap(tmp_path: Path) -> None:
+    ref = _remote(tmp_path)  # bare remote, no state branch
+    out = git_backend.mutate(ref, op="create", summary="add t", worker="w", apply=_create)
+    assert not out.ok and out.code == "E_STATE" and "bootstrap" in (out.error or "")
+    for call in (
+        lambda: git_backend.history(ref),
+        lambda: git_backend.read_rev(ref, "0" * 40),
+        lambda: git_backend.restore_rev(ref, "0" * 40, "w"),
+    ):
+        with pytest.raises(TodoError) as exc:
+            call()
+        assert exc.value.code == "E_STATE" and "bootstrap" in str(exc.value)
+
+
+def test_relative_local_remote_works_for_state_operations(tmp_path: Path, monkeypatch) -> None:
+    ref = _remote(tmp_path)
+    git_backend.bootstrap(ref)
+    monkeypatch.chdir(tmp_path)
+    rel = git_backend.StateRef(remote="state.git", branch=ref.branch)
+    out = git_backend.mutate(rel, op="create", summary="add t", worker="w", apply=_create)
+    assert out.ok, out.error
+    assert git_backend.reconcile(rel, out.op_id).state == "applied"
+    assert git_backend.history(rel, limit=1)[0]["op_id"] == out.op_id
+
+
 def test_read_never_clones_the_whole_remote(tmp_path: Path, monkeypatch) -> None:
     """Reads must fetch only the state branch, never clone all refs.
 

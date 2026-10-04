@@ -204,6 +204,14 @@ def _git_ok(args: list[str], cwd: Path | None = None) -> str:
     return proc.stdout.strip()
 
 
+def _branch_missing(stderr: str) -> bool:
+    return "couldn't find remote ref" in stderr
+
+
+def _missing_branch_error(ref: StateRef) -> TodoError:
+    return TodoError(f"state branch {ref.branch!r} is missing; run bootstrap", code=E_STATE)
+
+
 def _classify_remote_failure(stderr: str) -> str:
     text = stderr.lower()
     if "non-fast-forward" in text or "fetch first" in text or "failed to push some refs" in text:
@@ -227,7 +235,12 @@ def _classify_remote_failure(stderr: str) -> str:
 
 def ls_remote_tip(ref: StateRef) -> str | None:
     """Return the accepted tip SHA, or None when the branch does not exist."""
-    proc = _git(["ls-remote", ref.remote, ref.branch])
+    try:
+        proc = _git(["ls-remote", ref.remote, ref.branch])
+    except subprocess.TimeoutExpired as exc:
+        raise TodoError(
+            f"remote {ref.remote!r} did not answer within {GIT_TIMEOUT_S}s", code=E_OFFLINE,
+        ) from exc
     if proc.returncode != 0:
         raise TodoError(
             f"remote {ref.remote!r} unreachable or not permitted: {_brief(proc.stderr)}",
@@ -346,24 +359,29 @@ def mutate(
     op_id = _check_op_id(op_id or new_op_id())
     tmp = Path(tempfile.mkdtemp(prefix="todo-state-"))
     try:
-        clone = _git(["clone", "--quiet", "--origin", "origin", ref.remote, str(tmp / "w")])
-        if clone.returncode != 0:
+        work = _init_state_repo(tmp, ref)
+        if work is None:
             return MutationOutcome(
-                ok=False, outcome="offline", op_id=op_id,
-                code=E_OFFLINE, error=f"remote {ref.remote!r} unreachable: {_brief(clone.stderr)}",
+                ok=False, outcome="error", op_id=op_id, code=E_STATE,
+                error="cannot create a scratch repository for the state branch",
             )
-        work = tmp / "w"
         _git(["config", "user.name", "todo-db"], work)
         _git(["config", "user.email", "todo-db@localhost"], work)
 
         attempts = 0
         while True:
-            fetch = _git(["fetch", "--quiet", "origin", ref.branch], work)
+            try:
+                fetch = _git(["fetch", "--quiet", "origin", ref.branch], work)
+            except subprocess.TimeoutExpired:
+                return MutationOutcome(
+                    ok=False, outcome="offline", op_id=op_id, code=E_OFFLINE,
+                    error=f"fetch timed out after {GIT_TIMEOUT_S}s (operation ID {op_id})",
+                )
             if fetch.returncode != 0:
-                if "couldn't find remote ref" in fetch.stderr:
+                if _branch_missing(fetch.stderr):
                     return MutationOutcome(
                         ok=False, outcome="error", op_id=op_id, code=E_STATE,
-                        error=f"state branch {ref.branch!r} is missing; run bootstrap",
+                        error=str(_missing_branch_error(ref)),
                     )
                 return MutationOutcome(
                     ok=False, outcome="offline", op_id=op_id, code=E_OFFLINE,
@@ -518,24 +536,33 @@ def _search(work: Path, op_id: str) -> ReconcileResult:
 
 
 def _reconcile(work: Path, ref: StateRef, op_id: str) -> ReconcileResult:
-    fetch = _git(["fetch", "--quiet", "origin", ref.branch], work)
-    if fetch.returncode != 0:
-        return ReconcileResult(state="unknown", detail=f"fetch failed: {_brief(fetch.stderr)}")
-    return _search(work, op_id)
+    # A timeout here leaves the outcome undetermined, never a raised error:
+    # the caller must still hand back the operation ID.
+    try:
+        fetch = _git(["fetch", "--quiet", "origin", ref.branch], work)
+        if fetch.returncode != 0:
+            return ReconcileResult(state="unknown", detail=f"fetch failed: {_brief(fetch.stderr)}")
+        return _search(work, op_id)
+    except subprocess.TimeoutExpired:
+        return ReconcileResult(state="unknown", detail=f"timed out after {GIT_TIMEOUT_S}s")
 
 
 def _reconcile_best_effort(ref: StateRef, op_id: str) -> ReconcileResult | None:
     """None only when the remote cannot be reached at all."""
     tmp = Path(tempfile.mkdtemp(prefix="todo-reconcile-"))
     try:
-        clone = _git(["clone", "--quiet", "--origin", "origin", ref.remote, str(tmp / "w")])
-        if clone.returncode != 0:
+        work = _init_state_repo(tmp, ref)
+        if work is None:
             return None
-        work = tmp / "w"
-        fetch = _git(["fetch", "--quiet", "origin", ref.branch], work)
-        if fetch.returncode != 0:
-            return ReconcileResult(state="unknown", detail=f"fetch failed: {_brief(fetch.stderr)}")
-        return _search(work, op_id)
+        try:
+            fetch = _git(["fetch", "--quiet", "origin", ref.branch], work)
+            if fetch.returncode != 0:
+                if _branch_missing(fetch.stderr):
+                    return ReconcileResult(state="unknown", detail=f"fetch failed: {_brief(fetch.stderr)}")
+                return None
+            return _search(work, op_id)
+        except subprocess.TimeoutExpired:
+            return ReconcileResult(state="unknown", detail=f"timed out after {GIT_TIMEOUT_S}s")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -553,6 +580,35 @@ def _offline_cached(ns: Path, ref: StateRef) -> ReadOutcome:
     return ReadOutcome(snapshot=load_snapshot(ns / "revs" / rev), rev=rev, stale=True)
 
 
+def _remote_location(ref: StateRef) -> str:
+    """The remote as scratch repos must see it.
+
+    Scratch repos live in a temp directory, so a relative local path would
+    resolve against the wrong base (``git clone`` used to absolutize it).
+    URLs and scp-style remotes do not exist as local paths and pass through.
+    """
+    local = Path(str(ref.remote)).expanduser()
+    return str(local.resolve()) if local.exists() else str(ref.remote)
+
+
+def _init_state_repo(tmp: Path, ref: StateRef) -> Path | None:
+    """Create an empty repo whose only remote is the state remote.
+
+    Unlike ``git clone`` this transfers nothing: the caller fetches just the
+    state branch. A clone pulls every ref of the remote, and remotes that
+    also carry code history make that cost dominate each operation (about
+    110s against BenchBox production state, beyond ``GIT_TIMEOUT_S``).
+    Returns the workdir, or None when git could not set the repo up.
+    """
+    work = tmp / "w"
+    work.mkdir(parents=True, exist_ok=True)
+    if _git(["init", "--quiet", "-b", "main"], work).returncode != 0:
+        return None
+    if _git(["remote", "add", "origin", _remote_location(ref)], work).returncode != 0:
+        return None
+    return work
+
+
 def _fetch_tip_snapshot(tmp: Path, ref: StateRef) -> Path | None:
     """Fetch only the state branch tip into a fresh repo.
 
@@ -561,11 +617,8 @@ def _fetch_tip_snapshot(tmp: Path, ref: StateRef) -> Path | None:
     needs the tip tree of the one state branch. Returns the workdir, or
     None when the remote flaked mid-read.
     """
-    work = tmp / "w"
-    work.mkdir(parents=True, exist_ok=True)
-    if _git(["init", "--quiet", "-b", "main"], work).returncode != 0:
-        return None
-    if _git(["remote", "add", "origin", ref.remote], work).returncode != 0:
+    work = _init_state_repo(tmp, ref)
+    if work is None:
         return None
     fetch = _git(["fetch", "--quiet", "--depth", "1", "origin", ref.branch], work)
     if fetch.returncode != 0:
@@ -636,10 +689,14 @@ def read_rev(ref: StateRef, rev: str) -> Snapshot:
 
     tmp = Path(tempfile.mkdtemp(prefix="todo-read-rev-"))
     try:
-        clone = _git(["clone", "--quiet", "--origin", "origin", ref.remote, str(tmp / "w")])
-        if clone.returncode != 0:
-            raise TodoError(f"remote {ref.remote!r} unreachable", code=E_OFFLINE)
-        work = tmp / "w"
+        work = _init_state_repo(tmp, ref)
+        if work is None:
+            raise TodoError("cannot create a scratch repository for the state branch", code=E_STATE)
+        fetch = _git(["fetch", "--quiet", "origin", ref.branch], work)
+        if fetch.returncode != 0:
+            if _branch_missing(fetch.stderr):
+                raise _missing_branch_error(ref)
+            raise TodoError(f"remote {ref.remote!r} unreachable: {_brief(fetch.stderr)}", code=E_OFFLINE)
         exists = _git(["cat-file", "-e", f"{rev}^{{commit}}"], work)
         if exists.returncode != 0:
             raise TodoError(f"revision {rev!r} not found on {ref.remote!r}", code=E_STATE)
@@ -678,12 +735,13 @@ def _assert_on_branch(ref: StateRef, rev: str) -> None:
     """Refuse revisions that are not part of the state branch's history."""
     tmp = Path(tempfile.mkdtemp(prefix="todo-ancestry-"))
     try:
-        clone = _git(["clone", "--quiet", "--origin", "origin", ref.remote, str(tmp / "w")])
-        if clone.returncode != 0:
-            raise TodoError(f"remote {ref.remote!r} unreachable", code=E_OFFLINE)
-        work = tmp / "w"
+        work = _init_state_repo(tmp, ref)
+        if work is None:
+            raise TodoError("cannot create a scratch repository for the state branch", code=E_STATE)
         fetch = _git(["fetch", "--quiet", "origin", ref.branch], work)
         if fetch.returncode != 0:
+            if _branch_missing(fetch.stderr):
+                raise _missing_branch_error(ref)
             raise TodoError(f"cannot inspect state branch: {_brief(fetch.stderr)}", code=E_OFFLINE)
         ancestor = _git(["merge-base", "--is-ancestor", rev, "FETCH_HEAD"], work)
         if ancestor.returncode != 0:
@@ -783,11 +841,14 @@ def history(ref: StateRef, limit: int = 20) -> list[dict[str, str]]:
     """Recovery aid: recent state-branch commits (ordinary Git history)."""
     tmp = Path(tempfile.mkdtemp(prefix="todo-log-"))
     try:
-        clone = _git(["clone", "--quiet", "--origin", "origin", ref.remote, str(tmp / "w")])
-        if clone.returncode != 0:
-            raise TodoError(f"remote {ref.remote!r} unreachable", code=E_OFFLINE)
-        work = tmp / "w"
-        _git(["fetch", "--quiet", "origin", ref.branch], work)
+        work = _init_state_repo(tmp, ref)
+        if work is None:
+            raise TodoError("cannot create a scratch repository for the state branch", code=E_STATE)
+        fetch = _git(["fetch", "--quiet", "origin", ref.branch], work)
+        if fetch.returncode != 0:
+            if _branch_missing(fetch.stderr):
+                raise _missing_branch_error(ref)
+            raise TodoError(f"remote {ref.remote!r} unreachable: {_brief(fetch.stderr)}", code=E_OFFLINE)
         out = _git(["log", "FETCH_HEAD", f"-n{limit}", "--format=%H%x00%s%x00%aN%x00%aI"], work)
         if out.returncode != 0:
             return []
