@@ -706,6 +706,13 @@
       "status": "done",
       "title": "Route finding verbs in skills; document capture-to-landing end to end"
     },
+    "state-cache-rev-eviction": {
+      "claim": null,
+      "needs": [],
+      "priority": "high",
+      "status": "open",
+      "title": "Bound the state-branch snapshot cache with safe, capped eviction"
+    },
     "table-registries-must-be-hand-synced": {
       "claim": null,
       "needs": [],

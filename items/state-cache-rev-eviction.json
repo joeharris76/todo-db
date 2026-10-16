@@ -1,0 +1,23 @@
+{
+  "acceptance": [
+    "Eviction keeps the resolved tip, the rev named by `last`, and the newest N revs by mtime per namespace; it never deletes the rev `last` names.",
+    "The sweep is best-effort and capped per call, guarded by a non-blocking flock, and renames each victim into a trash directory before removing it; it is idempotent so leaked trash self-heals.",
+    "Snapshots are written to a temporary directory and renamed into place, so a partial rev cannot exist.",
+    "_offline_cached re-reads `last` and retries once before failing.",
+    "A one-time bulk prune is an explicit command (or throttled background pass), never part of read().",
+    "Multi-process tests cover: concurrent read() calls during a sweep, a sweep during save_snapshot, and an offline read after eviction.",
+    "Optional: normalize the remote string in namespace() only with a migration plan for existing namespaces."
+  ],
+  "context": "Review findings: ~/.benchbox/handoffs/2026-10-15-todo-db-cache-review-handoff.md, section 'Review findings (2026-10-15)'. Code reviewed at 3b32919 (0.9.1): src/todo_db/git_backend.py read() (~656,674), _offline_cached (~574,580), src/todo_db/store.py save_snapshot (~1041). Also found: 13 pre-namespace 40-hex dirs from 2026-09-08, two stale .last.*.tmp files, 169 tiny unreclaimed namespaces, and a duplicate namespace (5cf74613c45f4c2a) for the remote spelled without .git.",
+  "description": "read() caches every new state-branch tip as a full snapshot under <cache>/<ns>/revs/<sha>/ and never deletes old ones. Only the resolved tip and the rev named by `last` are ever read back, so the rest is dead weight. The BenchBox namespace (e688dcd1868ed3f8) held 1,508 revs, about 40 GiB, on 2026-10-16 and grows by up to about 3 GiB a day.\n\nAn adversarial review rejected the first proposal (keep only the new tip and the previous `last`): the first sweep would delete ~40 GiB inside read() and exceed the git and MCP timeouts; `last` is written by every process and is not monotonic, so the rule can delete the true newest tip; deleting a rev while another process is in save_snapshot raises a raw FileNotFoundError out of read(); _offline_cached has no fallback for a missing or partial rev.",
+  "sessions": [
+    {
+      "actor": "mcp:claude-code:joe@joe-mac-mini.local:28ce6e0e0d734fa691af0f6b",
+      "at": "2026-10-16T03:20:14Z",
+      "client": "claude-code",
+      "op": "create",
+      "op_id": "8156351ff76c4cef9abcdd8de9b850b9",
+      "session_id": "79cece19bfd24eb58d1f584f82b4398a"
+    }
+  ]
+}
