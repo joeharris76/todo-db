@@ -94,6 +94,7 @@ dependencies remain done-only.
 | **Claim** | A cooperative hold: worker identity, expiry, and a unique generation. Ownership plus generation checks protect renew, release, and finish from stale writers. |
 | **Generation** | The token proving you hold the claim; returned by `take`, required by `renew`/`finish`/`release`. |
 | **Deferral** | Deferred work recorded on a task (`defer`); resolved by promoting it into a linked item (`promote_deferral`) or dropping it with a reason (`dismiss_deferral`). `finish` refuses while open deferrals exist. |
+| **Decision** | A permanent row in a task's decision log (`record_decision`): an owner decision with its source, or an open question. A task with an unanswered question is not ready, and `finish` refuses it. |
 | **Prepared receipt** | Detail-owned evidence binding a member to a batch, owner generation, clean exact source worktree/revision, and a passed bounded suite. It can unlock only an explicit same-batch implementation edge; it is not completion. |
 | **State branch** | The authoritative task store (`todo-state` by default). One commit per operation; fast-forward pushes only. |
 

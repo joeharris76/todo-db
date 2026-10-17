@@ -42,7 +42,7 @@ def test_waiting_until_reports_open_and_blocked_future_holds() -> None:
     snap = _held()
     assert store.waiting_until("held", snap, NOW) == HOLD
     assert store.waiting_until("held", snap, HOLD_AT) is None
-    store.op_update(snap, "held", status="blocked")
+    store.op_update(snap, "held", status="blocked", reason="parked")
     assert store.waiting_until("held", snap, NOW) == HOLD
     assert store.is_ready("held", snap, HOLD_AT) is False
 
@@ -178,8 +178,8 @@ def test_service_hides_refuses_and_releases_a_held_task(tmp_path: Path) -> None:
     assert far in refused["error"] and 'not_before=""' in refused["error"]
 
     # Parking a held task must not unlock take.
-    assert svc.update_item("held", status="blocked")["ok"]
-    parked = svc.take("held")
+    assert svc.update_item("held", status="blocked", reason="parked")["ok"]
+    parked = svc.take("held", override_blocked=True)
     assert not parked["ok"] and parked["code"] == "E_NOTHING_READY"
     assert svc.show_item("held")["data"]["waiting_until"] == far
     assert svc.update_item("held", status="open")["ok"]

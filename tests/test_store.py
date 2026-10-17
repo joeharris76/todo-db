@@ -318,7 +318,7 @@ def test_update_cannot_bypass_claim_paths() -> None:
     snap = _snap()
     store.op_create(snap, item_id="task", title="Parked")
     # open -> blocked -> open is the only update status path.
-    store.op_update(snap, "task", status="blocked")
+    store.op_update(snap, "task", status="blocked", reason="waiting on review")
     assert snap.index["items"]["task"]["status"] == "blocked"
     store.op_update(snap, "task", status="open")
     with pytest.raises(TodoError):
@@ -328,12 +328,12 @@ def test_update_cannot_bypass_claim_paths() -> None:
     with pytest.raises(TodoError):
         store.op_update(snap, "task", status="open")
     with pytest.raises(TodoError):
-        store.op_update(snap, "task", status="blocked")
+        store.op_update(snap, "task", status="blocked", reason="waiting on review")
     store.op_release(snap, "task", "w1", take["claim"]["generation"])
-    store.op_update(snap, "task", status="blocked")
+    store.op_update(snap, "task", status="blocked", reason="waiting on review")
     with pytest.raises(TodoError):
         # A live claim blocks even the parked moves.
-        store.op_take(snap, "task", "w1")
+        store.op_take(snap, "task", "w1", override_blocked=True)
         store.op_update(snap, "task", status="open")
 
 

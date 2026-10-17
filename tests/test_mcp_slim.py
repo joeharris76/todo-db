@@ -12,7 +12,7 @@ from mcp.shared.memory import create_connected_server_and_client_session as conn
 
 from todo_db import count_tokens
 from todo_db import store
-from todo_db.git_backend import StateRef, bootstrap
+from todo_db.git_backend import StateRef, bootstrap, mutate
 from todo_db.mcp.instructions import INSTRUCTIONS
 from todo_db.mcp.server import build_parser, build_server, resolve_launch_config
 from todo_db.service import MAX_BYTES
@@ -315,14 +315,20 @@ def test_every_tool_result_fits_final_serialization(tmp_path: Path) -> None:
         server = build_server(_launch(tmp_path))
         async with connect(server, client_info=types.Implementation(name="w1", version="0")) as session:
             big = "y" * 50000
-            assert _payload(await session.call_tool(
-                "create_item", {"id": "big", "title": "Big", "description": big}))["ok"]
+            # Past the size caps, as an older client without them could write.
+            def seed(snap):
+                store.op_create(snap, item_id="big", title="Big")
+                snap.details["big"]["description"] = big
+                return {"id": "big"}
+
+            ref = StateRef(remote=str(tmp_path / "state.git"), branch="todo-state")
+            assert mutate(ref, op="create", summary="add big", worker="older", apply=seed).ok
             for name, args in (
                 ("list_items", {}),
                 ("list_items", {"limit": 50}),
                 ("show_item", {"id": "big"}),
                 ("show_item", {"id": "big", "field": "description"}),
-                ("update_item", {"id": "big", "title": "Big v2"}),
+                ("update_item", {"id": "big", "priority": "high"}),
                 ("take", {"id": "big"}),
             ):
                 result = await session.call_tool(name, args)
@@ -395,12 +401,14 @@ def test_startup_schema_cost_is_small(tmp_path: Path) -> None:
                                       for t in tools.tools])
             tokens, tokenizer = count_tokens(schema_blob + INSTRUCTIONS)
             assert tokenizer == "o200k_base"
-            # 19 tools plus the full protocol guidance, against 3,344 for
+            # 20 tools plus the full protocol guidance, against 3,344 for
             # the old 26 tool definitions alone. Bumped for the audited
             # takeover tool (3-parameter schema plus one guidance line),
             # then for the four deferral verbs (list/defer/promote/dismiss
-            # plus the finish-gate guidance): deliberate, reviewed surface,
-            # still far below the old count.
-            assert tokens <= 4600, tokens
+            # plus the finish-gate guidance), then for record_decision, the
+            # blocked-reason and acceptance-progress parameters, and their
+            # guidance: deliberate, reviewed surface, still far below the
+            # old count.
+            assert tokens <= 4900, tokens
 
     anyio.run(go)

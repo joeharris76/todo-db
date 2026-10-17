@@ -260,7 +260,7 @@ def test_abort_batch_reports_only_changed_members() -> None:
     )
     store.op_create(snap, item_id="b", title="B")
     store.op_create(snap, item_id="c", title="C")
-    store.op_update(snap, "c", status="blocked")
+    store.op_update(snap, "c", status="blocked", reason="waiting on a")
     claim = store.op_take(snap, "a", "worker")
     store.op_prepare(
         snap, "a", "worker", claim["claim"]["generation"], batch_id="batch-1", member_id="a",
@@ -273,6 +273,7 @@ def test_abort_batch_reports_only_changed_members() -> None:
     # the phantom registry member has no task to record on.
     assert out["affected"] == ["a", "c"]
     assert snap.index["items"]["c"]["status"] == "open"
+    assert "blocked_reason" not in snap.details["c"]
 
 
 def _session_service(tmp_path: Path, worker: str = "worker"):

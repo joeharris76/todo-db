@@ -607,6 +607,62 @@
     }
   },
   {
+    "name": "record_decision",
+    "description": "Append an owner decision (with source) or an open question to a task.",
+    "inputSchema": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "kind": {
+          "default": "decision",
+          "title": "Kind",
+          "type": "string"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source"
+        },
+        "answers": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Answers"
+        }
+      },
+      "required": [
+        "id",
+        "text"
+      ],
+      "title": "record_decision_toolArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "record_decision_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
     "name": "register_batch",
     "description": "Register an immutable prepared-work batch after confirmed schema-3 cutover.",
     "inputSchema": {
@@ -815,6 +871,11 @@
         "id": {
           "title": "Id",
           "type": "string"
+        },
+        "override_blocked": {
+          "default": false,
+          "title": "Override Blocked",
+          "type": "boolean"
         }
       },
       "required": [
@@ -863,7 +924,7 @@
   },
   {
     "name": "update_item",
-    "description": "Edit task fields or move between open and blocked.",
+    "description": "Edit task fields or move between open and blocked (blocking needs a reason).",
     "inputSchema": {
       "properties": {
         "id": {
@@ -999,6 +1060,33 @@
           ],
           "default": null,
           "title": "Not Before"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        },
+        "acceptance_met": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "integer"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Acceptance Met"
         }
       },
       "required": [

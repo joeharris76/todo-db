@@ -286,6 +286,12 @@ class TrackerService:
             open_def = S.open_deferrals(snap, item_id)
             if open_def:
                 data["open_deferrals"] = sorted(row["id"] for row in open_def)
+            questions = S.open_questions(snap, item_id)
+            if questions:
+                data["open_questions"] = questions
+            # A reason left on an unblocked task by an older client is stale.
+            if entry["status"] == "blocked" and isinstance(detail.get("blocked_reason"), str):
+                data["blocked_reason"] = detail["blocked_reason"]
             if entry.get("claim"):
                 claim = entry["claim"]
                 data["claim"] = {
@@ -303,7 +309,7 @@ class TrackerService:
                     "field": "sessions", "offset": 0, "budget": SECTION_BUDGET, "rev": outcome.rev,
                 }
             sections: dict[str, Any] = {}
-            for key in ("description", "acceptance", "links", "context", "legacy", "sessions"):
+            for key in ("description", "acceptance", "links", "context", "decisions", "legacy", "sessions"):
                 if key in detail:
                     sections[key] = self._section_summary(detail[key])
             sections["needs"] = {"total": len(needs)}
@@ -325,6 +331,20 @@ class TrackerService:
                 elif value:
                     data[f"{key}_continuation"] = {
                         "field": key, "offset": 0, "budget": SECTION_BUDGET, "rev": outcome.rev,
+                    }
+            if detail.get("acceptance"):
+                met, next_step = S.acceptance_progress(detail)
+                data["acceptance_met"] = met
+                data["next_step"] = next_step
+            decisions = detail.get("decisions", [])
+            if isinstance(decisions, list) and decisions:
+                # Small logs inline; larger ones page by row like sessions.
+                if len(_compact(decisions).encode("utf-8")) <= SECTION_BUDGET:
+                    data["decisions"] = decisions
+                else:
+                    data["decisions"] = {"total": len(decisions), "last": decisions[-1]}
+                    data["decisions_continuation"] = {
+                        "field": "decisions", "offset": 0, "budget": SECTION_BUDGET, "rev": outcome.rev,
                     }
             if detail.get("batch") is not None:
                 data["batch"] = detail["batch"]
@@ -368,6 +388,15 @@ class TrackerService:
                 "sections": sections,
                 "continuation": "response exceeded the byte cap; read sections with show_item field/offset",
             }
+            # Session state is small and bounded; keep it so a caller never
+            # loses the open questions or the next step to the byte cap.
+            for key in ("blocked_reason", "open_questions", "acceptance_met", "next_step", "decisions_continuation"):
+                if key in data:
+                    slim[key] = data[key]
+            if "decisions_continuation" not in slim and "decisions" in sections:
+                slim["decisions_continuation"] = {
+                    "field": "decisions", "offset": 0, "budget": SECTION_BUDGET, "rev": outcome.rev,
+                }
             if _fits(ok(slim)):
                 return ok(slim)
             return err(
@@ -434,21 +463,22 @@ class TrackerService:
             if not _fits(env):
                 return err(E_OVERSIZED, "section window exceeds the byte cap")
             return env
-        if field == "sessions":
-            # Entry-window paging over the session log: offsets count
-            # entries (not bytes), mirroring the needs/unmet_needs path.
-            # Unlike needs, entries vary in size, so a full window can
-            # exceed the byte cap: shrink it until it fits, mirroring the
-            # list_items truncation loop. A single entry always fits (all
-            # identifier fields are bounded), so paging always makes
-            # progress and no log is ever unreadable.
-            log = detail.get("sessions", [])
+        if field in ("sessions", "decisions"):
+            # Entry-window paging over the session and decision logs:
+            # offsets count entries (not bytes), mirroring the
+            # needs/unmet_needs path. Unlike needs, entries vary in size,
+            # so a full window can exceed the byte cap: shrink it until it
+            # fits, mirroring the list_items truncation loop. A single
+            # entry always fits (every field is bounded), so paging always
+            # makes progress and no log is ever unreadable.
+            log = detail.get(field, [])
             if not isinstance(log, list):
-                return err(E_STATE, f"task {item_id!r} has a malformed sessions log")
+                return err(E_STATE, f"task {item_id!r} has a malformed {field} log")
             offset = max(0, int(offset))
             if offset >= len(log) and log:
                 return err(E_STATE, f"section offset {offset} is past the end ({len(log)})")
-            window = [_public_session_entry(entry) for entry in log[offset : offset + NEEDS_INLINE]]
+            page = log[offset : offset + NEEDS_INLINE]
+            window = [_public_session_entry(entry) for entry in page] if field == "sessions" else list(page)
             data: dict[str, Any] = {
                 "id": item_id, "field": field, "offset": offset,
                 "total": len(log), "window": window, "rev": current_rev,
@@ -882,9 +912,18 @@ class TrackerService:
         guarded = {key: kwargs[key] for key in self.UPDATE_GUARDED_FIELDS if key in kwargs}
         detail_guarded = {
             key: kwargs[key]
-            for key in ("description", "acceptance", "links", "context", "batch", "not_before")
+            for key in ("description", "acceptance", "links", "context", "batch", "not_before", "acceptance_met")
             if key in kwargs
         }
+        if "reason" in kwargs:
+            detail_guarded["blocked_reason"] = kwargs["reason"]
+        if "acceptance_met" in kwargs:
+            # Indexes are only meaningful against the criteria they were read from.
+            detail_guarded["acceptance"] = kwargs.get("acceptance")
+        if "acceptance" in kwargs:
+            # Rewriting acceptance prunes met texts, so a concurrent mark
+            # must surface as a conflict rather than vanish on retry.
+            detail_guarded["acceptance_met"] = kwargs.get("acceptance_met")
         pre_image: dict[str, Any] | None = None
         requested = datetime.now(timezone.utc)
 
@@ -930,7 +969,7 @@ class TrackerService:
 
         return self._mutate("update", f"edit {item_id}", apply)
 
-    def take(self, item_id: str) -> dict[str, Any]:
+    def take(self, item_id: str, override_blocked: bool = False) -> dict[str, Any]:
         worker = self.worker
 
         def apply(snap: S.Snapshot, op_id: str) -> dict[str, Any]:
@@ -942,7 +981,7 @@ class TrackerService:
                     code=E_MULTIPLE_CLAIMS,
                 )
             self._check_take_readiness(snap, item_id, now)
-            took = S.op_take(snap, item_id, worker, ttl_hours=self.ttl_hours)
+            took = S.op_take(snap, item_id, worker, ttl_hours=self.ttl_hours, override_blocked=override_blocked)
             self._record_session(
                 snap, item_id, "take", op_id, generation=took["claim"]["generation"]
             )
@@ -1265,6 +1304,38 @@ class TrackerService:
             return {"id": item_id, "deferral": {"id": row["id"], "resolution": "open"}}
 
         return self._mutate("defer", f"{self.worker} defers work on {item_id}", apply)
+
+    def record_decision(
+        self,
+        item_id: str,
+        text: str,
+        kind: str = "decision",
+        source: str | None = None,
+        answers: int | None = None,
+    ) -> dict[str, Any]:
+        """Append an owner decision or open question to a task.
+
+        Rows carry the caller's actor and session exactly as session
+        history records them, so, like takeover, a sessionless caller is
+        refused rather than recorded without attribution.
+        """
+        if self.session_id is None:
+            return err(E_STATE, "record_decision requires a session-attributed caller")
+        session_id = self.session_id
+
+        def apply(snap: S.Snapshot, op_id: str) -> dict[str, Any]:
+            row = S.op_record_decision(
+                snap, item_id, text=text, kind=kind, source=source, answers=answers,
+                actor=self.worker, session=session_id,
+            )
+            self._record_session(snap, item_id, "decide", op_id)
+            ack: dict[str, Any] = {"id": item_id, "decision": {"id": row["id"], "kind": row["kind"]}}
+            if "answers" in row:
+                ack["decision"]["answers"] = row["answers"]
+            ack["open_questions"] = S.open_questions(snap, item_id)
+            return ack
+
+        return self._mutate("decide", f"{self.worker} records a decision on {item_id}", apply)
 
     def promote_deferral(
         self,

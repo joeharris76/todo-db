@@ -12,6 +12,10 @@ and retained task context. Detail files must not contain independently
 editable copies of index-owned fields. An optional detail-owned
 ``not_before`` (UTC ISO Z) holds an open task out of the ready queue until
 that moment; the status stays ``open`` so the task returns on its own.
+Session state is detail-owned too: ``blocked_reason`` while a task is
+blocked, an append-only ``decisions`` log of owner decisions and open
+questions, and ``acceptance_met`` (the texts of met criteria). Agent-written
+content is size-capped and scanned for credentials on write.
 
 Lifecycle: ``open``, ``active``, ``blocked``, ``done``, ``dropped``.
 Priorities preserve the historical bands: ``critical``, ``high``,
@@ -53,8 +57,11 @@ from .errors import (
     E_CLAIM_STALE,
     E_CONFLICT,
     E_FINAL_EVIDENCE,
+    E_ITEM_TOO_LARGE,
     E_OPEN_DEFERRALS,
+    E_OPEN_QUESTIONS,
     E_SCHEMA,
+    E_SECRET,
     E_STATE,
     TodoError,
 )
@@ -133,8 +140,74 @@ DEFERRAL_RESOLUTIONS = ("open", "promoted", "dismissed")
 #: strand older clients; only writers are bound to this allowlist.
 SESSION_OPS = frozenset({
     "create", "take", "renew", "release", "prepare", "finish", "drop", "update",
-    "abort", "invalidate", "takeover", "defer", "promote", "dismiss",
+    "abort", "invalidate", "takeover", "defer", "promote", "dismiss", "decide",
 })
+
+#: Bound for the reason a task is blocked. Multi-line like deferral
+#: reasons; it never lands in a commit trailer.
+MAX_BLOCKED_REASON_LEN = 1000
+
+#: Decision rows. A ``decision`` records what the owner decided and where
+#: (``source``); a ``question`` records an open question that a later
+#: decision may answer. Text may span lines; sources are one line.
+DECISION_KINDS = ("decision", "question")
+MAX_DECISION_TEXT_LEN = 1000
+MAX_DECISION_SOURCE_LEN = 280
+
+#: Size caps for agent-written item content. Writable content is the
+#: title plus these detail keys. The whole-file cap leaves out archival
+#: ``legacy`` data and the system-written keys below, so session history,
+#: batch metadata and receipts never cause a refusal, however they grow.
+#: Both caps apply only when an operation grows writable content, so an
+#: existing oversized item stays editable as long as an edit does not
+#: grow it.
+WRITABLE_DETAIL_KEYS = (
+    "description", "context", "acceptance", "acceptance_met", "links", "decisions", "blocked_reason",
+)
+MAX_WRITABLE_BYTES = 8192
+MAX_DETAIL_BYTES = 16384
+SYSTEM_DETAIL_KEYS = frozenset({"legacy", "sessions", "batch", "prepared", "final_evidence"})
+
+#: Credential shapes refused in agent-supplied text. The state branch can
+#: be public, so a write that would publish a credential is refused before
+#: it reaches Git. Only newly supplied values are scanned; stored content
+#: never is. Each entry is ``(kind, pattern)``; the kind names the match
+#: in errors without echoing the value.
+SECRET_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("an AWS access key ID", re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b")),
+    ("an AWS presigned URL credential", re.compile(r"X-Amz-Credential=")),
+    ("an AWS presigned URL signature", re.compile(r"X-Amz-Signature=")),
+    ("a GitHub token", re.compile(r"\bgh[pousr]_[A-Za-z0-9]{36,}\b")),
+    ("a GitHub fine-grained token", re.compile(r"\bgithub_pat_[A-Za-z0-9_]{22,}\b")),
+    ("a private key block", re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----")),
+    ("a Slack token", re.compile(r"\bxox[abprs]-[A-Za-z0-9-]{10,}")),
+    ("an Anthropic API key", re.compile(r"\bsk-ant-[A-Za-z0-9_-]{20,}")),
+    ("an OpenAI API key", re.compile(r"\bsk-(?:proj-)?[A-Za-z0-9_-]{32,}")),
+    ("a Google API key", re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b")),
+    ("a JSON Web Token", re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}")),
+    ("credentials in a URL", re.compile(r"\b[a-z][a-z0-9+.-]*://[^\s/:@]+:[^\s/@]+@")),
+)
+
+
+def check_secrets(fields: dict[str, Any]) -> None:
+    """Refuse agent-supplied text that looks like a credential.
+
+    *fields* maps a field label to a string, a list of strings, or None.
+    The error names the field and the kind of credential, never the
+    matched value.
+    """
+    for label, value in fields.items():
+        if value is None:
+            continue
+        texts = [value] if isinstance(value, str) else [v for v in value if isinstance(v, str)]
+        for text in texts:
+            for kind, pattern in SECRET_PATTERNS:
+                if pattern.search(text):
+                    raise TodoError(
+                        f"{label} contains what looks like {kind}; item text is published to the "
+                        "state branch, so remove the credential and refer to where it is stored instead",
+                        code=E_SECRET,
+                    )
 
 OP_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 GENERATION_RE = re.compile(r"^[0-9a-f]{32}$")
@@ -455,22 +528,87 @@ def validate_deferral_summary(summary: str) -> str:
     return cleaned
 
 
+def _validate_multiline(value: Any, label: str, limit: int) -> str:
+    """Validate bounded multi-line text: never empty, no controls but newline/tab."""
+    if not isinstance(value, str) or not value.strip():
+        raise TodoError(f"{label} must be a non-empty string", code=E_STATE)
+    cleaned = value.strip()
+    if len(cleaned) > limit:
+        raise TodoError(f"{label} exceeds {limit} chars", code=E_STATE)
+    if any(char in FORBIDDEN_BREAKS for char in cleaned):
+        raise TodoError(f"{label} must not contain Unicode line separators", code=E_STATE)
+    if any(ord(char) < 32 and char not in ("\n", "\t") for char in cleaned):
+        raise TodoError(f"{label} must not contain control characters", code=E_STATE)
+    return cleaned
+
+
 def validate_deferral_reason(reason: str) -> str:
     """Validate a deferral reason: bounded, never empty, multi-line allowed.
 
     Reasons justify deferral and dismissal in detail views, so bodies may
     span lines; control characters other than newline/tab are rejected.
     """
-    if not isinstance(reason, str) or not reason.strip():
-        raise TodoError("deferral reason must be a non-empty string", code=E_STATE)
-    cleaned = reason.strip()
-    if len(cleaned) > MAX_DEFERRAL_REASON_LEN:
-        raise TodoError(f"deferral reason exceeds {MAX_DEFERRAL_REASON_LEN} chars", code=E_STATE)
-    if any(char in FORBIDDEN_BREAKS for char in cleaned):
-        raise TodoError("deferral reason must not contain Unicode line separators", code=E_STATE)
-    if any(ord(char) < 32 and char not in ("\n", "\t") for char in cleaned):
-        raise TodoError("deferral reason must not contain control characters", code=E_STATE)
+    return _validate_multiline(reason, "deferral reason", MAX_DEFERRAL_REASON_LEN)
+
+
+def validate_blocked_reason(reason: str) -> str:
+    """Validate why a task is blocked: same rules as a deferral reason."""
+    return _validate_multiline(reason, "blocked reason", MAX_BLOCKED_REASON_LEN)
+
+
+def validate_decision_text(text: str) -> str:
+    """Validate a decision or question body: bounded, multi-line allowed."""
+    return _validate_multiline(text, "decision text", MAX_DECISION_TEXT_LEN)
+
+
+def validate_decision_source(source: str) -> str:
+    """Validate where an owner decision was made: one bounded line."""
+    if not isinstance(source, str) or not source.strip():
+        raise TodoError("decision source must be a non-empty string", code=E_STATE)
+    cleaned = source.strip()
+    if len(cleaned) > MAX_DECISION_SOURCE_LEN:
+        raise TodoError(f"decision source exceeds {MAX_DECISION_SOURCE_LEN} chars", code=E_STATE)
+    if any(ord(char) < 32 for char in cleaned) or _has_forbidden_breaks(cleaned):
+        raise TodoError("decision source must be a single line without control characters", code=E_STATE)
     return cleaned
+
+
+def _compact_bytes(value: Any) -> int:
+    return len(json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8"))
+
+
+def writable_bytes(title: str, detail: dict[str, Any]) -> int:
+    """UTF-8 size of the agent-written content of one item."""
+    content = {key: detail[key] for key in WRITABLE_DETAIL_KEYS if key in detail}
+    content["title"] = title
+    return _compact_bytes(content)
+
+
+def detail_bytes(detail: dict[str, Any]) -> int:
+    """UTF-8 size of one detail file, leaving out system-written keys."""
+    return _compact_bytes({key: value for key, value in detail.items() if key not in SYSTEM_DETAIL_KEYS})
+
+
+def _check_item_size(snapshot: Snapshot, item_id: str, before: int) -> None:
+    """Refuse a write that grows writable content past either size cap."""
+    title = snapshot.index["items"][item_id]["title"]
+    detail = snapshot.details[item_id]
+    after = writable_bytes(title, detail)
+    if after <= before:
+        return
+    if after > MAX_WRITABLE_BYTES:
+        raise TodoError(
+            f"task {item_id!r} text would be {after} bytes, over the {MAX_WRITABLE_BYTES}-byte cap; "
+            "move long material to a linked document and keep a short summary here",
+            code=E_ITEM_TOO_LARGE,
+        )
+    size = detail_bytes(detail)
+    if size > MAX_DETAIL_BYTES:
+        raise TodoError(
+            f"task {item_id!r} detail file would be {size} bytes, over the {MAX_DETAIL_BYTES}-byte cap; "
+            "move long material to a linked document and keep a short summary here",
+            code=E_ITEM_TOO_LARGE,
+        )
 
 
 def empty_index() -> dict[str, Any]:
@@ -597,6 +735,102 @@ def open_deferrals(snapshot: Snapshot, item_id: str) -> list[dict[str, Any]]:
     """Return the open deferral rows recorded on one task."""
     detail = snapshot.details.get(item_id, {})
     return [row for row in _deferrals_of(detail) if isinstance(row, dict) and row.get("resolution", "open") == "open"]
+
+
+def _validate_decisions(item_id: str, rows: Any) -> None:
+    """Validate the append-only decision log on one task.
+
+    Ids are unique positive integers in append order. A decision names its
+    source; a question carries no ``answers``. An ``answers`` link must
+    name an earlier question on the same task, and each question is
+    answered at most once. Unknown extra keys are tolerated so a later
+    writer can extend rows without stranding this reader.
+    """
+    if not isinstance(rows, list):
+        raise TodoError(f"detail for {item_id!r}: 'decisions' must be a list", code=E_STATE)
+    questions: set[int] = set()
+    answered: set[int] = set()
+    last = 0
+    for pos, row in enumerate(rows):
+        if not isinstance(row, dict):
+            raise TodoError(f"decision {pos} for {item_id!r} must be an object", code=E_STATE)
+        number = row.get("id")
+        if not isinstance(number, int) or isinstance(number, bool) or number <= last:
+            raise TodoError(f"decision {pos} for {item_id!r} has an invalid or out-of-order id", code=E_STATE)
+        last = number
+        kind = row.get("kind")
+        if kind not in DECISION_KINDS:
+            raise TodoError(f"decision {number} for {item_id!r} has an unknown kind", code=E_STATE)
+        text = row.get("text")
+        if not isinstance(text, str) or not text.strip() or len(text) > MAX_DECISION_TEXT_LEN:
+            raise TodoError(f"decision {number} for {item_id!r} has invalid text", code=E_STATE)
+        source = row.get("source")
+        if source is not None:
+            if not isinstance(source, str) or not source.strip() or len(source) > MAX_DECISION_SOURCE_LEN:
+                raise TodoError(f"decision {number} for {item_id!r} has an invalid source", code=E_STATE)
+        elif kind == "decision":
+            raise TodoError(f"decision {number} for {item_id!r} needs a source", code=E_STATE)
+        answers = row.get("answers")
+        if answers is not None:
+            if kind != "decision":
+                raise TodoError(f"question {number} for {item_id!r} cannot answer another row", code=E_STATE)
+            if not isinstance(answers, int) or isinstance(answers, bool) or answers not in questions:
+                raise TodoError(f"decision {number} for {item_id!r} answers an unknown question", code=E_STATE)
+            if answers in answered:
+                raise TodoError(f"question {answers} for {item_id!r} is answered twice", code=E_STATE)
+            answered.add(answers)
+        if kind == "question":
+            questions.add(number)
+        recorded_at = row.get("recorded_at")
+        if not isinstance(recorded_at, str):
+            raise TodoError(f"decision {number} for {item_id!r} needs a timestamp", code=E_STATE)
+        parse_ts(recorded_at)
+        validate_worker(str(row.get("actor", "")))
+        validate_session_id(str(row.get("session", "")))
+
+
+def open_questions(snapshot: Snapshot, item_id: str) -> list[int]:
+    """Return the ids of questions on a task that no decision answers yet."""
+    rows = snapshot.details.get(item_id, {}).get("decisions", [])
+    if not isinstance(rows, list):
+        return []
+    answered = {row.get("answers") for row in rows if isinstance(row, dict) and row.get("kind") == "decision"}
+    return [
+        row["id"]
+        for row in rows
+        if isinstance(row, dict) and row.get("kind") == "question" and row.get("id") not in answered
+    ]
+
+
+def acceptance_progress(detail: dict[str, Any]) -> tuple[list[int], str | None]:
+    """Map stored met texts onto the current acceptance list.
+
+    Returns the met indexes and the first criterion not yet met (None when
+    all are met or there are none). Texts that no longer match a criterion
+    are stale -- an older client may have rewritten ``acceptance`` -- and
+    are ignored.
+    """
+    acceptance = detail.get("acceptance", [])
+    met = detail.get("acceptance_met", [])
+    if not isinstance(acceptance, list):
+        return [], None
+    met_texts = {text for text in met if isinstance(text, str)} if isinstance(met, list) else set()
+    indexes = [pos for pos, text in enumerate(acceptance) if text in met_texts]
+    next_step = next((text for text in acceptance if text not in met_texts), None)
+    return indexes, next_step
+
+
+def _drop_stale_blocked_reason(snapshot: Snapshot, item_id: str) -> bool:
+    """Remove a blocked reason left on a task that is no longer blocked.
+
+    An older client can unblock a task without knowing to remove the
+    reason. Readers ignore it; the next write from this client clears it.
+    """
+    detail = snapshot.details[item_id]
+    if "blocked_reason" in detail and snapshot.index["items"][item_id]["status"] != "blocked":
+        del detail["blocked_reason"]
+        return True
+    return False
 
 
 def scope_digest(scope: dict[str, list[str]]) -> str:
@@ -947,6 +1181,19 @@ def validate_snapshot(index: Any, details: dict[str, Any]) -> dict[str, Any]:
                         code=E_STATE,
                     )
                 seen.add(checked["id"])
+        if "blocked_reason" in detail and not isinstance(detail["blocked_reason"], str):
+            # Only the type is enforced: an older client may unblock a task
+            # and leave the reason behind, so a stale reason is valid data.
+            raise TodoError(f"detail for {item_id!r}: 'blocked_reason' must be a string", code=E_STATE)
+        if "acceptance_met" in detail and (
+            not isinstance(detail["acceptance_met"], list)
+            or any(not isinstance(v, str) for v in detail["acceptance_met"])
+        ):
+            # Texts are not cross-checked against acceptance: an older
+            # client may rewrite acceptance and leave stale texts behind.
+            raise TodoError(f"detail for {item_id!r}: 'acceptance_met' must be a list of strings", code=E_STATE)
+        if "decisions" in detail:
+            _validate_decisions(item_id, detail["decisions"])
         _validate_batch_detail(item_id, detail, list(items[item_id].get("needs", [])))
 
     # A prepared receipt is useful only to an explicitly registered member of
@@ -1091,6 +1338,8 @@ def is_ready(item_id: str, snapshot: Snapshot, now: datetime | None = None) -> b
         return False
     if waiting_until(item_id, snapshot, now) is not None:
         return False
+    if open_questions(snapshot, item_id):
+        return False
     detail = snapshot.details.get(item_id, {})
     batch = detail.get("batch")
     implementation_deps = set(batch.get("implementation_dependencies", [])) if isinstance(batch, dict) else set()
@@ -1182,6 +1431,33 @@ def op_create(
     not_before: str = "",
     now: datetime | None = None,
 ) -> str:
+    check_secrets({
+        "title": title, "description": description, "context": context,
+        "acceptance": list(acceptance), "links": list(links),
+    })
+    return _create_item(
+        snapshot, item_id=item_id, title=title, priority=priority, description=description,
+        needs=needs, acceptance=acceptance, links=links, context=context, batch=batch,
+        not_before=not_before, now=now,
+    )
+
+
+def _create_item(
+    snapshot: Snapshot,
+    *,
+    item_id: str,
+    title: str,
+    priority: str = "medium",
+    description: str = "",
+    needs: list[str] | tuple[str, ...] = (),
+    acceptance: list[str] | tuple[str, ...] = (),
+    links: list[str] | tuple[str, ...] = (),
+    context: str = "",
+    batch: dict[str, Any] | None = None,
+    not_before: str = "",
+    now: datetime | None = None,
+) -> str:
+    """Create a task without scanning its text; callers scan what they supplied."""
     validate_id(item_id)
     hold = normalize_not_before(not_before, now) if not_before else None
     items = snapshot.index["items"]
@@ -1220,6 +1496,7 @@ def op_create(
         detail["batch"] = json.loads(json.dumps(batch))
     snapshot.details[item_id] = detail
     try:
+        _check_item_size(snapshot, item_id, 0)
         validate_snapshot(snapshot.index, snapshot.details)
     except TodoError:
         del items[item_id]
@@ -1272,11 +1549,45 @@ def op_update(
     status: str | None = None,
     batch: dict[str, Any] | None = None,
     not_before: str | None = None,
+    reason: str | None = None,
+    acceptance_met: list[int] | tuple[int, ...] | None = None,
     now: datetime | None = None,
 ) -> dict[str, Any]:
+    """Edit a task.
+
+    ``reason`` is required when moving a task to ``blocked`` and replaces
+    the reason when the task is already blocked; it is refused without
+    ``status="blocked"``. ``acceptance_met`` lists zero-based indexes into
+    ``acceptance`` as it stands after this call (empty clears); the met
+    criteria are stored as their texts.
+    """
     items = snapshot.index["items"]
     if item_id not in items:
         raise TodoError(f"unknown task {item_id!r}", code=E_STATE)
+    if reason is not None:
+        if status != "blocked":
+            raise TodoError("reason applies only with status='blocked'", code=E_STATE)
+        reason = validate_blocked_reason(reason)
+    if acceptance_met is not None:
+        # Indexes refer to acceptance as it stands after this call; check
+        # them before anything is written.
+        criteria = list(acceptance) if acceptance is not None else snapshot.details[item_id].get("acceptance", [])
+        indexes = list(acceptance_met)
+        if any(not isinstance(pos, int) or isinstance(pos, bool) for pos in indexes):
+            raise TodoError("acceptance_met must be a list of integer indexes", code=E_STATE)
+        if len(set(indexes)) != len(indexes):
+            raise TodoError("acceptance_met has a duplicate index", code=E_STATE)
+        bad = [pos for pos in indexes if not 0 <= pos < len(criteria)]
+        if bad:
+            raise TodoError(
+                f"acceptance_met index {bad[0]} is out of range for {len(criteria)} criteria", code=E_STATE,
+            )
+    check_secrets({
+        "title": title, "description": description, "context": context,
+        "acceptance": None if acceptance is None else list(acceptance),
+        "links": None if links is None else list(links),
+        "reason": reason,
+    })
     # An empty string clears the hold, as it clears the other detail fields.
     hold = normalize_not_before(not_before, now) if not_before else None
     existing_batch = snapshot.details[item_id].get("batch")
@@ -1293,6 +1604,7 @@ def op_update(
     previous = json.loads(json.dumps(entry))
     previous_details = json.loads(json.dumps(snapshot.details))
     previous_version = snapshot.index["schema_version"]
+    previous_writable = writable_bytes(entry["title"], snapshot.details[item_id])
     changed: list[str] = []
     if title is not None:
         entry["title"] = title
@@ -1322,9 +1634,18 @@ def op_update(
                     f"cannot move claimed task {item_id!r} via update; release it first",
                     code=E_STATE,
                 )
+            if status == "blocked" and reason is None:
+                raise TodoError(
+                    f"blocking {item_id!r} needs a reason: say what it waits on", code=E_STATE,
+                )
             entry["status"] = status
             changed.append("status")
     detail = snapshot.details[item_id]
+    if reason is not None and detail.get("blocked_reason") != reason:
+        detail["blocked_reason"] = reason
+        changed.append("blocked_reason")
+    if _drop_stale_blocked_reason(snapshot, item_id):
+        changed.append("blocked_reason")
     if description is not None:
         if description:
             detail["description"] = description
@@ -1337,6 +1658,24 @@ def op_update(
         else:
             detail.pop("acceptance", None)
         changed.append("acceptance")
+        # Met texts that no longer name a criterion are dropped here;
+        # readers already ignore them.
+        met = detail.get("acceptance_met")
+        if isinstance(met, list):
+            kept = [text for text in met if text in detail.get("acceptance", [])]
+            if kept != met:
+                if kept:
+                    detail["acceptance_met"] = kept
+                else:
+                    detail.pop("acceptance_met", None)
+    if acceptance_met is not None:
+        criteria = detail.get("acceptance", [])
+        indexes = list(acceptance_met)
+        if indexes:
+            detail["acceptance_met"] = [criteria[pos] for pos in sorted(indexes)]
+        else:
+            detail.pop("acceptance_met", None)
+        changed.append("acceptance_met")
     if links is not None:
         if list(links):
             detail["links"] = list(links)
@@ -1376,6 +1715,7 @@ def op_update(
             invalidated = _invalidate_prepared_dependents(snapshot, item_id)
             if invalidated:
                 changed.append("downstream_prepared_receipts")
+        _check_item_size(snapshot, item_id, previous_writable)
         validate_snapshot(snapshot.index, snapshot.details)
     except TodoError:
         items[item_id] = previous
@@ -1522,6 +1862,7 @@ def op_abort_batch(snapshot: Snapshot, batch_id: str, worker: str, owner_generat
             entry["claim"] = None
             if entry["status"] in ("open", "blocked", "active"):
                 entry["status"] = "open"
+            _drop_stale_blocked_reason(snapshot, member)
             # Registry members without an index entry (phantom members)
             # are skipped: only tasks that actually changed qualify, and
             # recording on an unknown task would fail the whole abort.
@@ -1548,7 +1889,13 @@ def op_take(
     *,
     ttl_hours: float = DEFAULT_TTL_HOURS,
     now: datetime | None = None,
+    override_blocked: bool = False,
 ) -> dict[str, Any]:
+    """Claim a task. A ``blocked`` task needs ``override_blocked=True``.
+
+    Overriding takes the task as usual and removes its blocked reason.
+    Re-adoption of a live claim by the same worker is unchanged.
+    """
     worker = validate_worker(worker)
     entry = _require_entry(snapshot, item_id)
     moment = now or datetime.now(timezone.utc)
@@ -1570,6 +1917,14 @@ def op_take(
         raise TodoError(f"task {item_id!r} is claimed by {claim['worker']!r}", code=E_CONFLICT)
     if entry["status"] not in ("open", "blocked", "active"):
         raise TodoError(f"task {item_id!r} is {entry['status']} and cannot be taken", code=E_STATE)
+    if entry["status"] == "blocked" and not override_blocked:
+        reason = snapshot.details[item_id].get("blocked_reason")
+        why = f": {reason}" if isinstance(reason, str) and reason.strip() else ""
+        raise TodoError(
+            f"task {item_id!r} is blocked{why}; unblock it with update_item status='open', "
+            "or pass override_blocked=true to take it anyway",
+            code=E_STATE,
+        )
     fresh = {
         "worker": worker,
         "expires_at": (moment + timedelta(hours=ttl_hours)).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -1578,6 +1933,7 @@ def op_take(
     }
     entry["claim"] = fresh
     entry["status"] = "active"
+    _drop_stale_blocked_reason(snapshot, item_id)
     validate_snapshot(snapshot.index, snapshot.details)
     return {"id": item_id, "claim": fresh, "adopted": False}
 
@@ -1606,6 +1962,7 @@ def op_takeover(
     worker = validate_worker(worker)
     expected_holder = validate_worker(expected_holder)
     reason = validate_takeover_reason(reason)
+    check_secrets({"takeover reason": reason})
     entry = _require_entry(snapshot, item_id)
     moment = now or datetime.now(timezone.utc)
     if not 0 < ttl_hours <= MAX_TTL_HOURS:
@@ -1687,6 +2044,7 @@ def op_release(
     entry["claim"] = None
     if entry["status"] == "active":
         entry["status"] = "open"
+    _drop_stale_blocked_reason(snapshot, item_id)
     validate_snapshot(snapshot.index, snapshot.details)
     return {"id": item_id, "status": entry["status"]}
 
@@ -1849,6 +2207,13 @@ def op_finish(
             "promote or dismiss them before finish",
             code=E_OPEN_DEFERRALS,
         )
+    questions = open_questions(snapshot, item_id)
+    if questions:
+        raise TodoError(
+            f"task {item_id!r} has open questions {questions}; "
+            "record the owner's answer with record_decision answers=<id> before finish",
+            code=E_OPEN_QUESTIONS,
+        )
     batch = snapshot.index.get("batches", {}).get((detail.get("batch") or {}).get("batch_id"))
     if isinstance(batch, dict) and batch.get("lifecycle", "active") != "active":
         raise TodoError(f"batch {(detail.get('batch') or {}).get('batch_id')!r} is no longer active", code=E_STATE)
@@ -1871,6 +2236,7 @@ def op_finish(
         )
     entry["claim"] = None
     entry["status"] = "done"
+    _drop_stale_blocked_reason(snapshot, item_id)
     if isinstance(batch, dict) and all(
         snapshot.index["items"].get(member, {}).get("status") == "done" for member in batch["members"]
     ):
@@ -1943,6 +2309,7 @@ def op_defer(
         raise TodoError(f"cannot defer on {entry['status']} task {item_id!r}", code=E_STATE)
     summary = validate_deferral_summary(summary)
     reason = validate_deferral_reason(reason)
+    check_secrets({"deferral summary": summary, "deferral reason": reason})
     detail = snapshot.details[item_id]
     rows = detail.setdefault("deferrals", [])
     if not isinstance(rows, list):
@@ -2003,6 +2370,12 @@ def op_promote_deferral(
             code=E_STATE,
         )
     moment = now or datetime.now(timezone.utc)
+    # Only caller-supplied text is scanned; the default title and
+    # description come from the stored deferral row.
+    check_secrets({
+        "title": title, "description": description, "context": context,
+        "acceptance": list(acceptance), "links": list(links),
+    })
     if to_item is not None:
         validate_id(to_item)
         if to_item not in snapshot.index["items"]:
@@ -2018,7 +2391,7 @@ def op_promote_deferral(
                 f"promotion target {successor!r} already exists; pass to_item explicitly",
                 code=E_CONFLICT,
             )
-        op_create(
+        _create_item(
             snapshot,
             item_id=successor,
             title=title or row["summary"],
@@ -2063,6 +2436,7 @@ def op_dismiss_deferral(
     if not isinstance(deferral_id, int) or isinstance(deferral_id, bool):
         raise TodoError(f"invalid deferral id {deferral_id!r}", code=E_STATE)
     reason = validate_deferral_reason(reason)
+    check_secrets({"dismissal reason": reason})
     detail = snapshot.details[item_id]
     row = _find_deferral(detail, deferral_id)
     if row.get("resolution", "open") != "open":
@@ -2083,6 +2457,73 @@ def op_dismiss_deferral(
         row.update(previous)
         raise
     return {"id": deferral_id, "from_item": item_id, "resolution": "dismissed"}
+
+
+def op_record_decision(
+    snapshot: Snapshot,
+    item_id: str,
+    *,
+    text: str,
+    actor: str,
+    session: str,
+    kind: str = "decision",
+    source: str | None = None,
+    answers: int | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Append one decision or open question to a task. Rows are never edited.
+
+    Needs no claim, like ``defer``, and is refused on closed tasks. A
+    decision names its ``source`` and may answer one earlier open question.
+    """
+    entry = _require_entry(snapshot, item_id)
+    if entry["status"] in TERMINAL_STATUSES:
+        raise TodoError(f"cannot record a decision on {entry['status']} task {item_id!r}", code=E_STATE)
+    if kind not in DECISION_KINDS:
+        raise TodoError(f"unknown decision kind {kind!r}: use 'decision' or 'question'", code=E_STATE)
+    text = validate_decision_text(text)
+    if source is not None:
+        source = validate_decision_source(source)
+    elif kind == "decision":
+        raise TodoError("a decision needs a source: when and where the owner decided", code=E_STATE)
+    actor = validate_worker(actor)
+    session = validate_session_id(session)
+    check_secrets({"decision text": text, "decision source": source})
+    detail = snapshot.details[item_id]
+    rows = detail.get("decisions", [])
+    if not isinstance(rows, list):
+        raise TodoError(f"detail for {item_id!r}: 'decisions' must be a list", code=E_STATE)
+    if answers is not None:
+        if kind != "decision":
+            raise TodoError("only a decision can answer a question", code=E_STATE)
+        if not isinstance(answers, int) or isinstance(answers, bool):
+            raise TodoError(f"invalid question id {answers!r}", code=E_STATE)
+        if not any(isinstance(row, dict) and row.get("id") == answers and row.get("kind") == "question" for row in rows):
+            raise TodoError(f"task {item_id!r} has no question {answers}", code=E_STATE)
+        if answers not in open_questions(snapshot, item_id):
+            raise TodoError(f"question {answers} on {item_id!r} is already answered", code=E_STATE)
+    before = writable_bytes(entry["title"], detail)
+    moment = now or datetime.now(timezone.utc)
+    number = max((row["id"] for row in rows if isinstance(row, dict)), default=0) + 1
+    row: dict[str, Any] = {"id": number, "kind": kind, "text": text}
+    if source is not None:
+        row["source"] = source
+    if answers is not None:
+        row["answers"] = answers
+    row.update({"recorded_at": moment.strftime("%Y-%m-%dT%H:%M:%SZ"), "actor": actor, "session": session})
+    had_rows = "decisions" in detail
+    detail["decisions"] = [*rows, row]
+    try:
+        _check_item_size(snapshot, item_id, before)
+        validate_snapshot(snapshot.index, snapshot.details)
+    except TodoError:
+        if had_rows:
+            detail["decisions"] = rows
+        else:
+            detail.pop("decisions", None)
+        raise
+    _drop_stale_blocked_reason(snapshot, item_id)
+    return json.loads(json.dumps(row))
 
 
 def op_drop(
@@ -2120,6 +2561,7 @@ def op_drop(
             )
     entry["claim"] = None
     entry["status"] = "dropped"
+    _drop_stale_blocked_reason(snapshot, item_id)
     validate_snapshot(snapshot.index, snapshot.details)
     return {"id": item_id, "status": "dropped"}
 
