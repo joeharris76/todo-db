@@ -22,6 +22,17 @@ def _svc(tmp_path: Path, worker: str = "w1", name: str = "s.git") -> TrackerServ
     return TrackerService(ref=ref, cache_dir=tmp_path / "cache", worker=worker)
 
 
+def _seed_oversized(ref: git_backend.StateRef, item_id: str, title: str, description: str) -> None:
+    """Publish an item past the size caps, as an older client without them could."""
+
+    def apply(snap: S.Snapshot) -> dict:
+        S.op_create(snap, item_id=item_id, title=title)
+        snap.details[item_id]["description"] = description
+        return {"id": item_id}
+
+    assert git_backend.mutate(ref, op="create", summary=f"add {item_id}", worker="older", apply=apply).ok
+
+
 def _size(env: dict) -> int:
     return len(json.dumps(env, separators=(",", ":"), sort_keys=True, ensure_ascii=False).encode())
 
@@ -432,7 +443,7 @@ def test_boundary_take_never_strands_generation(tmp_path: Path, monkeypatch) -> 
 
 def test_section_offset_requires_revision(tmp_path: Path) -> None:
     svc = _svc(tmp_path)
-    assert svc.create_item("s1", "Sectioned", description="E" * 20000)["ok"]
+    _seed_oversized(svc.ref, "s1", "Sectioned", "E" * 20000)
     first = svc.show_item("s1", field="description", offset=0, budget=6000)
     assert first["ok"]
     cont = first["data"]["continuation"]
@@ -453,7 +464,7 @@ def test_error_envelopes_stay_bounded(tmp_path: Path) -> None:
 def test_oversized_item_reports_alternate_read(tmp_path: Path) -> None:
     svc = _svc(tmp_path)
     big = "x" * 60000 + "日本語" * 1000
-    assert svc.create_item("big", "Big task", description=big)["ok"]
+    _seed_oversized(svc.ref, "big", "Big task", big)
     shown = svc.show_item("big")
     assert shown["ok"], shown
     assert _size(shown) <= MAX_BYTES

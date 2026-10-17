@@ -6,6 +6,39 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Decisions and open questions. `record_decision(id, text, kind, source,
+  answers)` appends to a task's permanent decision log without a claim.
+  A decision names where the owner made it (`source`); a question stays
+  open until a later decision `answers` it. A task with an open question
+  is not ready, and `finish` refuses it with the new code
+  `E_OPEN_QUESTIONS`. `show_item` returns `decisions` and
+  `open_questions` (see ADR 0011).
+- Acceptance progress. `update_item` takes `acceptance_met`, a list of
+  indexes into `acceptance`; `show_item` returns the met indexes and
+  `next_step`, the first criterion not yet met.
+- `show_item` returns `blocked_reason` for a blocked task.
+- All new fields live in the item detail file, so there is no schema
+  bump and older clients load and keep them, though they do not enforce
+  the rules below.
+
+### Changed
+
+- Blocking a task needs a reason: `update_item status="blocked"` without
+  `reason` is refused. Unblocking removes the reason.
+- `take` refuses a blocked task unless `override_blocked=true`, which
+  takes it and clears the reason.
+- Task text has size caps: 8 KiB for the title and text fields, 16 KiB
+  for the whole item file not counting session history and other
+  system-written data. A create, update or decision that would grow a
+  task past either cap is refused with the new code `E_ITEM_TOO_LARGE`.
+  Existing large tasks stay readable and can be edited without growing.
+- Writes that look like a credential (cloud, GitHub, Slack and AI API
+  keys and tokens, private keys, JWTs, passwords in URLs) are refused
+  with the new code `E_SECRET`. Only newly supplied text is checked, and
+  the error never repeats the value.
+
 ## [0.9.1] - 2026-10-04
 
 ### Fixed

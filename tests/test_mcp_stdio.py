@@ -21,6 +21,7 @@ EXPECTED_TOOLS = {
     "list_items",
     "prepare",
     "promote_deferral",
+    "record_decision",
     "release",
     "renew",
     "register_batch",

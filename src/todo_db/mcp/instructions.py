@@ -25,7 +25,8 @@ acknowledgement; lists return brief rows (id/title/priority/status).
 4. `create_item` -- a task; optional batch metadata is `batch_id`,
    `member_id`, `implementation_dependencies`.
 5. `take` -- claim a task; returns the claim generation plus enough
-   context to begin work. One live claim per worker.
+   context to begin work. One live claim per worker. Blocked tasks need
+   `override_blocked=true`.
 6. `prepare` -- persist a member receipt and release its claim, not done.
    Needs the registered batch, explicit same-batch edge, actual member base,
    accepted/current heads, frozen scope, clean exact checkout, and passed
@@ -45,7 +46,9 @@ acknowledgement; lists return brief rows (id/title/priority/status).
    progress milestones required).
 
 `update_item` edits title/priority/description/needs/sections/status
-(open/blocked moves only; closing goes through finish/drop). Batch metadata
+(open/blocked moves only; closing goes through finish/drop). Blocking
+needs a `reason`. `acceptance_met` marks criteria met by index;
+`show_item` adds `next_step`, the first unmet one. Batch metadata
 is explicit, immutable after assignment, and never inferred from an ordinary
 dependency. A prepared member cannot be dropped while its batch is active;
 complete or abort the batch instead.
@@ -59,6 +62,13 @@ an open deferral into a linked planning item (created, or an existing
 the blocking ids); `show_item` reports them as `open_deferrals`.
 
 `not_before` (future RFC 3339) holds an open task until then; `""` clears.
+
+`record_decision` appends an owner decision with its `source` (never
+invent one) or a `kind="question"`; `answers=<id>` resolves a question.
+Open questions block readiness and `finish`.
+
+Item text may be public: never store credentials, raw logs, or host
+configuration. Link a document for long material.
 
 ## Session history
 
@@ -85,6 +95,9 @@ revision.
 - `E_NOTHING_READY` -- nothing claimable. Report it; do not invent work.
 - `E_OPEN_DEFERRALS` -- open deferrals block finish. Promote or dismiss
   the named ids, then retry.
+- `E_OPEN_QUESTIONS` -- record the owner's answer, then retry finish.
+- `E_SECRET` -- a field looks like a credential. Remove it.
+- `E_ITEM_TOO_LARGE` -- task text over its cap. Link a document instead.
 - `E_MULTIPLE_CLAIMS` -- you already hold a claim. Finish or release it.
 - `E_CLAIM_STALE` -- wrong generation or another holder. Show and retry.
 - `E_CONFLICT` -- someone changed the task first. Re-read, re-evaluate.

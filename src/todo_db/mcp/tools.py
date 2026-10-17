@@ -4,7 +4,7 @@
 ``update_item`` / ``take`` / ``prepare`` / ``bind_batch_pr`` /
 ``abort_batch`` / ``release`` / ``finish`` / ``renew`` /
 ``list_deferrals`` / ``defer`` / ``promote_deferral`` /
-``dismiss_deferral`` are backed by :mod:`todo_db.service`, the same
+``dismiss_deferral`` / ``record_decision`` are backed by :mod:`todo_db.service`, the same
 operations the human/CI CLI uses. Blocking Git work runs via
 ``asyncio.to_thread``; there is no shared mutable connection to guard.
 """
@@ -169,7 +169,7 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
 
     @server.tool(
         name="update_item",
-        description="Edit task fields or move between open and blocked.",
+        description="Edit task fields or move between open and blocked (blocking needs a reason).",
     )
     async def update_item_tool(
         id: str,
@@ -183,6 +183,8 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
         batch: dict[str, Any] | None = None,
         status: str | None = None,
         not_before: str | None = None,
+        reason: str | None = None,
+        acceptance_met: list[int] | None = None,
         ctx: Context = None,  # type: ignore[assignment]
     ) -> dict[str, Any]:
         worker = _need_principal(holder, ctx)
@@ -210,6 +212,10 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
             kwargs["status"] = status
         if not_before is not None:
             kwargs["not_before"] = not_before
+        if reason is not None:
+            kwargs["reason"] = reason
+        if acceptance_met is not None:
+            kwargs["acceptance_met"] = acceptance_met
         return await asyncio.to_thread(svc.update_item, id, **kwargs)
 
     @server.tool(
@@ -218,13 +224,14 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
     )
     async def take_tool(
         id: str,
+        override_blocked: bool = False,
         ctx: Context = None,  # type: ignore[assignment]
     ) -> dict[str, Any]:
         worker = _need_principal(holder, ctx)
         if not isinstance(worker, str):
             return worker
         svc = _service(target, worker, holder, ctx)
-        return await asyncio.to_thread(svc.take, id)
+        return await asyncio.to_thread(svc.take, id, override_blocked)
 
     @server.tool(
         name="takeover",
@@ -463,3 +470,21 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
             return worker
         svc = _service(target, worker, holder, ctx)
         return await asyncio.to_thread(svc.dismiss_deferral, id, deferral_id, reason)
+
+    @server.tool(
+        name="record_decision",
+        description="Append an owner decision (with source) or an open question to a task.",
+    )
+    async def record_decision_tool(
+        id: str,
+        text: str,
+        kind: str = "decision",
+        source: str | None = None,
+        answers: int | None = None,
+        ctx: Context = None,  # type: ignore[assignment]
+    ) -> dict[str, Any]:
+        worker = _need_principal(holder, ctx)
+        if not isinstance(worker, str):
+            return worker
+        svc = _service(target, worker, holder, ctx)
+        return await asyncio.to_thread(svc.record_decision, id, text, kind, source, answers)
