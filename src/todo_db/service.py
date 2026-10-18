@@ -621,7 +621,7 @@ class TrackerService:
         try:
             result = git_backend.mutate(
                 self.ref, op=op, summary=summary, worker=self.worker, op_id=op_id, apply=bridged,
-                session=self.session_id,
+                session=self.session_id, cache_dir=self.cache_dir,
             )
         except TodoError as exc:
             return err(exc.code or E_STATE, str(exc))

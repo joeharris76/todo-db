@@ -67,12 +67,9 @@ def _session_id(args: argparse.Namespace) -> str:
 
 
 def _cache(args: argparse.Namespace) -> Path:
-    if args.cache_dir:
+    if getattr(args, "cache_dir", None):
         return Path(args.cache_dir).expanduser()
-    override = os.environ.get("TODO_DB_CACHE_DIR")
-    if override:
-        return Path(override).expanduser()
-    return Path.home() / ".cache" / "todo-db-state"
+    return git_backend.default_cache_dir()
 
 
 def _preflight_write_config(args: argparse.Namespace, ref: git_backend.StateRef) -> Path | None:
@@ -144,6 +141,8 @@ def cmd_validate(args: argparse.Namespace) -> int:
     # Authoritative validation must inspect authoritative state. A stale
     # cache passes only behind an explicit flag, so a CI gate cannot go
     # green on a cached revision while the remote is down.
+    if (git_backend._ns_dir(_cache(args), ref) / "revs").is_dir():
+        print("note: a legacy snapshot cache remains; run `todo-db cache prune` to reclaim it", file=sys.stderr)
     if outcome.stale and not args.allow_stale:
         print("error: served a stale cached revision; remote unreachable (retry, or pass --allow-stale)", file=sys.stderr)
         return EXIT_ERROR
@@ -160,6 +159,7 @@ def cmd_migrate(args: argparse.Namespace) -> int:
             dry_run=args.dry_run,
             backup_dir=args.backup_dir,
             session=_session_id(args),
+            cache_dir=_cache(args),
         )
     except TodoDBError as exc:
         return _fail(str(exc))
@@ -175,7 +175,7 @@ def cmd_recover(args: argparse.Namespace) -> int:
     try:
         if args.op_id:
             try:
-                result = git_backend.reconcile(ref, args.op_id)
+                result = git_backend.reconcile(ref, args.op_id, cache_dir=_cache(args))
             except TodoDBError as exc:
                 return _fail(str(exc))
             if result.state == "applied":
@@ -192,13 +192,13 @@ def cmd_recover(args: argparse.Namespace) -> int:
             return _fail(f"reconciliation unknown: {result.detail}; retry later with --op-id {args.op_id}")
         if args.restore_rev:
             outcome = git_backend.restore_rev(
-                ref, args.restore_rev, _worker(args), session=_session_id(args)
+                ref, args.restore_rev, _worker(args), session=_session_id(args), cache_dir=_cache(args),
             )
             if not outcome.ok:
                 return _fail(outcome.error or "restore failed")
             _emit({"restored_to": args.restore_rev, "rev": outcome.sha})
             return EXIT_OK
-        _emit({"history": git_backend.history(ref, limit=args.limit)})
+        _emit({"history": git_backend.history(ref, limit=args.limit, cache_dir=_cache(args))})
         return EXIT_OK
     except TodoDBError as exc:
         return _fail(str(exc))
@@ -248,11 +248,19 @@ def cmd_show(args: argparse.Namespace) -> int:
     return EXIT_OK if env.get("ok") else EXIT_ERROR
 
 
+def cmd_cache_prune(args: argparse.Namespace) -> int:
+    from .git_store import prune_cache
+
+    report = prune_cache(_cache(args), older_than_days=args.older_than, dry_run=args.dry_run)
+    _emit(report)
+    return EXIT_OK
+
+
 def _add_target_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--config", help="path to a .todo-db/config.json (overrides discovery)")
     parser.add_argument("--state-remote", help="Git URL or path of the state remote")
     parser.add_argument("--state-branch", help="state branch (default: todo-state)")
-    parser.add_argument("--cache-dir", help="local snapshot cache")
+    parser.add_argument("--cache-dir", help="local state cache (default: TODO_DB_CACHE_DIR or ~/.cache/todo-db-state)")
     parser.add_argument("--repo-root", help="project root for config discovery (default: cwd)")
     parser.add_argument("--actor", help="worker identity for mutations (default: TODO_DB_ACTOR or 'human')")
     parser.add_argument("--session", help="session identity for mutations (default: TODO_DB_SESSION or a fresh ID)")
@@ -311,6 +319,20 @@ def build_parser() -> argparse.ArgumentParser:
     show.add_argument("--offset", type=int, default=0)
     show.add_argument("--budget", type=int, default=6000)
     show.set_defaults(func=cmd_show)
+
+    cache = sub.add_parser("cache", help="manage the local state cache")
+    cache_sub = cache.add_subparsers(dest="cache_command", required=True)
+    prune = cache_sub.add_parser(
+        "prune",
+        help="remove legacy snapshot folders and unused namespaces, then repack each store",
+    )
+    prune.add_argument("--cache-dir", help="local state cache (default: TODO_DB_CACHE_DIR or ~/.cache/todo-db-state)")
+    prune.add_argument(
+        "--older-than", type=float, default=30.0, metavar="DAYS",
+        help="remove namespaces unused for this many days (default: 30)",
+    )
+    prune.add_argument("--dry-run", action="store_true", help="list what would be removed without removing it")
+    prune.set_defaults(func=cmd_cache_prune)
 
     return parser
 

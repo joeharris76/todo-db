@@ -222,3 +222,20 @@ def test_migrate_via_cli(tmp_path: Path, capsys) -> None:
     assert applied["applied"] and "rollback" in applied
     ro = git_backend.read(ref, tmp_path / "cache")
     assert ro.snapshot.index["items"]["m1"]["title"] == "Migrated"
+
+
+def test_cache_prune_reports_and_validate_hints_at_legacy_cache(tmp_path: Path, capsys) -> None:
+    remote = _remote(tmp_path)
+    cache = tmp_path / "cache"
+    assert main(["bootstrap", *_args(remote)]) == 0
+    capsys.readouterr()
+    legacy = git_backend._ns_dir(cache, StateRef(remote=remote, branch="todo-state"))
+    (legacy / "revs" / ("a" * 40)).mkdir(parents=True)
+    assert main(["validate", *_args(remote), "--cache-dir", str(cache)]) == 0
+    assert "todo-db cache prune" in capsys.readouterr().err
+    assert main(["cache", "prune", "--cache-dir", str(cache), "--dry-run"]) == 0
+    assert json.loads(capsys.readouterr().out)["dry_run"] is True
+    assert main(["cache", "prune", "--cache-dir", str(cache)]) == 0
+    capsys.readouterr()
+    assert main(["validate", *_args(remote), "--cache-dir", str(cache)]) == 0
+    assert "cache prune" not in capsys.readouterr().err

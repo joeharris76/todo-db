@@ -37,13 +37,15 @@ import re
 import shutil
 import subprocess
 import tempfile
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterator
 from uuid import uuid4
 
 from .errors import E_CONFLICT, E_OFFLINE, E_STATE, E_UNKNOWN, TodoError
-from .store import Snapshot, load_snapshot, save_snapshot, validate_snapshot
+from .git_store import Store, StoreError, run_git
+from .store import Snapshot, load_snapshot, validate_snapshot
 
 OP_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 MAX_STDERR_CHARS = 500
@@ -66,6 +68,7 @@ def _check_op_id(op_id: str) -> str:
 STATE_BRANCH_FALLBACK = "todo-state"
 DEFAULT_MAX_RETRIES = 5
 GIT_TIMEOUT_S = 60
+FIRST_FETCH_TIMEOUT_S = 300
 OP_ID_TRAILER = "Todo-Op-Id"
 SESSION_TRAILER = "Todo-Session"
 
@@ -186,15 +189,12 @@ def new_op_id() -> str:
     return uuid4().hex
 
 
-def _git(args: list[str], cwd: Path | None = None, timeout: int = GIT_TIMEOUT_S) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", *args],
-        cwd=str(cwd) if cwd else None,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        check=False,
-    )
+def _git(
+    args: list[str], cwd: Path | None = None, timeout: int = GIT_TIMEOUT_S, **kwargs: Any,
+) -> subprocess.CompletedProcess[Any]:
+    # Inherited GIT_DIR, GIT_INDEX_FILE and identity variables are scrubbed
+    # so a hook-launched server can never redirect state commands.
+    return run_git(args, cwd, timeout, **kwargs)
 
 
 def _git_ok(args: list[str], cwd: Path | None = None) -> str:
@@ -253,8 +253,8 @@ def ls_remote_tip(ref: StateRef) -> str | None:
 
 
 def _find_op_commit(clone: Path, rev: str, op_id: str) -> str | None:
-    # NOTE: callers fetch with an explicit refspec, which updates FETCH_HEAD
-    # but not necessarily the tracking ref, so search from the given rev.
+    # NOTE: callers fetch onto a private ref that is deleted afterwards, so
+    # search from the given rev rather than any named ref.
     # --grep is substring matching, so candidates are verified against the
     # exact trailer line: a worker-controlled message containing
     # "Todo-Op-Id: <id>" anywhere else must never reconcile as that operation.
@@ -285,15 +285,70 @@ def _ns_dir(cache_dir: str | Path, ref: StateRef) -> Path:
     return Path(cache_dir) / namespace(ref)
 
 
-def _remember_rev(ns: Path, rev: str) -> None:
+def default_cache_dir() -> Path:
+    """``TODO_DB_CACHE_DIR``, else ``~/.cache/todo-db-state``."""
     import os as _os
 
-    ns.mkdir(parents=True, exist_ok=True)
-    # Unique sibling per writer: two processes sharing one cache namespace
-    # must never unlink each other's pointer source.
-    tmp = ns / f".last.{_os.getpid()}.{uuid4().hex}.tmp"
-    tmp.write_text(rev + "\n", encoding="utf-8")
-    tmp.replace(ns / "last")
+    override = _os.environ.get("TODO_DB_CACHE_DIR")
+    if override:
+        return Path(override).expanduser()
+    return Path.home() / ".cache" / "todo-db-state"
+
+
+def _remote_location(ref: StateRef) -> str:
+    """The remote as the store must see it.
+
+    The store lives in the cache directory, so a relative local path would
+    resolve against the wrong base. URLs and scp-style remotes
+    (``host:path``) pass through unchanged. Local paths resolve whether or
+    not they exist, so an unreachable local remote still maps to its own
+    store and offline reads find it.
+    """
+    raw = str(ref.remote)
+    if "://" in raw or re.match(r"^[^/]*:", raw):
+        return raw
+    return str(Path(raw).expanduser().resolve())
+
+
+def _store(ref: StateRef, cache_dir: str | Path | None) -> Store:
+    """The object store for *ref*, keyed by its resolved location.
+
+    Hashing the resolved location keeps two different repositories that
+    share a relative spelling from sharing one store. For URL remotes it
+    equals :func:`namespace`, so the store sits beside any legacy cache.
+    """
+    resolved = StateRef(remote=_remote_location(ref), branch=ref.branch)
+    root = Path(cache_dir) if cache_dir is not None else default_cache_dir()
+    # Late-bound so tests that replace _git also see store commands.
+    return Store(_ns_dir(root, resolved), lambda *a, **k: _git(*a, **k), GIT_TIMEOUT_S)
+
+
+def _open_store(store: Store) -> None:
+    try:
+        store.open()
+    except (OSError, StoreError) as exc:
+        raise TodoError(f"cannot open the local state store {store.git_dir}: {exc}", code=E_STATE) from exc
+
+
+def _repair(store: Store) -> None:
+    """Rebuild a damaged store; raise if it still cannot be opened."""
+    store.repair(store.store_id())
+    _open_store(store)
+
+
+@contextmanager
+def _store_errors() -> Iterator[None]:
+    """Report a failing local store as E_STATE on paths that do not repair."""
+    try:
+        yield
+    except StoreError as exc:
+        raise TodoError(f"local state store failed: {exc}; the next read or write rebuilds it",
+                        code=E_STATE) from exc
+
+
+def _fetch_timeout(store: Store) -> int:
+    # The first fetch for a namespace transfers the branch's whole history.
+    return GIT_TIMEOUT_S if store.tip() else FIRST_FETCH_TIMEOUT_S
 
 
 def _last_rev(ns: Path) -> str | None:
@@ -312,7 +367,7 @@ class ReconcileResult:
     detail: str = ""
 
 
-def reconcile(ref: StateRef, op_id: str) -> ReconcileResult:
+def reconcile(ref: StateRef, op_id: str, *, cache_dir: str | Path | None = None) -> ReconcileResult:
     """Look up an operation ID against the accepted branch history.
 
     Transport failure and true absence are distinct: absence reports the
@@ -320,7 +375,7 @@ def reconcile(ref: StateRef, op_id: str) -> ReconcileResult:
     unreachable remote reports unknown.
     """
     _check_op_id(op_id)
-    found = _reconcile_best_effort(ref, op_id)
+    found = _reconcile_best_effort(ref, op_id, cache_dir)
     if found is None:
         return ReconcileResult(state="unknown", detail=f"remote {ref.remote!r} unreachable")
     return found
@@ -348,6 +403,7 @@ def mutate(
     apply: Callable[[Snapshot], dict[str, Any]],
     max_retries: int = DEFAULT_MAX_RETRIES,
     session: str | None = None,
+    cache_dir: str | Path | None = None,
 ) -> MutationOutcome:
     """Apply one logical operation and publish it. See module docstring.
 
@@ -355,281 +411,232 @@ def mutate(
     its own preconditions, and mutates it in place. It must be free of
     external side effects: it runs again on every retry, and retries never
     rerun verification commands or side effects (there are none to rerun).
+
+    The commit is built with Git plumbing in the shared object store: only
+    changed files are hashed and no checkout is written.
     """
     op_id = _check_op_id(op_id or new_op_id())
-    tmp = Path(tempfile.mkdtemp(prefix="todo-state-"))
+    store = _store(ref, cache_dir)
+    url = _remote_location(ref)
     try:
-        work = _init_state_repo(tmp, ref)
-        if work is None:
+        _open_store(store)
+    except TodoError as exc:
+        return MutationOutcome(ok=False, outcome="error", op_id=op_id, code=E_STATE, error=str(exc))
+    repaired = False
+    attempts = 0
+    while True:
+        try:
+            with store.using():
+                step = _mutate_once(store, ref, url, op, summary, worker, op_id, apply, session)
+        except StoreError as exc:
+            if repaired:
+                return MutationOutcome(
+                    ok=False, outcome="error", op_id=op_id, code=E_STATE,
+                    error=f"local state store failed: {exc} (operation ID {op_id})",
+                )
+            repaired = True
+            try:
+                _repair(store)
+            except (OSError, TodoError) as rexc:
+                return MutationOutcome(ok=False, outcome="error", op_id=op_id, code=E_STATE, error=str(rexc))
+            continue
+        if step is not None:
+            store.maybe_maintain()
+            return step
+        attempts += 1
+        if attempts > max_retries:
+            return MutationOutcome(
+                ok=False, outcome="conflict", op_id=op_id, code=E_CONFLICT,
+                error=f"competing updates did not settle within {max_retries} retries",
+            )
+
+
+def _mutate_once(
+    store: Store,
+    ref: StateRef,
+    url: str,
+    op: str,
+    summary: str,
+    worker: str,
+    op_id: str,
+    apply: Callable[[Snapshot], dict[str, Any]],
+    session: str | None,
+) -> MutationOutcome | None:
+    """One fetch-apply-push attempt. None means a competing push won: retry."""
+    with ExitStack() as stack:
+        try:
+            fetch, tip = stack.enter_context(store.incoming(url, ref.branch, _fetch_timeout(store)))
+        except subprocess.TimeoutExpired:
+            return MutationOutcome(
+                ok=False, outcome="offline", op_id=op_id, code=E_OFFLINE,
+                error=f"fetch timed out after {GIT_TIMEOUT_S}s (operation ID {op_id})",
+            )
+        if fetch.returncode != 0 or tip is None:
+            if _branch_missing(fetch.stderr):
+                return MutationOutcome(
+                    ok=False, outcome="error", op_id=op_id, code=E_STATE,
+                    error=str(_missing_branch_error(ref)),
+                )
+            return MutationOutcome(
+                ok=False, outcome="offline", op_id=op_id, code=E_OFFLINE,
+                error=f"fetch failed: {_brief(fetch.stderr)} (operation ID {op_id})",
+            )
+        store.advance_tip(tip)
+
+        # Idempotency: a previous attempt may have pushed with a lost
+        # reply. Never apply twice under one operation ID.
+        existing = _find_op_commit(store.git_dir, tip, op_id)
+        if existing:
+            return MutationOutcome(ok=True, outcome="applied", op_id=op_id, sha=existing, ack={"duplicate": True})
+
+        try:
+            snapshot, files = store.load(tip)
+        except TodoError as exc:
+            return MutationOutcome(ok=False, outcome="error", op_id=op_id, code=exc.code or E_STATE, error=str(exc))
+        try:
+            ack = apply(snapshot) or {}
+        except TodoError as exc:
+            # Precondition failure after re-evaluation: a conflict, not a
+            # retryable transport error. Never overwrite the newer state.
+            code = exc.code or E_STATE
+            outcome = "conflict" if code in (E_CONFLICT, "E_CLAIM_STALE") else "error"
+            return MutationOutcome(ok=False, outcome=outcome, op_id=op_id, code=code, error=str(exc))
+        try:
+            validate_snapshot(snapshot.index, snapshot.details)
+        except TodoError as exc:
+            return MutationOutcome(ok=False, outcome="error", op_id=op_id, code=exc.code or E_STATE, error=str(exc))
+        tree = store.write_tree(tip, snapshot, files)
+        if tree == store.tree_of(tip):
             return MutationOutcome(
                 ok=False, outcome="error", op_id=op_id, code=E_STATE,
-                error="cannot create a scratch repository for the state branch",
+                error="operation produced no state change",
             )
-        _git(["config", "user.name", "todo-db"], work)
-        _git(["config", "user.email", "todo-db@localhost"], work)
-
-        attempts = 0
-        while True:
-            try:
-                fetch = _git(["fetch", "--quiet", "origin", ref.branch], work)
-            except subprocess.TimeoutExpired:
-                return MutationOutcome(
-                    ok=False, outcome="offline", op_id=op_id, code=E_OFFLINE,
-                    error=f"fetch timed out after {GIT_TIMEOUT_S}s (operation ID {op_id})",
-                )
-            if fetch.returncode != 0:
-                if _branch_missing(fetch.stderr):
-                    return MutationOutcome(
-                        ok=False, outcome="error", op_id=op_id, code=E_STATE,
-                        error=str(_missing_branch_error(ref)),
-                    )
-                return MutationOutcome(
-                    ok=False, outcome="offline", op_id=op_id, code=E_OFFLINE,
-                    error=f"fetch failed: {_brief(fetch.stderr)} (operation ID {op_id})",
-                )
-            tip = _git_ok(["rev-parse", "FETCH_HEAD"], work)
-
-            # Idempotency: a previous attempt may have pushed with a lost
-            # reply. Never apply twice under one operation ID.
-            existing = _find_op_commit(work, "FETCH_HEAD", op_id)
-            if existing:
-                return MutationOutcome(ok=True, outcome="applied", op_id=op_id, sha=existing, ack={"duplicate": True})
-
-            checkout = _git(["checkout", "--quiet", "--detach", tip], work)
-            if checkout.returncode != 0:
-                return MutationOutcome(
-                    ok=False, outcome="error", op_id=op_id, code=E_STATE,
-                    error=f"cannot check out {tip}: {_brief(checkout.stderr)}",
-                )
-            try:
-                snapshot = load_snapshot(work)
-            except TodoError as exc:
-                return MutationOutcome(
-                    ok=False, outcome="error", op_id=op_id,
-                    code=exc.code or E_STATE, error=str(exc),
-                )
-            try:
-                ack = apply(snapshot) or {}
-            except TodoError as exc:
-                # Precondition failure after re-evaluation: a conflict, not a
-                # retryable transport error. Never overwrite the newer state.
-                code = exc.code or E_STATE
-                outcome = "conflict" if code in (E_CONFLICT, "E_CLAIM_STALE") else "error"
-                return MutationOutcome(
-                    ok=False, outcome=outcome, op_id=op_id, code=code, error=str(exc),
-                )
-            try:
-                validate_snapshot(snapshot.index, snapshot.details)
-                save_snapshot(work, snapshot)
-            except TodoError as exc:
-                return MutationOutcome(
-                    ok=False, outcome="error", op_id=op_id,
-                    code=exc.code or E_STATE, error=str(exc),
-                )
-            _git(["add", "--", INDEX_NAME, ITEMS_NAME], work)
-            commit = _git(
-                ["commit", "--quiet", "-m", _commit_message(op, summary, op_id, worker, session)],
-                work,
-            )
-            if commit.returncode != 0:
-                if "nothing to commit" in (commit.stdout + commit.stderr):
-                    return MutationOutcome(
-                        ok=False, outcome="error", op_id=op_id, code=E_STATE,
-                        error="operation produced no state change",
-                    )
-                return MutationOutcome(
-                    ok=False, outcome="error", op_id=op_id, code=E_STATE,
-                    error=f"commit failed: {_brief(commit.stderr)}",
-                )
-            new_sha = _git_ok(["rev-parse", "HEAD"], work)
-            # Sanity: the commit's parent must be exactly the snapshot used.
-            parent = _git_ok(["rev-parse", "HEAD^"], work)
-            if parent != tip:
-                return MutationOutcome(
-                    ok=False, outcome="error", op_id=op_id, code=E_STATE,
-                    error="commit parent diverged from the fetched tip; refusing to push",
-                )
-            try:
-                push = _git(["push", "--quiet", "origin", f"HEAD:{ref.branch}"], work)
-            except subprocess.TimeoutExpired:
-                push = None
-            if push is None:
-                # Ambiguous: the push may or may not have landed. Reconcile.
-                rec = _reconcile(work, ref, op_id)
-                if rec.state == "applied":
-                    return MutationOutcome(ok=True, outcome="applied", op_id=op_id, sha=rec.sha, ack=ack)
-                return MutationOutcome(
-                    ok=False, outcome="unknown", op_id=op_id, code=E_UNKNOWN,
-                    error="push timed out with an undetermined outcome; "
-                    f"reconcile later with operation ID {op_id}",
-                )
-            if push.returncode == 0:
-                try:
-                    confirmed = ls_remote_tip(ref)
-                except TodoError:
-                    confirmed = "unreachable"
-                if confirmed == new_sha:
-                    return MutationOutcome(ok=True, outcome="applied", op_id=op_id, sha=new_sha, ack=ack)
-                # Push reported success but confirmation disagrees: reconcile
-                # rather than claiming success or failure without evidence.
-                rec = _reconcile(work, ref, op_id)
-                if rec.state == "applied":
-                    return MutationOutcome(ok=True, outcome="applied", op_id=op_id, sha=rec.sha, ack=ack)
-                return MutationOutcome(
-                    ok=False, outcome="unknown", op_id=op_id, code=E_UNKNOWN,
-                    error="push reply was lost and the outcome cannot be determined; "
-                    f"reconcile later with operation ID {op_id}",
-                )
-            kind = _classify_remote_failure(push.stderr)
-            if kind == "conflict":
-                attempts += 1
-                if attempts > max_retries:
-                    return MutationOutcome(
-                        ok=False, outcome="conflict", op_id=op_id, code=E_CONFLICT,
-                        error=f"competing updates did not settle within {max_retries} retries",
-                    )
-                _git(["reset", "--quiet", "--hard", "FETCH_HEAD"], work)
-                continue
-            if kind == "offline":
-                # The push may have landed before the connection broke.
-                # Reconcile in this same clone: applied wins, unreachable is
-                # unknown, and a definitive absence re-enters the retry loop
-                # for semantic re-evaluation instead of blindly repeating.
-                rec = _reconcile(work, ref, op_id)
-                if rec.state == "applied":
-                    return MutationOutcome(ok=True, outcome="applied", op_id=op_id, sha=rec.sha, ack=ack)
-                if rec.state == "unknown":
-                    return MutationOutcome(
-                        ok=False, outcome="unknown", op_id=op_id, code=E_UNKNOWN,
-                        error="push failed ambiguously and the outcome cannot be determined; "
-                        f"reconcile later with operation ID {op_id}",
-                    )
-                attempts += 1
-                if attempts > max_retries:
-                    return MutationOutcome(
-                        ok=False, outcome="conflict", op_id=op_id, code=E_CONFLICT,
-                        error=f"competing updates did not settle within {max_retries} retries",
-                    )
-                _git(["reset", "--quiet", "--hard", "FETCH_HEAD"], work)
-                continue
+        new_sha = store.commit(tree, tip, _commit_message(op, summary, op_id, worker, session))
+        try:
+            push = store.push(url, new_sha, ref.branch)
+        except subprocess.TimeoutExpired:
+            push = None
+        if push is None:
+            # Ambiguous: the push may or may not have landed. Reconcile.
+            rec = _reconcile(store, ref, op_id)
+            if rec.state == "applied":
+                return MutationOutcome(ok=True, outcome="applied", op_id=op_id, sha=rec.sha, ack=ack)
             return MutationOutcome(
-                ok=False, outcome="error", op_id=op_id, code=E_STATE,
-                error=f"push rejected by the remote: {_brief(push.stderr)}",
+                ok=False, outcome="unknown", op_id=op_id, code=E_UNKNOWN,
+                error="push timed out with an undetermined outcome; "
+                f"reconcile later with operation ID {op_id}",
             )
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        if push.returncode == 0:
+            try:
+                confirmed = ls_remote_tip(ref)
+            except TodoError:
+                confirmed = "unreachable"
+            if confirmed == new_sha:
+                store.advance_tip(new_sha)
+                return MutationOutcome(ok=True, outcome="applied", op_id=op_id, sha=new_sha, ack=ack)
+            # Push reported success but confirmation disagrees: reconcile
+            # rather than claiming success or failure without evidence.
+            rec = _reconcile(store, ref, op_id)
+            if rec.state == "applied":
+                return MutationOutcome(ok=True, outcome="applied", op_id=op_id, sha=rec.sha, ack=ack)
+            return MutationOutcome(
+                ok=False, outcome="unknown", op_id=op_id, code=E_UNKNOWN,
+                error="push reply was lost and the outcome cannot be determined; "
+                f"reconcile later with operation ID {op_id}",
+            )
+        kind = _classify_remote_failure(push.stderr)
+        if kind == "conflict":
+            return None
+        if kind == "offline":
+            # The push may have landed before the connection broke.
+            # Reconcile against the store: applied wins, unreachable is
+            # unknown, and a definitive absence re-enters the retry loop
+            # for semantic re-evaluation instead of blindly repeating.
+            rec = _reconcile(store, ref, op_id)
+            if rec.state == "applied":
+                return MutationOutcome(ok=True, outcome="applied", op_id=op_id, sha=rec.sha, ack=ack)
+            if rec.state == "unknown":
+                return MutationOutcome(
+                    ok=False, outcome="unknown", op_id=op_id, code=E_UNKNOWN,
+                    error="push failed ambiguously and the outcome cannot be determined; "
+                    f"reconcile later with operation ID {op_id}",
+                )
+            return None
+        return MutationOutcome(
+            ok=False, outcome="error", op_id=op_id, code=E_STATE,
+            error=f"push rejected by the remote: {_brief(push.stderr)}",
+        )
 
 
 INDEX_NAME = "index.json"
 ITEMS_NAME = "items"
 
 
-def _search(work: Path, op_id: str) -> ReconcileResult:
-    tip = _git(["rev-parse", "FETCH_HEAD"], work)
-    if tip.returncode != 0:
-        return ReconcileResult(state="unknown", detail="fetch did not resolve a tip")
-    rev = tip.stdout.strip()
-    found = _find_op_commit(work, "FETCH_HEAD", op_id)
+def _search(store: Store, tip: str, op_id: str) -> ReconcileResult:
+    store.advance_tip(tip)
+    found = _find_op_commit(store.git_dir, tip, op_id)
     if found:
         return ReconcileResult(state="applied", sha=found)
-    return ReconcileResult(state="absent", sha=rev)
+    return ReconcileResult(state="absent", sha=tip)
 
 
-def _reconcile(work: Path, ref: StateRef, op_id: str) -> ReconcileResult:
+def _reconcile(store: Store, ref: StateRef, op_id: str) -> ReconcileResult:
     # A timeout here leaves the outcome undetermined, never a raised error:
     # the caller must still hand back the operation ID.
     try:
-        fetch = _git(["fetch", "--quiet", "origin", ref.branch], work)
-        if fetch.returncode != 0:
-            return ReconcileResult(state="unknown", detail=f"fetch failed: {_brief(fetch.stderr)}")
-        return _search(work, op_id)
+        with store.incoming(_remote_location(ref), ref.branch) as (fetch, tip):
+            if fetch.returncode != 0 or tip is None:
+                return ReconcileResult(state="unknown", detail=f"fetch failed: {_brief(fetch.stderr)}")
+            return _search(store, tip, op_id)
     except subprocess.TimeoutExpired:
         return ReconcileResult(state="unknown", detail=f"timed out after {GIT_TIMEOUT_S}s")
 
 
-def _reconcile_best_effort(ref: StateRef, op_id: str) -> ReconcileResult | None:
+def _reconcile_best_effort(ref: StateRef, op_id: str, cache_dir: str | Path | None) -> ReconcileResult | None:
     """None only when the remote cannot be reached at all."""
-    tmp = Path(tempfile.mkdtemp(prefix="todo-reconcile-"))
-    try:
-        work = _init_state_repo(tmp, ref)
-        if work is None:
-            return None
+    store = _store(ref, cache_dir)
+    _open_store(store)
+    with _store_errors(), store.using():
         try:
-            fetch = _git(["fetch", "--quiet", "origin", ref.branch], work)
-            if fetch.returncode != 0:
-                if _branch_missing(fetch.stderr):
-                    return ReconcileResult(state="unknown", detail=f"fetch failed: {_brief(fetch.stderr)}")
-                return None
-            return _search(work, op_id)
+            with store.incoming(_remote_location(ref), ref.branch, _fetch_timeout(store)) as (fetch, tip):
+                if fetch.returncode != 0 or tip is None:
+                    if _branch_missing(fetch.stderr):
+                        return ReconcileResult(state="unknown", detail=f"fetch failed: {_brief(fetch.stderr)}")
+                    return None
+                return _search(store, tip, op_id)
         except subprocess.TimeoutExpired:
             return ReconcileResult(state="unknown", detail=f"timed out after {GIT_TIMEOUT_S}s")
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
 
 
-def _offline_cached(ns: Path, ref: StateRef) -> ReadOutcome:
+def _offline_cached(store: Store, ref: StateRef, cache_dir: str | Path) -> ReadOutcome:
     # Offline reads serve ONLY this state branch's last accepted revision,
     # never another project's cache and never an inferred ordering.
-    rev = _last_rev(ns)
-    if rev is None or not (ns / "revs" / rev / INDEX_NAME).is_file():
-        raise TodoError(
-            f"remote {ref.remote!r} unreachable and no cached revision "
-            "for this state branch is available",
-            code=E_OFFLINE,
-        )
-    return ReadOutcome(snapshot=load_snapshot(ns / "revs" / rev), rev=rev, stale=True)
-
-
-def _remote_location(ref: StateRef) -> str:
-    """The remote as scratch repos must see it.
-
-    Scratch repos live in a temp directory, so a relative local path would
-    resolve against the wrong base (``git clone`` used to absolutize it).
-    URLs and scp-style remotes do not exist as local paths and pass through.
-    """
-    local = Path(str(ref.remote)).expanduser()
-    return str(local.resolve()) if local.exists() else str(ref.remote)
-
-
-def _init_state_repo(tmp: Path, ref: StateRef) -> Path | None:
-    """Create an empty repo whose only remote is the state remote.
-
-    Unlike ``git clone`` this transfers nothing: the caller fetches just the
-    state branch. A clone pulls every ref of the remote, and remotes that
-    also carry code history make that cost dominate each operation (about
-    110s against BenchBox production state, beyond ``GIT_TIMEOUT_S``).
-    Returns the workdir, or None when git could not set the repo up.
-    """
-    work = tmp / "w"
-    work.mkdir(parents=True, exist_ok=True)
-    if _git(["init", "--quiet", "-b", "main"], work).returncode != 0:
-        return None
-    if _git(["remote", "add", "origin", _remote_location(ref)], work).returncode != 0:
-        return None
-    return work
-
-
-def _fetch_tip_snapshot(tmp: Path, ref: StateRef) -> Path | None:
-    """Fetch only the state branch tip into a fresh repo.
-
-    A full clone transfers every ref of the remote — for remotes that also
-    carry code history that dominates read latency — while a read only
-    needs the tip tree of the one state branch. Returns the workdir, or
-    None when the remote flaked mid-read.
-    """
-    work = _init_state_repo(tmp, ref)
-    if work is None:
-        return None
-    fetch = _git(["fetch", "--quiet", "--depth", "1", "origin", ref.branch], work)
-    if fetch.returncode != 0:
-        # Servers without shallow support still serve a single-branch fetch
-        # of just the state branch's history: still no code refs.
-        fetch = _git(["fetch", "--quiet", "origin", ref.branch], work)
-    if fetch.returncode != 0:
-        return None
-    if _git(["checkout", "--quiet", "FETCH_HEAD"], work).returncode != 0:
-        return None
-    return work
+    try:
+        if store.exists():
+            with store.using():
+                rev = store.tip()
+                if rev is not None:
+                    return ReadOutcome(snapshot=store.load(rev)[0], rev=rev, stale=True)
+    except StoreError:
+        pass
+    # Caches written before the object store keep revs/<last> until
+    # `todo-db cache prune` removes them; serve that until the store has a
+    # tip, re-reading the pointer once in case it moved mid-read.
+    legacy = _ns_dir(cache_dir, ref)
+    for attempt in (1, 2):
+        rev = _last_rev(legacy)
+        if rev is None or not (legacy / "revs" / rev / INDEX_NAME).is_file():
+            break
+        try:
+            return ReadOutcome(snapshot=load_snapshot(legacy / "revs" / rev), rev=rev, stale=True)
+        except TodoError:
+            if attempt == 2:
+                raise
+    raise TodoError(
+        f"remote {ref.remote!r} unreachable and no cached revision "
+        "for this state branch is available",
+        code=E_OFFLINE,
+    )
 
 
 def read(ref: StateRef, cache_dir: str | Path) -> ReadOutcome:
@@ -640,125 +647,124 @@ def read(ref: StateRef, cache_dir: str | Path) -> ReadOutcome:
     this path: they go through :func:`mutate`, which fails offline rather
     than succeeding locally.
 
-    Fast paths: a snapshot cached under the resolved tip is served without
-    a fetch (content-addressed, so it cannot be stale); otherwise only the
-    state branch tip is fetched instead of cloning the whole remote.
+    A tip already in the object store is read without a fetch (a commit
+    ID names its content, so it cannot be stale); otherwise only the
+    objects the store lacks are fetched, for the state branch alone.
     """
-    ns = _ns_dir(cache_dir, ref)
+    store = _store(ref, cache_dir)
     try:
         tip = ls_remote_tip(ref)
     except TodoError:
-        return _offline_cached(ns, ref)
+        return _offline_cached(store, ref, cache_dir)
     if tip is None:
         raise TodoError(
             f"state branch {ref.branch!r} is missing; run bootstrap", code=E_STATE
         )
-    cached = ns / "revs" / tip
-    cached_present = (cached / INDEX_NAME).is_file()
-    if cached_present:
+    _open_store(store)
+    for attempt in (1, 2):
         try:
-            snapshot = load_snapshot(cached)
-        except TodoError:
-            snapshot = None
-        if snapshot is not None:
-            _remember_rev(ns, tip)
-            return ReadOutcome(snapshot=snapshot, rev=tip, stale=False)
-    tmp = Path(tempfile.mkdtemp(prefix="todo-read-"))
-    try:
-        work = _fetch_tip_snapshot(tmp, ref)
-        if work is None:
+            with store.using():
+                outcome = _read_tip(store, ref, tip)
+        except StoreError as exc:
+            if attempt == 2:
+                raise TodoError(f"local state store failed: {exc}", code=E_STATE) from exc
+            _repair(store)
+            continue
+        if outcome is None:
             # The remote flaked mid-read; fall back to this branch's cache.
-            return _offline_cached(ns, ref)
-        actual = _git_ok(["rev-parse", "HEAD"], work)
-        snapshot = load_snapshot(work)
-        dest = ns / "revs" / actual
-        if (dest == cached and cached_present) or not (dest / INDEX_NAME).is_file():
-            # A corrupt cache entry under the loaded tip is replaced so the
-            # next read serves it directly instead of refetching every time.
-            dest.mkdir(parents=True, exist_ok=True)
-            save_snapshot(dest, snapshot)
-        _remember_rev(ns, actual)
-        return ReadOutcome(snapshot=snapshot, rev=actual, stale=False)
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+            return _offline_cached(store, ref, cache_dir)
+        store.maybe_maintain()
+        return outcome
+    raise AssertionError("unreachable")
 
 
-def read_rev(ref: StateRef, rev: str) -> Snapshot:
+def _read_tip(store: Store, ref: StateRef, tip: str) -> ReadOutcome | None:
+    if store.tip() == tip or store.has_commit(tip):
+        snapshot = store.load(tip)[0]
+        store.advance_tip(tip)
+        return ReadOutcome(snapshot=snapshot, rev=tip, stale=False)
+    try:
+        with store.incoming(_remote_location(ref), ref.branch, _fetch_timeout(store)) as (fetch, actual):
+            if fetch.returncode != 0 or actual is None:
+                return None
+            store.advance_tip(actual)
+            return ReadOutcome(snapshot=store.load(actual)[0], rev=actual, stale=False)
+    except subprocess.TimeoutExpired:
+        return None
+
+
+def _fetch_for_history(store: Store, ref: StateRef) -> str:
+    """Fetch the branch into *store* and return its tip, or raise."""
+    try:
+        with store.incoming(_remote_location(ref), ref.branch, _fetch_timeout(store)) as (fetch, tip):
+            if fetch.returncode != 0 or tip is None:
+                if _branch_missing(fetch.stderr):
+                    raise _missing_branch_error(ref)
+                raise TodoError(f"remote {ref.remote!r} unreachable: {_brief(fetch.stderr)}", code=E_OFFLINE)
+            store.advance_tip(tip)
+            return tip
+    except subprocess.TimeoutExpired as exc:
+        raise TodoError(f"remote {ref.remote!r} did not answer within {GIT_TIMEOUT_S}s", code=E_OFFLINE) from exc
+
+
+def read_rev(ref: StateRef, rev: str, *, cache_dir: str | Path | None = None) -> Snapshot:
     """Load the snapshot at a historical commit (recovery/restore reads)."""
     import json as _json
 
-    tmp = Path(tempfile.mkdtemp(prefix="todo-read-rev-"))
-    try:
-        work = _init_state_repo(tmp, ref)
-        if work is None:
-            raise TodoError("cannot create a scratch repository for the state branch", code=E_STATE)
-        fetch = _git(["fetch", "--quiet", "origin", ref.branch], work)
-        if fetch.returncode != 0:
-            if _branch_missing(fetch.stderr):
-                raise _missing_branch_error(ref)
-            raise TodoError(f"remote {ref.remote!r} unreachable: {_brief(fetch.stderr)}", code=E_OFFLINE)
-        exists = _git(["cat-file", "-e", f"{rev}^{{commit}}"], work)
-        if exists.returncode != 0:
+    store = _store(ref, cache_dir)
+    _open_store(store)
+    with _store_errors(), store.using():
+        tip = _fetch_for_history(store, ref)
+        if not store.has_commit(rev) or not store.is_ancestor(rev, tip):
             raise TodoError(f"revision {rev!r} not found on {ref.remote!r}", code=E_STATE)
-        raw_index = _git(["show", f"{rev}:{INDEX_NAME}"], work)
-        if raw_index.returncode != 0:
+        entries = store.entries(rev)
+        index_entry = entries.get(INDEX_NAME)
+        if index_entry is None or index_entry[1] != "blob":
             raise TodoError(f"revision {rev!r} has no {INDEX_NAME}", code=E_STATE)
         try:
-            index = _json.loads(raw_index.stdout)
+            index = _json.loads(store.blob(index_entry[2]))
         except ValueError as exc:
             raise TodoError(f"revision {rev!r} has an invalid {INDEX_NAME}: {exc}", code=E_STATE) from exc
         details: dict[str, dict[str, Any]] = {}
-        if isinstance(index.get("items"), dict):
-            tree = _git(["ls-tree", "-r", "--name-only", rev, "--", ITEMS_NAME], work)
-            if tree.returncode == 0:
-                for line in tree.stdout.splitlines():
-                    name = line.strip().rsplit("/", 1)[-1]
-                    if not name.endswith(".json"):
-                        continue
-                    item_id = name[:-5]
-                    if item_id not in index["items"]:
-                        continue
-                    raw = _git(["show", f"{rev}:{ITEMS_NAME}/{name}"], work)
-                    if raw.returncode != 0:
-                        raise TodoError(f"revision {rev!r} is missing detail for {item_id!r}", code=E_STATE)
-                    try:
-                        details[item_id] = _json.loads(raw.stdout)
-                    except ValueError as exc:
-                        raise TodoError(f"revision {rev!r} detail for {item_id!r} is invalid: {exc}", code=E_STATE) from exc
+        if isinstance(index, dict) and isinstance(index.get("items"), dict):
+            wanted: dict[str, str] = {}
+            for path, (_mode, kind, oid) in entries.items():
+                if kind != "blob" or not path.startswith(f"{ITEMS_NAME}/"):
+                    continue
+                name = path.rsplit("/", 1)[-1]
+                if name.endswith(".json") and name[:-5] in index["items"]:
+                    wanted[name[:-5]] = oid
+            data = store.blobs(set(wanted.values()))
+            for item_id, oid in wanted.items():
+                try:
+                    details[item_id] = _json.loads(data[oid])
+                except ValueError as exc:
+                    raise TodoError(f"revision {rev!r} detail for {item_id!r} is invalid: {exc}", code=E_STATE) from exc
         validate_snapshot(index, details)
         return Snapshot(index=index, details=details)
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
 
 
-def _assert_on_branch(ref: StateRef, rev: str) -> None:
+def _assert_on_branch(ref: StateRef, rev: str, cache_dir: str | Path | None) -> None:
     """Refuse revisions that are not part of the state branch's history."""
-    tmp = Path(tempfile.mkdtemp(prefix="todo-ancestry-"))
-    try:
-        work = _init_state_repo(tmp, ref)
-        if work is None:
-            raise TodoError("cannot create a scratch repository for the state branch", code=E_STATE)
-        fetch = _git(["fetch", "--quiet", "origin", ref.branch], work)
-        if fetch.returncode != 0:
-            if _branch_missing(fetch.stderr):
-                raise _missing_branch_error(ref)
-            raise TodoError(f"cannot inspect state branch: {_brief(fetch.stderr)}", code=E_OFFLINE)
-        ancestor = _git(["merge-base", "--is-ancestor", rev, "FETCH_HEAD"], work)
-        if ancestor.returncode != 0:
+    store = _store(ref, cache_dir)
+    _open_store(store)
+    with _store_errors(), store.using():
+        tip = _fetch_for_history(store, ref)
+        if not store.has_commit(rev) or not store.is_ancestor(rev, tip):
             raise TodoError(
                 f"revision {rev!r} is not part of {ref.branch!r} history; restore refuses it",
                 code=E_STATE,
             )
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
 
 
-def restore_rev(ref: StateRef, rev: str, worker: str, session: str | None = None) -> MutationOutcome:
+def restore_rev(
+    ref: StateRef, rev: str, worker: str, session: str | None = None, *, cache_dir: str | Path | None = None,
+) -> MutationOutcome:
     """Append-only restore: a new commit returning state to *rev*'s content."""
     import json as _json
 
-    _assert_on_branch(ref, rev)
-    wanted = read_rev(ref, rev)
+    _assert_on_branch(ref, rev, cache_dir)
+    wanted = read_rev(ref, rev, cache_dir=cache_dir)
     payload = _json.loads(_json.dumps({"index": wanted.index, "details": wanted.details}))
 
     def apply(snap: Snapshot) -> dict[str, Any]:
@@ -769,7 +775,7 @@ def restore_rev(ref: StateRef, rev: str, worker: str, session: str | None = None
 
     return mutate(
         ref, op="restore", summary=f"restore state to {rev[:12]}",
-        worker=worker, apply=apply, session=session,
+        worker=worker, apply=apply, session=session, cache_dir=cache_dir,
     )
 
 
@@ -837,19 +843,13 @@ def _commit_trailers(work: Path, sha: str) -> dict[str, str]:
     return {"op_id": found[OP_ID_TRAILER], "actor": found["Todo-Actor"], "session": found[SESSION_TRAILER]}
 
 
-def history(ref: StateRef, limit: int = 20) -> list[dict[str, str]]:
+def history(ref: StateRef, limit: int = 20, *, cache_dir: str | Path | None = None) -> list[dict[str, str]]:
     """Recovery aid: recent state-branch commits (ordinary Git history)."""
-    tmp = Path(tempfile.mkdtemp(prefix="todo-log-"))
-    try:
-        work = _init_state_repo(tmp, ref)
-        if work is None:
-            raise TodoError("cannot create a scratch repository for the state branch", code=E_STATE)
-        fetch = _git(["fetch", "--quiet", "origin", ref.branch], work)
-        if fetch.returncode != 0:
-            if _branch_missing(fetch.stderr):
-                raise _missing_branch_error(ref)
-            raise TodoError(f"remote {ref.remote!r} unreachable: {_brief(fetch.stderr)}", code=E_OFFLINE)
-        out = _git(["log", "FETCH_HEAD", f"-n{limit}", "--format=%H%x00%s%x00%aN%x00%aI"], work)
+    store = _store(ref, cache_dir)
+    _open_store(store)
+    with _store_errors(), store.using():
+        tip = _fetch_for_history(store, ref)
+        out = store.git(["log", tip, f"-n{limit}", "--format=%H%x00%s%x00%aN%x00%aI"])
         if out.returncode != 0:
             return []
         entries = []
@@ -858,8 +858,6 @@ def history(ref: StateRef, limit: int = 20) -> list[dict[str, str]]:
             if len(parts) == 4:
                 entries.append({
                     "sha": parts[0], "subject": parts[1], "author": parts[2], "at": parts[3],
-                    **_commit_trailers(work, parts[0]),
+                    **_commit_trailers(store.git_dir, parts[0]),
                 })
         return entries
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
