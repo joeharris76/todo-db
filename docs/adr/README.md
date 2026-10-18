@@ -15,6 +15,7 @@ tracker items, and source comments, so records are moved rather than renumbered.
 | [0008](0008-audited-claim-takeover.md) | Audited claim takeover (amends 0003 §2.2) |
 | [0009](0009-time-held-readiness.md) | Time-held readiness |
 | [0010](0010-deferral-verbs.md) | First-class deferral verbs |
+| [0011](0011-git-object-store-cache.md) | Git object store as the local state cache |
 
 0001 through 0003 previously lived in `_project/decisions/`. That directory held
 a superseded copy of 0003 alongside the current one in this directory; the

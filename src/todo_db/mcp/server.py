@@ -40,7 +40,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--config", help="path to a .todo-db/config.json (overrides discovery)")
     parser.add_argument("--state-remote", help="Git URL or path of the state remote")
     parser.add_argument("--state-branch", help="state branch (default: todo-state)")
-    parser.add_argument("--cache-dir", help="local snapshot cache (default: ~/.cache/todo-db-state)")
+    parser.add_argument("--cache-dir", help="local state cache (default: ~/.cache/todo-db-state)")
     parser.add_argument("--repo-root", help="project root for config discovery (default: cwd)")
     parser.add_argument("--actor", help="explicit worker identity (else TODO_DB_ACTOR, else derived at initialize)")
     parser.add_argument(

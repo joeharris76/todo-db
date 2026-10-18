@@ -45,7 +45,7 @@ import fnmatch
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from uuid import uuid4
 
 from .errors import (
@@ -1013,14 +1013,18 @@ def _read_state_file(path: Path, label: str) -> Any:
         raise TodoError(f"invalid {label}: {exc}", code=E_STATE) from exc
 
 
-def load_snapshot(state_dir: str | Path) -> Snapshot:
-    """Load and validate one local state directory."""
-    root = Path(state_dir)
-    index = _read_state_file(root / INDEX_FILENAME, INDEX_FILENAME)
-    items_dir = root / ITEMS_DIRNAME
-    if items_dir.is_symlink():
-        raise TodoError("refusing to follow symlinked items directory", code=E_STATE)
-    items_dir = root / ITEMS_DIRNAME
+def assemble_snapshot(
+    read_file: Callable[[str, str], Any],
+    detail_names: Callable[[], list[str]],
+) -> Snapshot:
+    """Build and validate a snapshot from any state tree.
+
+    ``read_file(relpath, label)`` returns one parsed JSON file or raises
+    ``TodoError``; ``detail_names()`` lists the ``*.json`` names directly
+    under ``items/``. A checkout on disk and a commit in a Git object store
+    share this one assembly, so both accept exactly the same trees.
+    """
+    index = read_file(INDEX_FILENAME, INDEX_FILENAME)
     details: dict[str, dict[str, Any]] = {}
     if isinstance(index, dict) and isinstance(index.get("items"), dict):
         for item_id in index["items"]:
@@ -1028,14 +1032,30 @@ def load_snapshot(state_dir: str | Path) -> Snapshot:
                 validate_id(item_id)
             except TodoError:
                 continue
-            path = items_dir / f"{item_id}.json"
-            details[item_id] = _read_state_file(path, f"detail file for {item_id!r}")
-        if items_dir.is_dir():
-            for path in sorted(items_dir.glob("*.json")):
-                if path.name[:-5] not in index["items"]:
-                    details[path.name[:-5]] = _read_state_file(path, f"detail file {path.name}")
+            details[item_id] = read_file(f"{ITEMS_DIRNAME}/{item_id}.json", f"detail file for {item_id!r}")
+        for name in sorted(detail_names()):
+            if name[:-5] not in index["items"]:
+                details[name[:-5]] = read_file(f"{ITEMS_DIRNAME}/{name}", f"detail file {name}")
     validate_snapshot(index, details)
     return Snapshot(index=index, details=details)
+
+
+def load_snapshot(state_dir: str | Path) -> Snapshot:
+    """Load and validate one local state directory."""
+    root = Path(state_dir)
+    items_dir = root / ITEMS_DIRNAME
+
+    def read_file(rel: str, label: str) -> Any:
+        if rel.startswith(f"{ITEMS_DIRNAME}/") and items_dir.is_symlink():
+            raise TodoError("refusing to follow symlinked items directory", code=E_STATE)
+        return _read_state_file(root / rel, label)
+
+    def detail_names() -> list[str]:
+        if items_dir.is_symlink():
+            raise TodoError("refusing to follow symlinked items directory", code=E_STATE)
+        return [path.name for path in items_dir.glob("*.json")] if items_dir.is_dir() else []
+
+    return assemble_snapshot(read_file, detail_names)
 
 
 def save_snapshot(state_dir: str | Path, snapshot: Snapshot) -> None:
@@ -1059,8 +1079,13 @@ def save_snapshot(state_dir: str | Path, snapshot: Snapshot) -> None:
             path.unlink()
 
 
+def serialize_state(payload: Any) -> str:
+    """The canonical text of one state file, as committed to the branch."""
+    return json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+
+
 def _atomic_write(path: Path, payload: Any) -> None:
-    text = json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+    text = serialize_state(payload)
     fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:

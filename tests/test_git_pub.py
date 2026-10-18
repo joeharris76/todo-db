@@ -330,14 +330,6 @@ def test_inline_trailer_mention_never_reconciles(tmp_path: Path) -> None:
     assert found.state == "absent"
 
 
-def test_remember_rev_leaves_no_tmp_files(tmp_path: Path) -> None:
-    ns = tmp_path / "ns"
-    git_backend._remember_rev(ns, "a" * 40)
-    git_backend._remember_rev(ns, "b" * 40)
-    assert (ns / "last").read_text().strip() == "b" * 40
-    assert list(ns.glob(".last.*.tmp")) == []
-
-
 def test_restore_refuses_off_branch_revisions(tmp_path: Path) -> None:
     ref = _remote(tmp_path)
     git_backend.bootstrap(ref)
@@ -386,13 +378,14 @@ def test_state_operations_never_clone_the_whole_remote(tmp_path: Path, monkeypat
     git_backend.bootstrap(ref)
     real_git = git_backend._git
 
-    def spy(args: list[str], cwd=None, timeout=git_backend.GIT_TIMEOUT_S):
+    def spy(args: list[str], cwd=None, timeout=git_backend.GIT_TIMEOUT_S, **kw):
         if args and args[0] == "clone":
             raise AssertionError(f"state operations must not clone: git {args}")
         if args and args[0] == "fetch":
             # Name the one branch: a bare fetch (or --all) pulls every ref.
-            assert args[-2:] == ["origin", ref.branch] and "--all" not in args, args
-        return real_git(args, cwd, timeout)
+            assert args[-1].startswith(f"+refs/heads/{ref.branch}:refs/todo-db/in/"), args
+            assert "--all" not in args, args
+        return real_git(args, cwd, timeout, **kw)
 
     monkeypatch.setattr(git_backend, "_git", spy)
     out = git_backend.mutate(
@@ -416,8 +409,8 @@ def _fail_after_push(monkeypatch, *, failing: set[str]) -> None:
     real_git = git_backend._git
     state = {"pushed": False}
 
-    def spy(args: list[str], cwd=None, timeout=git_backend.GIT_TIMEOUT_S):
-        proc = real_git(args, cwd, timeout)
+    def spy(args: list[str], cwd=None, timeout=git_backend.GIT_TIMEOUT_S, **kw):
+        proc = real_git(args, cwd, timeout, **kw)
         if args and args[0] == "push":
             state["pushed"] = True
         elif state["pushed"] and args and args[0] in failing:
@@ -432,10 +425,10 @@ def test_mutate_reports_fetch_timeout_as_offline(tmp_path: Path, monkeypatch) ->
     git_backend.bootstrap(ref)
     real_git = git_backend._git
 
-    def spy(args: list[str], cwd=None, timeout=git_backend.GIT_TIMEOUT_S):
+    def spy(args: list[str], cwd=None, timeout=git_backend.GIT_TIMEOUT_S, **kw):
         if args and args[0] == "fetch":
             raise subprocess.TimeoutExpired(["git", *args], timeout)
-        return real_git(args, cwd, timeout)
+        return real_git(args, cwd, timeout, **kw)
 
     monkeypatch.setattr(git_backend, "_git", spy)
     out = git_backend.mutate(ref, op="create", summary="add t", worker="w", apply=_create)
@@ -501,11 +494,11 @@ def test_read_never_clones_the_whole_remote(tmp_path: Path, monkeypatch) -> None
     seen: list[list[str]] = []
     real_git = git_backend._git
 
-    def spy(args: list[str], cwd=None, timeout=git_backend.GIT_TIMEOUT_S):
+    def spy(args: list[str], cwd=None, timeout=git_backend.GIT_TIMEOUT_S, **kw):
         if args and args[0] == "clone":
             seen.append(list(args))
             raise AssertionError(f"read() must not clone: git {args}")
-        return real_git(args, cwd, timeout)
+        return real_git(args, cwd, timeout, **kw)
 
     monkeypatch.setattr(git_backend, "_git", spy)
     ro = git_backend.read(ref, tmp_path / "cache")
@@ -514,7 +507,7 @@ def test_read_never_clones_the_whole_remote(tmp_path: Path, monkeypatch) -> None
 
 
 def test_read_reuses_tip_snapshot_without_network(tmp_path: Path, monkeypatch) -> None:
-    """A repeat read at the same tip serves the cache without git transport."""
+    """A repeat read at the same tip serves the store without git transport."""
     ref = _remote(tmp_path)
     git_backend.bootstrap(ref)
     git_backend.mutate(
@@ -525,14 +518,17 @@ def test_read_reuses_tip_snapshot_without_network(tmp_path: Path, monkeypatch) -
     first = git_backend.read(ref, cache)
     assert first.stale is False
 
-    # Same tip, dead transport past the tip check: the cached snapshot
-    # must serve without any fetch.
+    # Same tip, dead transport past the tip check: the stored snapshot
+    # must serve from local objects without any fetch.
     monkeypatch.setattr(git_backend, "ls_remote_tip", lambda r: first.rev)
+    real_git = git_backend._git
 
-    def dead_git(args: list[str], cwd=None, timeout=git_backend.GIT_TIMEOUT_S):
-        raise AssertionError(f"cached-tip read must not run git: {args}")
+    def no_network(args: list[str], cwd=None, timeout=git_backend.GIT_TIMEOUT_S, **kw):
+        if args and args[0] in {"fetch", "ls-remote", "push", "clone"}:
+            raise AssertionError(f"stored-tip read must not use the network: {args}")
+        return real_git(args, cwd, timeout, **kw)
 
-    monkeypatch.setattr(git_backend, "_git", dead_git)
+    monkeypatch.setattr(git_backend, "_git", no_network)
     second = git_backend.read(ref, cache)
     assert second.rev == first.rev and second.stale is False
     assert second.snapshot.index == first.snapshot.index

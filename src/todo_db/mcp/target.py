@@ -2,7 +2,7 @@
 
 Resolution order lives in :func:`todo_db.git_backend.resolve_ref`
 (flag > env > ``.todo-db/config.json`` discovery); this module adds the
-snapshot cache directory. Task state lives outside the code worktree.
+state cache directory (one Git object store per state branch). Task state lives outside the code worktree.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..git_backend import StateRef, resolve_ref
+from ..git_backend import StateRef, default_cache_dir, resolve_ref
 
 
 @dataclass(frozen=True)
@@ -23,10 +23,7 @@ class ResolvedTarget:
 
 
 def _default_cache() -> Path:
-    override = os.environ.get("TODO_DB_CACHE_DIR")
-    if override:
-        return Path(override).expanduser()
-    return Path.home() / ".cache" / "todo-db-state"
+    return default_cache_dir()
 
 
 def resolve_target(
