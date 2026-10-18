@@ -45,7 +45,7 @@ from uuid import uuid4
 
 from .errors import E_CONFLICT, E_OFFLINE, E_STATE, E_UNKNOWN, TodoError
 from .git_store import Store, StoreError, run_git
-from .store import Snapshot, load_snapshot, validate_snapshot
+from .store import REVISION_RE, Snapshot, load_snapshot, validate_snapshot
 
 OP_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 MAX_STDERR_CHARS = 500
@@ -742,19 +742,25 @@ def _fetch_for_history(store: Store, ref: StateRef) -> str:
         raise TodoError(f"remote {ref.remote!r} did not answer within {GIT_TIMEOUT_S}s", code=E_OFFLINE) from exc
 
 
+class RevisionNotFound(TodoError):
+    """A revision that is not a commit on the state branch's history."""
+
+
 def read_rev(ref: StateRef, rev: str, *, cache_dir: str | Path | None = None) -> Snapshot:
     """Load the snapshot at a historical commit (recovery/restore reads).
 
-    Only commits on the state branch's history count, and they load
+    Only full commit IDs on the state branch's history count, and they load
     exactly as the tip does (:meth:`Store.load`).
     """
+    if not isinstance(rev, str) or not REVISION_RE.fullmatch(rev):
+        raise RevisionNotFound(f"revision {rev!r} is not a full commit ID", code=E_STATE)
     store = _store(ref, cache_dir)
     _open_store(store)
     try:
         with _store_errors(), store.using():
             tip = _fetch_for_history(store, ref)
             if not store.has_commit(rev) or not store.is_ancestor(rev, tip):
-                raise TodoError(f"revision {rev!r} not found on {ref.remote!r}", code=E_STATE)
+                raise RevisionNotFound(f"revision {rev!r} not found on {ref.remote!r}", code=E_STATE)
             return store.load(rev)[0]
     finally:
         store.maybe_maintain()
@@ -768,12 +774,10 @@ def restore_rev(
 
     try:
         wanted = read_rev(ref, rev, cache_dir=cache_dir)
-    except TodoError as exc:
-        if "not found on" in str(exc):
-            raise TodoError(
-                f"revision {rev!r} is not part of {ref.branch!r} history; restore refuses it", code=E_STATE,
-            ) from exc
-        raise
+    except RevisionNotFound as exc:
+        raise TodoError(
+            f"revision {rev!r} is not part of {ref.branch!r} history; restore refuses it", code=E_STATE,
+        ) from exc
     payload = _json.loads(_json.dumps({"index": wanted.index, "details": wanted.details}))
 
     def apply(snap: Snapshot) -> dict[str, Any]:

@@ -521,6 +521,8 @@ def test_cache_prune_removes_only_obsolete_entries(tmp_path: Path) -> None:
     (live / ".last.1.x.tmp").write_text("partial")
     (cache / ("b" * 40)).mkdir()
     (cache / ".trash-old").mkdir()
+    os.utime(cache / ".trash-old", (1_000_000_000, 1_000_000_000))
+    (cache / ".trash-fresh").mkdir()
     stale = cache / ("2" * 16)
     (stale / "revs").mkdir(parents=True)
     old = 1_000_000_000
@@ -541,7 +543,7 @@ def test_cache_prune_removes_only_obsolete_entries(tmp_path: Path) -> None:
     assert report["maintained"] == [str(live)]
     # The namespace without a store keeps its legacy revision: its only offline copy.
     assert (cache / ("1" * 16) / "revs").exists() and (cache / "not-a-namespace").exists()
-    assert sorted(p.name for p in cache.iterdir()) == sorted([live.name, "1" * 16, "not-a-namespace"])
+    assert sorted(p.name for p in cache.iterdir()) == sorted([live.name, "1" * 16, "not-a-namespace", ".trash-fresh"])
     assert git_backend.read(ref, cache).stale is False
 
 
@@ -690,11 +692,12 @@ def test_hard_slack_cap_ignores_the_cooldown(tmp_path: Path, monkeypatch) -> Non
     calls: list[int] = []
     monkeypatch.setattr(git_store.Store, "maintain", lambda self: calls.append(1) or True)
     monkeypatch.setenv(git_store.MAINTENANCE_ENV, "background")
-    monkeypatch.setattr(git_store, "SLACK_CAP_BYTES", 0)
-    monkeypatch.setattr(git_store, "HARD_SLACK_CAP_BYTES", 10**12)
+    monkeypatch.setattr(git_store.Store, "slack", lambda self: 100)
+    monkeypatch.setattr(git_store, "SLACK_CAP_BYTES", 10)
+    monkeypatch.setattr(git_store, "HARD_SLACK_CAP_BYTES", 1000)
     store.maybe_maintain()  # over the soft cap, inside the cooldown: nothing runs
     assert calls == []
-    monkeypatch.setattr(git_store, "HARD_SLACK_CAP_BYTES", 0)
+    monkeypatch.setattr(git_store, "HARD_SLACK_CAP_BYTES", 50)
     store.maybe_maintain()  # over the hard cap: runs inline despite the cooldown
     assert calls == [1]
 
@@ -783,3 +786,45 @@ def test_small_edits_cost_a_bounded_fixed_overhead_per_commit(tmp_path: Path) ->
     growth = _objects_bytes(store) - before
     print(f"small edits: {growth / commits:.0f} B per commit for {touched / commits:.0f} B touched")
     assert growth <= 2 * touched + fixed_commit_overhead * commits, (growth, touched)
+
+
+def test_git_never_reads_the_callers_stdin() -> None:
+    """Under the MCP server stdin is the JSON-RPC stream; git must not consume it."""
+    out = git_store.run_git(["hash-object", "--stdin"], timeout=10)
+    assert out.returncode == 0 and out.stdout.strip() == "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+
+
+def test_slack_ignores_pack_indexes(tmp_path: Path) -> None:
+    ref = _remote(tmp_path)
+    git_backend.bootstrap(ref)
+    cache = tmp_path / "cache"
+    git_backend.read(ref, cache)
+    store = git_backend._store(ref, cache)
+    store.maintain()
+    assert list((store.git_dir / "objects" / "pack").glob("*.idx"))
+    assert store.slack() == 0
+
+
+@pytest.mark.parametrize("rev", ["-n1", "HEAD", "abc", "g" * 40])
+def test_read_rev_rejects_anything_but_a_full_commit_id(tmp_path: Path, monkeypatch, rev: str) -> None:
+    ref = _remote(tmp_path)
+    monkeypatch.setattr(git_backend, "_git", lambda *a, **k: (_ for _ in ()).throw(AssertionError(a)))
+    with pytest.raises(git_backend.RevisionNotFound):
+        git_backend.read_rev(ref, rev, cache_dir=tmp_path / "cache")
+
+
+def test_dry_run_reports_busy_namespaces_without_creating_locks(tmp_path: Path) -> None:
+    import fcntl
+
+    cache = tmp_path / "cache"
+    busy, idle = cache / ("4" * 16), cache / ("5" * 16)
+    for ns in (busy, idle):
+        (ns / "revs").mkdir(parents=True)
+    fd = os.open(busy / git_store.LOCK_NAME, os.O_RDWR | os.O_CREAT)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_SH)
+        report = git_store.prune_cache(cache, dry_run=True)
+    finally:
+        os.close(fd)
+    assert report["skipped_busy"] == [str(busy)]
+    assert not (idle / git_store.LOCK_NAME).exists()

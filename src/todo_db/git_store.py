@@ -26,7 +26,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from contextlib import contextmanager, nullcontext
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable, Iterator
 from uuid import uuid4
@@ -34,7 +34,7 @@ from uuid import uuid4
 from .errors import E_STATE, TodoError
 from .store import INDEX_FILENAME, ITEMS_DIRNAME, Snapshot, assemble_snapshot, serialize_state
 
-try:  # POSIX only; without it the store runs unlocked.
+try:  # Non-POSIX platforms are unsupported: without fcntl nothing is locked.
     import fcntl
 except ImportError:  # pragma: no cover - non-POSIX platforms
     fcntl = None  # type: ignore[assignment]
@@ -155,10 +155,13 @@ def run_git(
     env: dict[str, str] | None = None,
     text: bool = True,
 ) -> subprocess.CompletedProcess[Any]:
+    # Without input, git gets a null stdin: under the MCP server, stdin is the
+    # JSON-RPC stream, and no git command may read from it.
     return subprocess.run(
         ["git", *args],
         cwd=str(cwd) if cwd else None,
         input=input,
+        stdin=subprocess.DEVNULL if input is None else None,
         capture_output=True,
         text=text,
         timeout=timeout,
@@ -543,10 +546,13 @@ class Store:
     # -- maintenance --
 
     def slack(self) -> int:
-        """Bytes the store holds beyond its largest pack.
+        """Bytes in loose objects and in every pack but the largest.
 
-        Measured from the object directory without running git, because it
-        is checked after every fetch and write.
+        Pack indexes and other metadata are not counted: they shrink with
+        the packs they describe, and counting them would push a large store
+        past the cap permanently. Measured from the object directory
+        without running git, because it is checked after every fetch and
+        write.
         """
         objects = self.git_dir / "objects"
         packs: list[int] = []
@@ -559,8 +565,6 @@ class Store:
                             for item in pack_dir:
                                 if item.name.endswith(".pack"):
                                     packs.append(item.stat().st_size)
-                                elif item.is_file():
-                                    loose += item.stat().st_size
                     elif len(entry.name) == 2 and entry.is_dir():
                         with os.scandir(entry.path) as fanout:
                             loose += sum(item.stat().st_size for item in fanout if item.is_file())
@@ -674,6 +678,29 @@ def _last_used(ns: Path) -> float:
     return max(times)
 
 
+@contextmanager
+def _probe_unlocked(lock: Path) -> Iterator[bool]:
+    """For a dry run: is the namespace free, without creating its lock file?"""
+    if fcntl is None or not lock.exists():
+        yield True
+        return
+    try:
+        fd = os.open(lock, os.O_RDONLY)
+    except OSError:
+        yield True
+        return
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            yield False
+            return
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        yield True
+    finally:
+        os.close(fd)
+
+
 def _is_legacy(name: str) -> bool:
     return name in LEGACY_NAMES or (name.startswith(".last.") and name.endswith(".tmp"))
 
@@ -731,7 +758,16 @@ def prune_cache(
     for entry in sorted(cache_dir.iterdir()):
         if entry == trash or not entry.is_dir() or entry.is_symlink():
             continue
-        if entry.name.startswith(".trash-") or _is_hex(entry.name, 40):
+        if entry.name.startswith(".trash-"):
+            # A younger trash folder may belong to a prune still deleting it.
+            try:
+                abandoned = clock - entry.stat().st_mtime > STALE_STAGING_S
+            except OSError:
+                abandoned = False
+            if abandoned:
+                discard(entry)
+            continue
+        if _is_hex(entry.name, 40):
             discard(entry)
             continue
         if not _is_hex(entry.name, 16):
@@ -739,7 +775,9 @@ def prune_cache(
         store = Store(entry, run)
         lock = entry / LOCK_NAME
         lock_existed = lock.exists()
-        locking = nullcontext(True) if dry_run else store._flock(LOCK_NAME, fcntl.LOCK_EX if fcntl else 0, blocking=False)
+        locking = _probe_unlocked(lock) if dry_run else store._flock(
+            LOCK_NAME, fcntl.LOCK_EX if fcntl else 0, blocking=False,
+        )
         with locking as got:
             if not got:
                 report["skipped_busy"].append(str(entry))
