@@ -435,16 +435,20 @@ WORKER = textwrap.dedent("""
     errors, created = [], []
     for n in range(count):
         item_id = f"{name}-{n}"
+        op_id = git_backend.new_op_id()
         try:
-            out = git_backend.mutate(
-                ref, op="create", summary=item_id, worker=name, cache_dir=cache,
-                apply=lambda s: (S.op_create(s, item_id=item_id, title=item_id), {})[1],
-            )
+            # Retry exhaustion under heavy contention is a reported outcome;
+            # resubmitting under the same operation ID must never duplicate.
+            for _ in range(20):
+                out = git_backend.mutate(
+                    ref, op="create", summary=item_id, worker=name, cache_dir=cache, op_id=op_id,
+                    apply=lambda s: (S.op_create(s, item_id=item_id, title=item_id), {})[1],
+                )
+                if out.ok or out.code != "E_CONFLICT":
+                    break
             if out.ok:
                 created.append(item_id)
-            elif out.code != "E_CONFLICT":
-                # Retry exhaustion under heavy contention is a legitimate,
-                # reported outcome; anything else is a failure.
+            else:
                 errors.append(out.error)
             git_backend.read(ref, cache)
         except BaseException as exc:
@@ -492,7 +496,12 @@ def test_concurrent_processes_share_one_store_safely(tmp_path: Path) -> None:
         created |= set(report["created"])
     assert runs >= 1
     ro = git_backend.read(ref, cache)
-    assert len(created) >= 16 and created <= set(ro.snapshot.index["items"])
+    expected = {f"w{n}-{i}" for n in range(8) for i in range(3)}
+    assert created == expected and expected <= set(ro.snapshot.index["items"])
+    creates = subprocess.run(["git", "-C", ref.remote, "log", "--format=%s", "todo-state"],
+                             capture_output=True, text=True, check=True).stdout.split("\n")
+    assert sorted(line for line in creates if line.startswith("todo(create)")) == sorted(
+        f"todo(create): {item}" for item in expected)
     assert store.tip() == git_backend.ls_remote_tip(ref)
     assert not list((store.git_dir / "refs" / "todo-db" / "in").glob("*"))
     subprocess.run(["rm", "-rf", ref.remote], check=True)
