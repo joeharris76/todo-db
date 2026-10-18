@@ -707,10 +707,15 @@
       "title": "Route finding verbs in skills; document capture-to-landing end to end"
     },
     "state-cache-rev-eviction": {
-      "claim": null,
+      "claim": {
+        "expires_at": "2026-10-19T20:15:37Z",
+        "generation": "23d0bd6276d14e3e8a9782043cb8009e",
+        "renewals": 0,
+        "worker": "mcp:omp-coding-agent:joe@joe-mac-mini.local:a10bb1a236be81c7b238db58"
+      },
       "needs": [],
       "priority": "high",
-      "status": "open",
+      "status": "active",
       "title": "Bound the state-branch snapshot cache with safe, capped eviction"
     },
     "table-registries-must-be-hand-synced": {
