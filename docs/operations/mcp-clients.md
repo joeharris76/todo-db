@@ -28,7 +28,7 @@ Common flags:
   value with the same client name and user/host deliberately recreates a
   fallback identity for restart recovery. Do not put one shared value in a
   global registration: concurrent servers would then be the same worker.
-- `--cache-dir` — local snapshot cache (default `~/.cache/todo-db-state`).
+- `--cache-dir` — local state cache, one Git object store per state branch (default `~/.cache/todo-db-state`).
 
 Logging goes to **stderr only**; stdout carries JSON-RPC framing.
 

@@ -6,6 +6,32 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- The local state cache is now one bare Git object store per state
+  branch (`<cache>/<namespace>/store.git`) instead of a full snapshot
+  folder per revision. Reads fetch only new objects and build snapshots
+  straight from Git objects; mutations, history, reconcile and restore
+  use the same store and no longer fetch the branch's whole history into
+  a temporary repository on every call. Against BenchBox production
+  state each new revision used to add about 30 MiB to the cache, and the
+  cache reached 41 GB on one machine. The whole branch history now fits
+  in about 14 MiB, and steady-state growth is about the packed size of
+  each commit (0.2 to 0.6 times the bytes of the items it touches). See
+  [ADR 0011](docs/adr/0011-git-object-store-cache.md).
+- Git commands no longer inherit variables that redirect them to another
+  repository, index or identity (`GIT_DIR`, `GIT_INDEX_FILE`,
+  `GIT_AUTHOR_*` and similar), and the store ignores global hooks and
+  signing settings.
+- Requires git 2.28 or newer (already needed by `bootstrap`).
+
+### Added
+
+- `todo-db cache prune [--older-than DAYS] [--dry-run]` removes legacy
+  snapshot folders, folders from before namespacing, and namespaces
+  unused for 30 days, then repacks each store. Run it once after
+  upgrading; `validate` prints a hint while a legacy cache remains.
+
 ## [0.9.1] - 2026-10-04
 
 ### Fixed

@@ -35,22 +35,43 @@ serialization. A 60 KB description stays bounded: `show_item` spills it to
 
 ## Latency and Git growth (local disk)
 
-| Metric | 100 items | 10,000 items |
-| --- | --- | --- |
-| Seed (one commit) | 0.23 s | 48.9 s |
-| 5-row list page | 0.14 s | 3.9 s |
-| One show | 0.11 s | 1.1 s |
-| Single publish (create/take/finish) | ~0.28 s | ~2.9 s |
-| Bare-remote growth per item | ~45 B | ~47 B |
+Measured 2026-10-17 with the object-store cache
+([ADR 0011](adr/0011-git-object-store-cache.md)), alongside the same script
+run on the previous release (0.9.1) on the same machine minutes apart.
 
-Each operation fetches the state branch into a private workspace, so
-fetch cost grows with the branch's size (~3 s locally at 10,000 items).
-That is the scaling cost of per-writer isolation; a persistent worktree
-plus fetch would reduce it, at the price of shared scratch state. Not
-implemented: at ordinary tracker sizes the cost is sub-second. The
-latency figures above predate the change from a full clone to a
-single-branch fetch and have not been re-measured; the change matters
-most when the remote also carries code history.
+| Metric | 100 items | 10,000 items | 0.9.1, 100 items | 0.9.1, 10,000 items |
+| --- | --- | --- | --- | --- |
+| Seed (one commit) | 0.21 s | 71.6 s | 0.23 s | 67.2 s |
+| 5-row list page (first read) | 0.13 s | 0.21 s | 0.14–0.17 s | 2.54 s |
+| One show | 0.04 s | 0.10 s | 0.02 s | 0.41 s |
+| Single publish (create/take/finish) | ~0.20 s | ~0.41 s | ~0.27 s | ~3.3 s |
+| Bare-remote growth per item | ~45 B | ~47 B | ~45 B | ~47 B |
+
+Each read and write fetches only the objects its namespace's store
+lacks, so the per-operation cost no longer grows with the branch's
+history. At 100 items a show costs about 20 ms more than 0.9.1: three
+local git commands replace reading a few files, which is within the
+0.11 s recorded for 0.7.0. Seeding is one large commit and is dominated
+by validation and hashing, not the cache.
+
+## Local cache size
+
+Measured 2026-10-17 against BenchBox production state (3,383 items,
+5,114 commits):
+
+| Measure | 0.9.1 snapshot cache | Object store |
+| --- | --- | --- |
+| Cost of the current tip | ~30 MiB per revision, kept forever | whole history: 14.7 MiB |
+| First read for a namespace | not measured (depth-1 fetch of the tip) | 7.2 s (full history, once) |
+| Repeat read at the same tip | 2.97 s to load the cached snapshot alone | 0.69 s (whole `validate` command) |
+| Growth per one-item commit, after maintenance | ~30 MiB | 0.58× the bytes of the item touched (20 commits, full repack) |
+| Unpacked slack before maintenance | — | ~180 KiB per commit; capped at 8 MiB |
+
+The test suite asserts the bound (`test_size_per_interaction_is_within_twice_the_items_touched`:
+0.21× on its 300-item fixture). Before maintenance, a fetched tip costs
+150 to 300 KB, because every commit rewrites `index.json` and the
+`items` tree; maintenance folds those into deltas once slack passes the
+cap.
 
 ## Footprint
 

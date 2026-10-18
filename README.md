@@ -22,8 +22,8 @@ see [Migration from 0.6.x](#migration-from-06x) and the
 
 - Python 3.10 or newer.
 - [uv](https://docs.astral.sh/uv/) (or `pipx`/`pip`) to install.
-- **git** — task state is published through Git; the `git` CLI must be
-  installed and the state remote reachable.
+- **git** 2.28 or newer — task state is published through Git; the `git`
+  CLI must be installed and the state remote reachable.
 
 ## Install
 
@@ -133,6 +133,7 @@ across ordinary restarts; do not run that actor concurrently in two servers.
 | Validation | `validate` |
 | Migration | `migrate --from-export <file> [--dry-run]` |
 | Recovery | `recover --op-id <id>` / `--restore-rev <sha>` / `--limit N` |
+| Cache | `cache prune [--older-than DAYS] [--dry-run]` |
 | Reads | `list`, `show` |
 
 Planning and lifecycle mutation are MCP tools, not CLI commands.
@@ -158,7 +159,7 @@ that resolves wins:
 | --- | --- |
 | `TODO_DB_STATE_REMOTE` | State remote (Git URL or path). |
 | `TODO_DB_STATE_BRANCH` | State branch (default `todo-state`). |
-| `TODO_DB_CACHE_DIR` | Local snapshot cache (default `~/.cache/todo-db-state`). |
+| `TODO_DB_CACHE_DIR` | Local state cache: one Git object store per state branch (default `~/.cache/todo-db-state`). |
 | `TODO_DB_CONFIG` | Path to a config file; overrides discovery. |
 | `TODO_DB_ACTOR` | Worker identity for CLI mutations and the MCP default. |
 
@@ -180,6 +181,12 @@ branch is private.
   the change; an undetermined outcome is reported as unknown/retryable.
 - Offline reads may serve a cached revision marked stale. Offline
   mutations fail rather than succeeding locally.
+- The local cache is a Git object store per state branch, fetched
+  incrementally and repacked in the background, so it grows by about the
+  packed size of each commit rather than a full snapshot per revision
+  ([ADR 0011](docs/adr/0011-git-object-store-cache.md)). After upgrading
+  from 0.9.x, run `todo-db cache prune` once to remove the old snapshot
+  folders.
 - Bootstrap refuses to overwrite an existing branch. History stays
   append-only; restores land as new commits.
 
