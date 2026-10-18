@@ -56,22 +56,40 @@ by validation and hashing, not the cache.
 
 ## Local cache size
 
-Measured 2026-10-17 against BenchBox production state (3,383 items,
-5,114 commits):
+Measured 2026-10-18 against BenchBox state (3,437 items, 5,100+
+commits): read-only against the production remote, and with writes
+against a scratch copy of that state. Each pair was run back to back
+with the published 0.9.1 wheel in an isolated environment.
 
 | Measure | 0.9.1 snapshot cache | Object store |
 | --- | --- | --- |
-| Cost of the current tip | ~30 MiB per revision, kept forever | whole history: 14.7 MiB |
-| First read for a namespace | not measured (depth-1 fetch of the tip) | 7.2 s (full history, once) |
-| Repeat read at the same tip | 2.97 s to load the cached snapshot alone | 0.69 s (whole `validate` command) |
-| Growth per one-item commit, after maintenance | ~30 MiB | 0.58× the bytes of the item touched (20 commits, full repack) |
-| Unpacked slack before maintenance | — | ~180 KiB per commit; capped at 8 MiB |
+| Cache after reading the current tip | 31 MiB (one snapshot folder) | 15 MiB (the whole history) |
+| Cache after three further tips | 122.7 MiB, growing ~30 MiB per tip forever | 15.0 MiB |
+| First `validate` for a namespace | 2.8 s (depth-1 fetch of the tip) | 3.7 s (full history, once) |
+| Repeat `validate` at the same tip | 0.61 s | 0.60 s |
+| `validate` after a new tip (scratch copy) | 1.7 s | 0.37 s |
+| Growth per one-item edit, after shipped maintenance | ~30 MiB | 0.72× the bytes touched (20 edits) |
+| Unpacked slack before maintenance | — | ~180 KiB per commit; maintenance at 8 MiB, inline above 16 MiB |
 
-The test suite asserts the bound (`test_size_per_interaction_is_within_twice_the_items_touched`:
-0.21× on its 300-item fixture). Before maintenance, a fetched tip costs
-150 to 300 KB, because every commit rewrites `index.json` and the
-`items` tree; maintenance folds those into deltas once slack passes the
-cap.
+"Bytes touched" is the edited item's detail file plus its index entry.
+With full delta recomputation (`repack -adf`, not what ships) the same
+20 edits grow the store by 0.14×.
+
+Every commit also carries a fixed record: the commit object with its
+trailers, two tree deltas, an `index.json` delta and pack index entries.
+Title-only edits (about 140 B touched) measured 510 B per commit at 300
+items and 900 B at 3,000 items, so for tiny edits growth is 3.6 to 6.4
+times the bytes touched. The supported bound is therefore about 2 times
+the bytes touched plus about 1 KiB per commit
+([ADR 0011](adr/0011-git-object-store-cache.md)). The test suite asserts
+it both ways (`test_size_per_interaction_is_within_twice_the_items_touched`
+at 0.21× on a fixture with realistic items, and
+`test_small_edits_cost_a_bounded_fixed_overhead_per_commit` for small
+edits).
+
+Before maintenance, a fetched tip costs 150 to 300 KB, because every
+commit rewrites `index.json` and the `items` tree; maintenance folds
+those into deltas.
 
 ## Footprint
 

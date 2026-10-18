@@ -18,21 +18,28 @@ adheres to [Semantic Versioning](https://semver.org/).
   a temporary repository on every call. Against BenchBox production
   state each new revision used to add about 30 MiB to the cache, and the
   cache reached 41 GB on one machine. The whole branch history now fits
-  in about 14 MiB, and steady-state growth is about the packed size of
-  each commit (0.2 to 0.6 times the bytes of the items it touches). See
+  in about 15 MiB. Steady-state growth is about the packed size of each
+  commit: 0.72 times the bytes touched for one-item edits on BenchBox
+  state, plus a fixed record of 0.5 to 1 KiB per commit, which dominates
+  for tiny edits. A read after a new tip takes 0.37 s instead of 1.7 s. See
   [ADR 0011](docs/adr/0011-git-object-store-cache.md).
 - Git commands no longer inherit variables that redirect them to another
   repository, index or identity (`GIT_DIR`, `GIT_INDEX_FILE`,
-  `GIT_AUTHOR_*` and similar), and the store ignores global hooks and
-  signing settings.
-- Requires git 2.28 or newer (already needed by `bootstrap`).
+  `GIT_AUTHOR_*`, `GIT_CONFIG_PARAMETERS` and similar). Hooks, signing and
+  automatic gc stay off even when global or inherited command-level config
+  turns them on.
+- Requires git 2.28 or newer (already needed by `bootstrap`); an older git
+  now fails with a clear error.
 
 ### Added
 
 - `todo-db cache prune [--older-than DAYS] [--dry-run]` removes legacy
   snapshot folders, folders from before namespacing, and namespaces
-  unused for 30 days, then repacks each store. Run it once after
-  upgrading; `validate` prints a hint while a legacy cache remains.
+  unused for 30 days, then repacks each store. Namespaces in use are
+  skipped. Run it once after upgrading, from the project directory (or
+  with `--state-remote`) so it can also clear a local remote's legacy
+  folder. `validate` prints a hint while a legacy cache remains, and
+  reports a failed cache maintenance run.
 
 ## [0.9.1] - 2026-10-04
 

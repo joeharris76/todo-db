@@ -41,9 +41,10 @@ mutations, history, reconciliation and restore (`src/todo_db/git_store.py`).
 - **Incremental fetch by URL.** The store has no configured remote. Each
   call fetches the URL with an explicit refspec onto its own ref,
   `refs/todo-db/in/<uuid>`, deletes that ref when done, and never reads
-  `FETCH_HEAD`. Concurrent processes therefore never race on
-  remote-tracking refs, and every local ref is advertised as a "have",
-  so only new objects transfer.
+  `FETCH_HEAD` (on git 2.29 or newer it is not written either).
+  Concurrent processes therefore never race on remote-tracking refs, and
+  every local ref is advertised as a "have", so only new objects
+  transfer.
 - **Snapshots from objects.** Reads build the snapshot from Git objects.
   No checkout or snapshot file is written. Checkout and object loads
   share one assembly (`store.assemble_snapshot`), so both accept exactly
@@ -62,43 +63,85 @@ mutations, history, reconciliation and restore (`src/todo_db/git_store.py`).
   outside the protocol (ADR 0007).
 - **Offline reads** serve the store's tip. Until a store has a tip, they
   fall back to a legacy `revs/<last>` snapshot.
-- **Size bound.** Once unpacked objects exceed 8 MiB beyond the largest
-  pack, and at most every 10 minutes, a detached process runs
-  `repack -A -d -l` and `prune --expire=1.hour.ago` under a non-blocking
-  lock. `-A` with the one-hour expiry keeps objects that another process
-  has just written but not yet referenced. In steady state the store
-  grows by about the packed delta of each commit: 0.21 to 0.58 times the
-  bytes of the items touched, within the target of 2 times. The test
-  suite asserts the 2-times bound.
+- **Maintenance.** Every fetch and write checks the store's slack (bytes
+  beyond its largest pack, read from the object directory). Above 8 MiB a
+  detached process runs `repack -A -d -l` and `prune --expire=1.hour.ago`,
+  at most every 10 minutes (every minute after a failure). Above 16 MiB
+  it runs inline whatever the cooldown, so write bursts and a failing
+  background run are bounded and the caller pays. `-A` with the one-hour
+  expiry keeps objects another process has just written but not yet
+  referenced. A failure is recorded in `maintenance.error`, which
+  `validate` reports.
+- **Size bound, as measured.** Steady-state growth per commit is about the
+  packed delta of the files it changes plus a fixed record that every Git
+  commit carries: the commit object with its trailers, two tree deltas,
+  an `index.json` delta and pack index entries. That record measured
+  510 B per commit at 300 items and 900 B at 3,000 items. So the bound is
+  about 2 times the bytes touched (the item's detail file plus its index
+  entry) plus about 1 KiB per commit:
+  - For edits of realistic size it is within 2 times on its own: 0.72
+    times on a copy of BenchBox state (20 one-item edits, with the
+    shipped maintenance), and 0.21 times on the test fixture.
+  - For tiny edits it is not: a title-only change touches about 140 B
+    and costs 3.6 to 6.4 times that. Meeting 2 times there would mean
+    dropping history, which operation-ID reconciliation searches, or a
+    new state format.
+
+  The test suite asserts both forms.
 - **Isolation.** Commands drop inherited variables that would redirect
   Git to another repository, index or identity (`GIT_DIR`,
-  `GIT_INDEX_FILE`, `GIT_AUTHOR_*` and similar). The store's own config
-  disables hooks, signing, automatic gc and commit-graph writes, so user
-  configuration cannot change a commit.
-- **Damage.** A store that fails locally is moved aside under an
-  exclusive lock, but only if its ID still matches the one that failed.
-  It is rebuilt once by refetching. Missing objects are simply fetched
-  again.
+  `GIT_INDEX_FILE`, `GIT_AUTHOR_*` and similar), and drop
+  `GIT_CONFIG_PARAMETERS` (`git -c` from a parent git process). Every
+  command re-asserts `core.hooksPath`, `commit.gpgSign`, `gc.auto` and
+  `maintenance.auto` through `GIT_CONFIG_COUNT`, after any inherited
+  entries, so neither config files nor inherited command-level config can
+  turn hooks, signing or automatic gc back on. Inherited entries for
+  other keys, such as credentials, still apply. Git does not pass
+  `GIT_CONFIG_COUNT` to a local-path remote's receive-pack, so a remote's
+  own hooks still run.
+- **Locking.** Ordinary use holds a shared `flock` on `store.lock` and
+  creates the store under it if it is missing, so a holder never sees a
+  namespace without a repository. Maintenance also holds the shared lock.
+  After waiting, a lock is retaken if its file was replaced, as `cache
+  prune` does when it moves a namespace away.
+- **Damage.** A store that fails locally is replaced under the exclusive
+  lock, and only if its ID still matches the one the failing operation
+  saw. The fresh store refetches. A tip whose objects are entirely
+  missing is simply fetched again; other damage, including history that
+  cannot be searched, triggers that rebuild. A history search that cannot
+  run is never treated as proof that an operation is absent: a mutation
+  rebuilds and searches again, and reconciliation reports `unknown`.
 - **Namespace.** The store's namespace hashes the resolved remote
   location, so one relative local path used from two directories cannot
   share a store. For URL remotes it equals the legacy namespace.
 - **Legacy cleanup** is an explicit command, `todo-db cache prune`, never
-  part of a read. It removes legacy `revs/`, `last` and temporary pointer
-  files once that namespace's store has a tip. It also removes folders
-  from before namespacing, namespaces unused for 30 days, and leftover
-  trash, then repacks each store.
+  part of a read. It handles each namespace under its exclusive lock,
+  taken without waiting, so one in use is skipped. It removes legacy
+  `revs/`, `last` and temporary pointer files once that namespace's
+  store has a tip. Given the project's state branch (flags or a
+  discovered config), it also clears a local remote's legacy namespace,
+  which hashes differently from its store. It also removes folders from
+  before namespacing, namespaces unused for 30 days (at least one day),
+  staging and trash older than an hour, and leftover top-level trash,
+  then repacks each store.
 - **Git version.** Requires git 2.28 or newer, as bootstrap already did
-  (`init -b`). `GIT_CONFIG_COUNT`, which keeps global hooks out of store
-  creation, needs git 2.31; on older git a global `reference-transaction`
-  hook can still run during `git init`.
+  (`init -b`). The version is probed once per process, and an older git
+  fails with a clear error. The temporary-repository path is not kept
+  as a fallback, which avoids maintaining two write paths.
+  `GIT_CONFIG_COUNT`, used to re-assert the protected settings, needs
+  git 2.31; older git still applies the store's own config, which
+  outranks global config but not inherited command-level config.
 
 ## Rejected alternatives
 
-- **Evict old snapshots in `read()`.** Bounding the folders would stop
-  the growth, but each new tip would still write about 30 MiB and fetch
-  the full tree. The first sweep would delete about 40 GiB inside an MCP
-  call. A safe sweep also needs locking and trash renames; the store
-  needs those too and removes the folders altogether.
+- **Keep two snapshots per namespace** (evict the rest outside reads,
+  plus a one-time cleanup). This also meets a retained-growth target, and
+  it is the smaller change. It was not chosen because each new tip would
+  still fetch the whole tree and write about 30 MiB of files. Measured on
+  a copy of BenchBox state, a read after a new tip took 1.7 s, against
+  0.37 s with the store. Each mutation would also keep fetching the
+  branch's full history. A safe sweep needs the same locking and trash
+  renames as the store.
 - **A persistent shared worktree.** Rejected in `docs/measurements.md`
   for its shared mutable scratch state. The store has no worktree: it
   shares only immutable objects and one ref moved by CAS.
@@ -111,8 +154,9 @@ mutations, history, reconciliation and restore (`src/todo_db/git_store.py`).
 ## Consequences
 
 - The first read or write for a namespace fetches the branch's whole
-  history: about 14 MiB and 3 s for BenchBox, with a 300 s timeout. After
-  that, each call transfers only new objects.
+  history: about 14 MiB, and a first `validate` takes 3.7 s for BenchBox
+  against 2.8 s on 0.9.1, with a 300 s timeout. After that, each call
+  transfers only new objects.
 - Writes no longer re-fetch the full history into a temporary
   repository. The test suite runs about 3 times faster.
 - Users reclaim legacy snapshot folders by running `todo-db cache prune`
