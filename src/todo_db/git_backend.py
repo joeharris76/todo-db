@@ -260,16 +260,20 @@ def _find_op_commit(clone: Path, rev: str, op_id: str) -> str | None:
     # "Todo-Op-Id: <id>" anywhere else must never reconcile as that operation.
     _check_op_id(op_id)
     wanted = f"{OP_ID_TRAILER}: {op_id}"
+    # A search that cannot run is never evidence of absence: reporting
+    # "absent" would let the caller apply the operation a second time. The
+    # store may hold a tip whose older history is missing, so a failure
+    # raises StoreError and the caller rebuilds the store or reports unknown.
     proc = _git(
         ["log", rev, "--fixed-strings", f"--grep={wanted}", "--format=%H"],
         clone,
     )
     if proc.returncode != 0:
-        return None
+        raise StoreError(f"cannot search history for operation {op_id}: {_brief(proc.stderr)}")
     for sha in proc.stdout.strip().splitlines():
         body = _git(["show", "-s", "--format=%B", sha], clone)
         if body.returncode != 0:
-            continue
+            raise StoreError(f"cannot read commit {sha}: {_brief(body.stderr)}")
         if any(line.strip() == wanted for line in body.stdout.splitlines()):
             return sha
     return None
@@ -331,9 +335,11 @@ def _open_store(store: Store) -> None:
 
 
 def _repair(store: Store) -> None:
-    """Rebuild a damaged store; raise if it still cannot be opened."""
-    store.repair(store.store_id())
-    _open_store(store)
+    """Rebuild the store the failing operation used; raise if that fails."""
+    try:
+        store.repair(store.active_id)
+    except (OSError, StoreError) as exc:
+        raise TodoError(f"cannot rebuild the local state store {store.git_dir}: {exc}", code=E_STATE) from exc
 
 
 @contextmanager
@@ -422,6 +428,24 @@ def mutate(
         _open_store(store)
     except TodoError as exc:
         return MutationOutcome(ok=False, outcome="error", op_id=op_id, code=E_STATE, error=str(exc))
+    try:
+        return _mutate_loop(store, ref, url, op, summary, worker, op_id, apply, session, max_retries)
+    finally:
+        store.maybe_maintain()
+
+
+def _mutate_loop(
+    store: Store,
+    ref: StateRef,
+    url: str,
+    op: str,
+    summary: str,
+    worker: str,
+    op_id: str,
+    apply: Callable[[Snapshot], dict[str, Any]],
+    session: str | None,
+    max_retries: int,
+) -> MutationOutcome:
     repaired = False
     attempts = 0
     while True:
@@ -441,7 +465,6 @@ def mutate(
                 return MutationOutcome(ok=False, outcome="error", op_id=op_id, code=E_STATE, error=str(rexc))
             continue
         if step is not None:
-            store.maybe_maintain()
             return step
         attempts += 1
         if attempts > max_retries:
@@ -463,13 +486,14 @@ def _mutate_once(
     session: str | None,
 ) -> MutationOutcome | None:
     """One fetch-apply-push attempt. None means a competing push won: retry."""
+    timeout = _fetch_timeout(store)
     with ExitStack() as stack:
         try:
-            fetch, tip = stack.enter_context(store.incoming(url, ref.branch, _fetch_timeout(store)))
+            fetch, tip = stack.enter_context(store.incoming(url, ref.branch, timeout))
         except subprocess.TimeoutExpired:
             return MutationOutcome(
                 ok=False, outcome="offline", op_id=op_id, code=E_OFFLINE,
-                error=f"fetch timed out after {GIT_TIMEOUT_S}s (operation ID {op_id})",
+                error=f"fetch timed out after {timeout}s (operation ID {op_id})",
             )
         if fetch.returncode != 0 or tip is None:
             if _branch_missing(fetch.stderr):
@@ -590,12 +614,21 @@ def _reconcile(store: Store, ref: StateRef, op_id: str) -> ReconcileResult:
             return _search(store, tip, op_id)
     except subprocess.TimeoutExpired:
         return ReconcileResult(state="unknown", detail=f"timed out after {GIT_TIMEOUT_S}s")
+    except StoreError as exc:
+        return ReconcileResult(state="unknown", detail=str(exc))
 
 
 def _reconcile_best_effort(ref: StateRef, op_id: str, cache_dir: str | Path | None) -> ReconcileResult | None:
     """None only when the remote cannot be reached at all."""
     store = _store(ref, cache_dir)
     _open_store(store)
+    try:
+        return _reconcile_in(store, ref, op_id)
+    finally:
+        store.maybe_maintain()
+
+
+def _reconcile_in(store: Store, ref: StateRef, op_id: str) -> ReconcileResult | None:
     with _store_errors(), store.using():
         try:
             with store.incoming(_remote_location(ref), ref.branch, _fetch_timeout(store)) as (fetch, tip):
@@ -606,6 +639,8 @@ def _reconcile_best_effort(ref: StateRef, op_id: str, cache_dir: str | Path | No
                 return _search(store, tip, op_id)
         except subprocess.TimeoutExpired:
             return ReconcileResult(state="unknown", detail=f"timed out after {GIT_TIMEOUT_S}s")
+        except StoreError as exc:
+            return ReconcileResult(state="unknown", detail=str(exc))
 
 
 def _offline_cached(store: Store, ref: StateRef, cache_dir: str | Path) -> ReadOutcome:
@@ -708,53 +743,21 @@ def _fetch_for_history(store: Store, ref: StateRef) -> str:
 
 
 def read_rev(ref: StateRef, rev: str, *, cache_dir: str | Path | None = None) -> Snapshot:
-    """Load the snapshot at a historical commit (recovery/restore reads)."""
-    import json as _json
+    """Load the snapshot at a historical commit (recovery/restore reads).
 
+    Only commits on the state branch's history count, and they load
+    exactly as the tip does (:meth:`Store.load`).
+    """
     store = _store(ref, cache_dir)
     _open_store(store)
-    with _store_errors(), store.using():
-        tip = _fetch_for_history(store, ref)
-        if not store.has_commit(rev) or not store.is_ancestor(rev, tip):
-            raise TodoError(f"revision {rev!r} not found on {ref.remote!r}", code=E_STATE)
-        entries = store.entries(rev)
-        index_entry = entries.get(INDEX_NAME)
-        if index_entry is None or index_entry[1] != "blob":
-            raise TodoError(f"revision {rev!r} has no {INDEX_NAME}", code=E_STATE)
-        try:
-            index = _json.loads(store.blob(index_entry[2]))
-        except ValueError as exc:
-            raise TodoError(f"revision {rev!r} has an invalid {INDEX_NAME}: {exc}", code=E_STATE) from exc
-        details: dict[str, dict[str, Any]] = {}
-        if isinstance(index, dict) and isinstance(index.get("items"), dict):
-            wanted: dict[str, str] = {}
-            for path, (_mode, kind, oid) in entries.items():
-                if kind != "blob" or not path.startswith(f"{ITEMS_NAME}/"):
-                    continue
-                name = path.rsplit("/", 1)[-1]
-                if name.endswith(".json") and name[:-5] in index["items"]:
-                    wanted[name[:-5]] = oid
-            data = store.blobs(set(wanted.values()))
-            for item_id, oid in wanted.items():
-                try:
-                    details[item_id] = _json.loads(data[oid])
-                except ValueError as exc:
-                    raise TodoError(f"revision {rev!r} detail for {item_id!r} is invalid: {exc}", code=E_STATE) from exc
-        validate_snapshot(index, details)
-        return Snapshot(index=index, details=details)
-
-
-def _assert_on_branch(ref: StateRef, rev: str, cache_dir: str | Path | None) -> None:
-    """Refuse revisions that are not part of the state branch's history."""
-    store = _store(ref, cache_dir)
-    _open_store(store)
-    with _store_errors(), store.using():
-        tip = _fetch_for_history(store, ref)
-        if not store.has_commit(rev) or not store.is_ancestor(rev, tip):
-            raise TodoError(
-                f"revision {rev!r} is not part of {ref.branch!r} history; restore refuses it",
-                code=E_STATE,
-            )
+    try:
+        with _store_errors(), store.using():
+            tip = _fetch_for_history(store, ref)
+            if not store.has_commit(rev) or not store.is_ancestor(rev, tip):
+                raise TodoError(f"revision {rev!r} not found on {ref.remote!r}", code=E_STATE)
+            return store.load(rev)[0]
+    finally:
+        store.maybe_maintain()
 
 
 def restore_rev(
@@ -763,8 +766,14 @@ def restore_rev(
     """Append-only restore: a new commit returning state to *rev*'s content."""
     import json as _json
 
-    _assert_on_branch(ref, rev, cache_dir)
-    wanted = read_rev(ref, rev, cache_dir=cache_dir)
+    try:
+        wanted = read_rev(ref, rev, cache_dir=cache_dir)
+    except TodoError as exc:
+        if "not found on" in str(exc):
+            raise TodoError(
+                f"revision {rev!r} is not part of {ref.branch!r} history; restore refuses it", code=E_STATE,
+            ) from exc
+        raise
     payload = _json.loads(_json.dumps({"index": wanted.index, "details": wanted.details}))
 
     def apply(snap: Snapshot) -> dict[str, Any]:
@@ -847,6 +856,13 @@ def history(ref: StateRef, limit: int = 20, *, cache_dir: str | Path | None = No
     """Recovery aid: recent state-branch commits (ordinary Git history)."""
     store = _store(ref, cache_dir)
     _open_store(store)
+    try:
+        return _history_in(store, ref, limit)
+    finally:
+        store.maybe_maintain()
+
+
+def _history_in(store: Store, ref: StateRef, limit: int) -> list[dict[str, str]]:
     with _store_errors(), store.using():
         tip = _fetch_for_history(store, ref)
         out = store.git(["log", tip, f"-n{limit}", "--format=%H%x00%s%x00%aN%x00%aI"])

@@ -143,6 +143,9 @@ def cmd_validate(args: argparse.Namespace) -> int:
     # green on a cached revision while the remote is down.
     if (git_backend._ns_dir(_cache(args), ref) / "revs").is_dir():
         print("note: a legacy snapshot cache remains; run `todo-db cache prune` to reclaim it", file=sys.stderr)
+    failure = git_backend._store(ref, _cache(args)).ns / "maintenance.error"
+    if failure.is_file():
+        print(f"note: cache maintenance failed: {failure.read_text(encoding='utf-8').strip()}", file=sys.stderr)
     if outcome.stale and not args.allow_stale:
         print("error: served a stale cached revision; remote unreachable (retry, or pass --allow-stale)", file=sys.stderr)
         return EXIT_ERROR
@@ -251,7 +254,19 @@ def cmd_show(args: argparse.Namespace) -> int:
 def cmd_cache_prune(args: argparse.Namespace) -> int:
     from .git_store import prune_cache
 
-    report = prune_cache(_cache(args), older_than_days=args.older_than, dry_run=args.dry_run)
+    cache = _cache(args)
+    aliases: dict[str, str] = {}
+    try:
+        ref, _ = _ref_from(args)
+    except TodoDBError:
+        ref = None
+    if ref is not None:
+        # A local remote's store is keyed by its resolved path, so its legacy
+        # snapshots may sit under a namespace that no store will ever claim.
+        legacy, current = git_backend.namespace(ref), git_backend._store(ref, cache).ns.name
+        if legacy != current:
+            aliases[legacy] = current
+    report = prune_cache(cache, older_than_days=args.older_than, dry_run=args.dry_run, aliases=aliases)
     _emit(report)
     return EXIT_OK
 
@@ -327,9 +342,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="remove legacy snapshot folders and unused namespaces, then repack each store",
     )
     prune.add_argument("--cache-dir", help="local state cache (default: TODO_DB_CACHE_DIR or ~/.cache/todo-db-state)")
+    prune.add_argument("--config", help="also clear this project's legacy cache (path to .todo-db/config.json)")
+    prune.add_argument("--state-remote", help="also clear this state remote's legacy cache")
+    prune.add_argument("--state-branch", help="state branch for --state-remote (default: todo-state)")
+    prune.add_argument("--repo-root", help="project root for config discovery (default: cwd)")
     prune.add_argument(
         "--older-than", type=float, default=30.0, metavar="DAYS",
-        help="remove namespaces unused for this many days (default: 30)",
+        help="remove namespaces unused for this many days (default: 30, minimum: 1)",
     )
     prune.add_argument("--dry-run", action="store_true", help="list what would be removed without removing it")
     prune.set_defaults(func=cmd_cache_prune)

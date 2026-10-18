@@ -26,7 +26,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from typing import Any, Callable, Iterator
 from uuid import uuid4
@@ -46,8 +46,15 @@ STORE_ID_FILE = "todo-db-id"
 LOCK_NAME = "store.lock"
 MAINTENANCE_LOCK_NAME = "maintenance.lock"
 MAINTENANCE_STAMP_NAME = "maintenance.stamp"
+MAINTENANCE_ERROR_NAME = "maintenance.error"
 SLACK_CAP_BYTES = 8 * 1024 * 1024
+# Past this, maintenance runs inline whatever the cooldown: bursts and a
+# failing background run cannot grow the store without bound.
+HARD_SLACK_CAP_BYTES = 2 * SLACK_CAP_BYTES
 MAINTENANCE_INTERVAL_S = 600
+MAINTENANCE_RETRY_S = 60
+STALE_STAGING_S = 3600
+MIN_GIT_VERSION = (2, 28)
 PRUNE_EXPIRE = "1.hour.ago"
 STALE_INCOMING_S = 3600
 MAINTENANCE_ENV = "TODO_DB_STORE_MAINTENANCE"  # background (default) | inline | off
@@ -71,8 +78,22 @@ STORE_CONFIG = (
     ("commit.gpgSign", "false"),
 )
 
+# Settings re-asserted on every command through GIT_CONFIG_COUNT, which
+# outranks every config file. Inherited command-level entries stay (they
+# may carry credentials) but come first, so these win for each key. Git
+# drops GIT_CONFIG_COUNT for a local-path remote's receive-pack, so the
+# remote's own hooks still run.
+PROTECTED_CONFIG = (
+    ("core.hooksPath", os.devnull),
+    ("commit.gpgSign", "false"),
+    ("gc.auto", "0"),
+    ("maintenance.auto", "false"),
+)
+
 # Inherited variables that would redirect a command to another repository,
-# index or identity. Transport and credential settings pass through.
+# index or identity. GIT_CONFIG_PARAMETERS (`git -c` from a parent git
+# process) outranks GIT_CONFIG_COUNT, so it is dropped as well. Transport
+# and credential settings pass through.
 SCRUBBED_ENV = frozenset({
     "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_INDEX_VERSION",
     "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_COMMON_DIR",
@@ -80,6 +101,7 @@ SCRUBBED_ENV = frozenset({
     "GIT_GRAFT_FILE", "GIT_REPLACE_REF_BASE",
     "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_AUTHOR_DATE",
     "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "GIT_COMMITTER_DATE",
+    "GIT_CONFIG_PARAMETERS",
 })
 
 SYMLINK_MODE = "120000"
@@ -90,9 +112,38 @@ Runner = Callable[..., "subprocess.CompletedProcess[Any]"]
 
 def git_env(extra: dict[str, str] | None = None) -> dict[str, str]:
     env = {key: value for key, value in os.environ.items() if key not in SCRUBBED_ENV}
+    try:
+        count = int(env.get("GIT_CONFIG_COUNT", "0"))
+    except ValueError:
+        count = 0
+    for key, value in PROTECTED_CONFIG:
+        env[f"GIT_CONFIG_KEY_{count}"] = key
+        env[f"GIT_CONFIG_VALUE_{count}"] = value
+        count += 1
+    env["GIT_CONFIG_COUNT"] = str(count)
     if extra:
         env.update(extra)
     return env
+
+
+_GIT_VERSION: tuple[int, ...] | None = None
+
+
+def git_version() -> tuple[int, ...]:
+    """The installed git's version, probed once per process."""
+    global _GIT_VERSION
+    if _GIT_VERSION is None:
+        try:
+            out = subprocess.run(["git", "--version"], capture_output=True, text=True, timeout=30, check=False).stdout
+        except (OSError, subprocess.SubprocessError):
+            out = ""
+        numbers = []
+        for part in (out.split()[2:3] or ["0"])[0].split("."):
+            if not part.isdigit():
+                break
+            numbers.append(int(part))
+        _GIT_VERSION = tuple(numbers) or (0,)
+    return _GIT_VERSION
 
 
 def run_git(
@@ -159,6 +210,9 @@ class Store:
         self.git_dir = self.ns / STORE_DIRNAME
         self._run = run
         self.timeout = timeout
+        # The store ID seen when the current operation took its lock: a
+        # repair moves aside only that store, never a newer replacement.
+        self.active_id = ""
 
     # -- plumbing --
 
@@ -196,13 +250,13 @@ class Store:
         """Create the store if needed; safe when processes race to do it."""
         if self.exists():
             return
+        if git_version() < MIN_GIT_VERSION:
+            wanted = ".".join(map(str, MIN_GIT_VERSION))
+            raise StoreError(f"git {wanted} or newer is required; found {'.'.join(map(str, git_version()))}")
         self.ns.mkdir(parents=True, exist_ok=True)
         staging = self.ns / f".init-{uuid4().hex}"
-        # Until the store's own config exists, keep the user's global hooks
-        # (for example a reference-transaction hook) out of init itself.
-        no_hooks = {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.hooksPath", "GIT_CONFIG_VALUE_0": os.devnull}
         try:
-            init = self._run(["init", "--quiet", "--bare", str(staging)], self.ns, self.timeout, env=no_hooks)
+            init = self._run(["init", "--quiet", "--bare", str(staging)], self.ns, self.timeout)
             if init.returncode != 0:
                 raise StoreError(f"git init failed in {self.ns}: {_brief(init.stderr)}")
             # One append instead of a `git config` call per key: store
@@ -228,44 +282,70 @@ class Store:
 
     @contextmanager
     def _flock(self, name: str, mode: int, blocking: bool = True) -> Iterator[bool]:
+        """Lock ``<ns>/<name>``, retrying if the file was replaced meanwhile.
+
+        `cache prune` renames a whole namespace away while holding its
+        lock. A process that was waiting then holds a lock on the moved
+        file, so it reopens the path and locks again.
+        """
         if fcntl is None:
             yield True
             return
-        self.ns.mkdir(parents=True, exist_ok=True)
-        fd = os.open(self.ns / name, os.O_RDWR | os.O_CREAT, 0o644)
-        try:
+        path = self.ns / name
+        while True:
+            self.ns.mkdir(parents=True, exist_ok=True)
+            fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
             try:
                 fcntl.flock(fd, mode | (0 if blocking else fcntl.LOCK_NB))
             except BlockingIOError:
+                os.close(fd)
                 yield False
                 return
+            try:
+                current = os.stat(path).st_ino == os.fstat(fd).st_ino
+            except OSError:
+                current = False
+            if current:
+                break
+            os.close(fd)
+        try:
             yield True
         finally:
             os.close(fd)
 
     @contextmanager
     def using(self) -> Iterator[None]:
-        """Hold the shared lock for ordinary reads and writes."""
+        """Hold the shared lock for ordinary reads and writes.
+
+        The store is created under the lock if it is missing, so a holder
+        never sees a namespace without a repository.
+        """
         with self._flock(LOCK_NAME, fcntl.LOCK_SH if fcntl else 0):
             # The lock file's mtime records last use, for `cache prune`.
             try:
                 os.utime(self.ns / LOCK_NAME)
             except OSError:
                 pass
+            self.open()
+            self.active_id = self.store_id()
             yield
 
     def repair(self, failed_id: str) -> None:
-        """Move a damaged store aside so the next :meth:`open` rebuilds it.
+        """Replace a damaged store with a fresh, empty one.
 
-        Only the store that failed is moved: if another process already
-        rebuilt it (a different store ID), this does nothing.
+        Runs under the exclusive lock, so no reader holds the store while
+        it is moved aside and recreated. Only the store that failed is
+        replaced: if another process already rebuilt it (a different store
+        ID), this does nothing.
         """
+        trash = None
         with self._flock(LOCK_NAME, fcntl.LOCK_EX if fcntl else 0):
-            if not self.exists() or self.store_id() != failed_id:
-                return
-            trash = self.ns / f".trash-{uuid4().hex}"
-            os.rename(self.git_dir, trash)
-        shutil.rmtree(trash, ignore_errors=True)
+            if self.exists() and self.store_id() == failed_id:
+                trash = self.ns / f".trash-{uuid4().hex}"
+                os.rename(self.git_dir, trash)
+            self.open()
+        if trash is not None:
+            shutil.rmtree(trash, ignore_errors=True)
 
     # -- refs --
 
@@ -316,9 +396,12 @@ class Store:
         they need reachable through :meth:`advance_tip`.
         """
         ref = INCOMING_PREFIX + uuid4().hex
+        # FETCH_HEAD is never read; skipping it (git 2.29+) also keeps
+        # concurrent fetches from interleaving writes to it.
+        quiet_head = ["--no-write-fetch-head"] if git_version() >= (2, 29) else []
         try:
             proc = self.git(
-                ["fetch", "--quiet", "--no-tags", url, f"+refs/heads/{branch}:{ref}"],
+                ["fetch", "--quiet", "--no-tags", *quiet_head, url, f"+refs/heads/{branch}:{ref}"],
                 timeout=timeout or self.timeout,
             )
             yield proc, (self.resolve(ref) if proc.returncode == 0 else None)
@@ -460,34 +543,62 @@ class Store:
     # -- maintenance --
 
     def slack(self) -> int:
-        """Bytes the store holds beyond its largest pack."""
-        stats: dict[str, int] = {}
-        for line in self._ok(["count-objects", "-v"]).splitlines():
-            key, _, value = line.partition(":")
-            if value.strip().isdigit():
-                stats[key.strip()] = int(value.strip())
-        packs = [p.stat().st_size for p in (self.git_dir / "objects" / "pack").glob("*.pack")]
-        total = (stats.get("size", 0) + stats.get("size-pack", 0)) * 1024
-        return max(0, total - max(packs, default=0))
+        """Bytes the store holds beyond its largest pack.
+
+        Measured from the object directory without running git, because it
+        is checked after every fetch and write.
+        """
+        objects = self.git_dir / "objects"
+        packs: list[int] = []
+        loose = 0
+        try:
+            with os.scandir(objects) as top:
+                for entry in top:
+                    if entry.name == "pack":
+                        with os.scandir(entry.path) as pack_dir:
+                            for item in pack_dir:
+                                if item.name.endswith(".pack"):
+                                    packs.append(item.stat().st_size)
+                                elif item.is_file():
+                                    loose += item.stat().st_size
+                    elif len(entry.name) == 2 and entry.is_dir():
+                        with os.scandir(entry.path) as fanout:
+                            loose += sum(item.stat().st_size for item in fanout if item.is_file())
+        except OSError:
+            return 0
+        return max(0, loose + sum(packs) - max(packs, default=0))
 
     def maybe_maintain(self) -> None:
-        """Start maintenance when slack passes the cap. Never raises."""
+        """Start maintenance when slack passes the cap. Never raises.
+
+        Below :data:`HARD_SLACK_CAP_BYTES` a detached process runs it, at most
+        once per :data:`MAINTENANCE_INTERVAL_S` (or :data:`MAINTENANCE_RETRY_S`
+        after a failure). Past the hard cap it runs inline, so bursts of
+        writes and a failing background run are bounded and the caller pays.
+        """
         mode = os.environ.get(MAINTENANCE_ENV, "background")
         if mode == "off":
             return
         try:
-            stamp = self.ns / MAINTENANCE_STAMP_NAME
-            if stamp.exists() and time.time() - stamp.stat().st_mtime < MAINTENANCE_INTERVAL_S:
+            slack = self.slack()
+            if slack <= SLACK_CAP_BYTES:
                 return
-            if self.slack() <= SLACK_CAP_BYTES:
-                return
-            if mode == "inline":
+            if slack <= HARD_SLACK_CAP_BYTES:
+                stamp = self.ns / MAINTENANCE_STAMP_NAME
+                failed = (self.ns / MAINTENANCE_ERROR_NAME).exists()
+                interval = MAINTENANCE_RETRY_S if failed else MAINTENANCE_INTERVAL_S
+                if stamp.exists() and time.time() - stamp.stat().st_mtime < interval:
+                    return
+            if mode == "inline" or slack > HARD_SLACK_CAP_BYTES:
                 self.maintain()
                 return
+            env = git_env()
+            # The child must import this package however the parent did.
+            env["PYTHONPATH"] = os.pathsep.join(p for p in sys.path if p)
             subprocess.Popen(
                 [sys.executable, "-c", MAINTAIN_ENTRY, "maintain", str(self.ns)],
                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                start_new_session=True, close_fds=True, env=git_env(),
+                start_new_session=True, close_fds=True, env=env,
             )
         except (OSError, StoreError, subprocess.SubprocessError):
             return
@@ -500,29 +611,47 @@ class Store:
         :data:`PRUNE_EXPIRE`. Objects another process wrote moments ago and
         has not referenced yet (a fetch about to set its ref, a commit about
         to be pushed) therefore survive. Packs created after the repack
-        starts are never touched.
+        starts are never touched. The shared store lock is held throughout,
+        so a repair never moves the store aside mid-repack. A failure is
+        recorded in ``maintenance.error`` and retried sooner.
         """
         if not self.exists():
             return False
         with self._flock(MAINTENANCE_LOCK_NAME, fcntl.LOCK_EX if fcntl else 0, blocking=False) as got:
             if not got:
                 return False
-            (self.ns / MAINTENANCE_STAMP_NAME).touch()
-            cutoff = time.time() - STALE_INCOMING_S
-            incoming = self.git_dir / INCOMING_PREFIX.rstrip("/")
-            for ref in incoming.glob("*") if incoming.is_dir() else []:
+            with self._flock(LOCK_NAME, fcntl.LOCK_SH if fcntl else 0):
+                if not self.exists():
+                    return False
+                (self.ns / MAINTENANCE_STAMP_NAME).touch()
+                error = self.ns / MAINTENANCE_ERROR_NAME
                 try:
-                    if ref.stat().st_mtime < cutoff:
-                        self.git(["update-ref", "-d", INCOMING_PREFIX + ref.name])
-                except OSError:
-                    continue
-            self._ok(["repack", "-A", "-d", "-l", "-q"], timeout=max(self.timeout, 600))
-            self._ok(["prune", f"--expire={PRUNE_EXPIRE}"], timeout=max(self.timeout, 600))
-            return True
+                    cutoff = time.time() - STALE_INCOMING_S
+                    incoming = self.git_dir / INCOMING_PREFIX.rstrip("/")
+                    for ref in incoming.glob("*") if incoming.is_dir() else []:
+                        try:
+                            if ref.stat().st_mtime < cutoff:
+                                self.git(["update-ref", "-d", INCOMING_PREFIX + ref.name])
+                        except OSError:
+                            continue
+                    self._ok(["repack", "-A", "-d", "-l", "-q"], timeout=max(self.timeout, 600))
+                    self._ok(["prune", f"--expire={PRUNE_EXPIRE}"], timeout=max(self.timeout, 600))
+                except (OSError, StoreError, subprocess.SubprocessError) as exc:
+                    try:
+                        error.write_text(f"{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())} {exc}\n")
+                    except OSError:
+                        pass
+                    raise
+                try:
+                    error.unlink()
+                except FileNotFoundError:
+                    pass
+                return True
 
 
 LEGACY_NAMES = ("revs", "last")
 DEFAULT_PRUNE_DAYS = 30.0
+MIN_PRUNE_DAYS = 1.0
 
 
 def _is_hex(name: str, length: int) -> bool:
@@ -531,7 +660,22 @@ def _is_hex(name: str, length: int) -> bool:
 
 def _last_used(ns: Path) -> float:
     stamps = [ns / LOCK_NAME, ns / "last", ns / "revs", ns / STORE_DIRNAME]
-    return max((p.stat().st_mtime for p in stamps if p.exists()), default=ns.stat().st_mtime)
+    times = []
+    for path in stamps:
+        try:
+            times.append(path.stat().st_mtime)
+        except OSError:
+            continue
+    if not times:
+        try:
+            return ns.stat().st_mtime
+        except OSError:
+            return time.time()
+    return max(times)
+
+
+def _is_legacy(name: str) -> bool:
+    return name in LEGACY_NAMES or (name.startswith(".last.") and name.endswith(".tmp"))
 
 
 def prune_cache(
@@ -541,60 +685,98 @@ def prune_cache(
     dry_run: bool = False,
     run: Runner = run_git,
     now: float | None = None,
+    aliases: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Remove what the object store made obsolete, then maintain each store.
 
     Removed: snapshot folders from before namespacing (40-hex names),
-    leftover trash, namespaces unused for *older_than_days*, and, in a
-    namespace whose store already has a tip, the legacy ``revs/``,
-    ``last`` and ``.last.*.tmp`` files. A namespace with no store tip keeps
-    its legacy revision, which is still its only offline copy. Everything
-    is renamed into one trash folder first, so a reader never sees a
-    half-deleted entry, and then deleted.
+    leftover trash, namespaces unused for *older_than_days* (at least
+    :data:`MIN_PRUNE_DAYS`), abandoned store staging, and, in a namespace
+    whose store already has a tip, the legacy ``revs/``, ``last`` and
+    ``.last.*.tmp`` files. *aliases* maps a legacy namespace name to the
+    store namespace that replaced it (a local remote whose resolved path
+    hashes differently); the legacy files go once that store has a tip.
+    A namespace with no store tip otherwise keeps its legacy revision,
+    which is still its only offline copy.
+
+    Each namespace is handled under its exclusive lock, taken without
+    waiting: one in use is skipped, and eligibility is checked again
+    under the lock. Victims are renamed into a trash folder first, so a
+    reader never sees a half-deleted entry, and then deleted.
     """
     cache_dir = Path(cache_dir)
-    report: dict[str, Any] = {"cache_dir": str(cache_dir), "dry_run": dry_run, "removed": [], "maintained": []}
+    older_than_days = max(float(older_than_days), MIN_PRUNE_DAYS)
+    report: dict[str, Any] = {
+        "cache_dir": str(cache_dir), "dry_run": dry_run, "removed": [], "maintained": [], "skipped_busy": [],
+    }
     if not cache_dir.is_dir():
         return report
-    cutoff = (now if now is not None else time.time()) - older_than_days * 86400
-    victims: list[Path] = []
+    clock = now if now is not None else time.time()
+    cutoff = clock - older_than_days * 86400
+    aliases = aliases or {}
+    trash = cache_dir / f".trash-{uuid4().hex}"
+    removed: list[str] = []
     stores: list[Store] = []
+
+    def discard(victim: Path) -> None:
+        removed.append(str(victim))
+        if dry_run:
+            return
+        trash.mkdir(exist_ok=True)
+        try:
+            os.rename(victim, trash / f"{len(removed)}-{victim.name}")
+        except OSError:
+            removed.pop()
+
     for entry in sorted(cache_dir.iterdir()):
-        if not entry.is_dir() or entry.is_symlink():
+        if entry == trash or not entry.is_dir() or entry.is_symlink():
             continue
         if entry.name.startswith(".trash-") or _is_hex(entry.name, 40):
-            victims.append(entry)
+            discard(entry)
             continue
         if not _is_hex(entry.name, 16):
             continue
-        if _last_used(entry) < cutoff:
-            victims.append(entry)
-            continue
         store = Store(entry, run)
-        has_tip = store.tip() is not None
-        for child in entry.iterdir():
-            legacy = child.name in LEGACY_NAMES or (child.name.startswith(".last.") and child.name.endswith(".tmp"))
-            if child.name.startswith((".trash-", ".init-")) or (legacy and has_tip):
-                victims.append(child)
+        lock = entry / LOCK_NAME
+        lock_existed = lock.exists()
+        locking = nullcontext(True) if dry_run else store._flock(LOCK_NAME, fcntl.LOCK_EX if fcntl else 0, blocking=False)
+        with locking as got:
+            if not got:
+                report["skipped_busy"].append(str(entry))
+                continue
+            if not lock_existed and not dry_run:
+                # Creating the lock is not use: keep its fresh mtime from
+                # making a stale namespace look current.
+                try:
+                    os.utime(lock, (0, 0))
+                except OSError:
+                    pass
+            if _last_used(entry) < cutoff:
+                discard(entry)
+                continue
+            owner = Store(cache_dir / aliases[entry.name], run) if entry.name in aliases else store
+            has_tip = owner.tip() is not None
+            for child in sorted(entry.iterdir()):
+                staging = child.name.startswith((".trash-", ".init-"))
+                if staging:
+                    try:
+                        staging = clock - child.stat().st_mtime > STALE_STAGING_S
+                    except OSError:
+                        staging = False
+                if staging or (_is_legacy(child.name) and has_tip):
+                    discard(child)
         if store.exists():
             stores.append(store)
-    report["removed"] = [str(v) for v in victims]
+    report["removed"] = removed
     if dry_run:
         report["maintained"] = [str(s.ns) for s in stores]
         return report
-    trash = cache_dir / f".trash-{uuid4().hex}"
-    trash.mkdir()
-    for n, victim in enumerate(victims):
-        try:
-            os.rename(victim, trash / f"{n}-{victim.name}")
-        except OSError:
-            continue
     shutil.rmtree(trash, ignore_errors=True)
     for store in stores:
         try:
             if store.maintain():
                 report["maintained"].append(str(store.ns))
-        except (OSError, StoreError):
+        except (OSError, StoreError, subprocess.SubprocessError):
             continue
     return report
 

@@ -543,3 +543,243 @@ def test_cache_prune_removes_only_obsolete_entries(tmp_path: Path) -> None:
     assert (cache / ("1" * 16) / "revs").exists() and (cache / "not-a-namespace").exists()
     assert sorted(p.name for p in cache.iterdir()) == sorted([live.name, "1" * 16, "not-a-namespace"])
     assert git_backend.read(ref, cache).stale is False
+
+
+def test_failed_operation_search_never_reapplies(tmp_path: Path, monkeypatch) -> None:
+    """A history search that cannot run is not absence: repair, then find the commit."""
+    ref = _remote(tmp_path)
+    git_backend.bootstrap(ref)
+    op_id = git_backend.new_op_id()
+
+    def create(snap: S.Snapshot) -> dict:
+        S.op_create(snap, item_id="once", title="Once")
+        return {}
+
+    first = git_backend.mutate(ref, op="create", summary="once", worker="w", op_id=op_id, apply=create)
+    assert first.ok
+    real_git = git_backend._git
+    failed = {"n": 0}
+
+    def broken_log(args, cwd=None, timeout=git_backend.GIT_TIMEOUT_S, **kw):
+        if args and args[0] == "log" and failed["n"] == 0:
+            failed["n"] += 1
+            return subprocess.CompletedProcess(["git", *args], 128, "", "fatal: missing parent")
+        return real_git(args, cwd, timeout, **kw)
+
+    monkeypatch.setattr(git_backend, "_git", broken_log)
+    again = git_backend.mutate(ref, op="create", summary="once", worker="w", op_id=op_id, apply=create)
+    assert again.ok and again.sha == first.sha and again.ack.get("duplicate") is True
+    assert git_backend.ls_remote_tip(ref) == first.sha and failed["n"] == 1
+
+
+def test_reconcile_reports_unknown_when_history_cannot_be_searched(tmp_path: Path, monkeypatch) -> None:
+    ref = _remote(tmp_path)
+    git_backend.bootstrap(ref)
+    real_git = git_backend._git
+
+    def broken_log(args, cwd=None, timeout=git_backend.GIT_TIMEOUT_S, **kw):
+        if args and args[0] == "log":
+            return subprocess.CompletedProcess(["git", *args], 128, "", "fatal: bad object")
+        return real_git(args, cwd, timeout, **kw)
+
+    monkeypatch.setattr(git_backend, "_git", broken_log)
+    assert git_backend.reconcile(ref, "0" * 32).state == "unknown"
+
+
+def test_read_rev_ignores_nested_detail_files(tmp_path: Path) -> None:
+    files = _valid_files("a")
+    files["items/z/a.json"] = json.dumps({"description": "nested value"})
+    work, sha = _worktree_commit(tmp_path, files)
+    ref = git_backend.StateRef(remote=str(work), branch="todo-state")
+    snap = git_backend.read_rev(ref, sha, cache_dir=tmp_path / "cache")
+    assert snap.details["a"] == S.load_snapshot(work).details["a"]
+    assert "nested value" not in json.dumps(snap.details)
+
+
+def test_repair_leaves_a_usable_store_and_skips_a_newer_one(tmp_path: Path) -> None:
+    ref = _remote(tmp_path)
+    git_backend.bootstrap(ref)
+    cache = tmp_path / "cache"
+    git_backend.read(ref, cache)
+    store = git_backend._store(ref, cache)
+    old = store.store_id()
+    store.repair(old)
+    assert store.exists() and store.store_id() not in ("", old)
+    newer = store.store_id()
+    store.repair(old)  # a delayed repair of the first store must not touch its replacement
+    assert store.store_id() == newer
+    with store.using():
+        assert store.active_id == newer
+
+
+def test_using_recreates_a_missing_store(tmp_path: Path) -> None:
+    store = git_store.Store(tmp_path / "ns", git_store.run_git)
+    with store.using():
+        assert store.exists()
+
+
+def test_cache_prune_skips_busy_namespaces_and_fresh_staging(tmp_path: Path) -> None:
+    import fcntl
+
+    ref = _remote(tmp_path)
+    git_backend.bootstrap(ref)
+    cache = tmp_path / "cache"
+    git_backend.read(ref, cache)
+    live = git_backend._store(ref, cache).ns
+    fresh, old_staging = live / ".init-fresh", live / ".init-old"
+    fresh.mkdir()
+    old_staging.mkdir()
+    os.utime(old_staging, (1_000_000_000, 1_000_000_000))
+    busy = cache / ("3" * 16)
+    (busy / "revs").mkdir(parents=True)
+    os.utime(busy / "revs", (1_000_000_000, 1_000_000_000))
+    fd = os.open(busy / git_store.LOCK_NAME, os.O_RDWR | os.O_CREAT)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_SH)
+        report = git_store.prune_cache(cache, older_than_days=0)
+    finally:
+        os.close(fd)
+    assert str(busy) in report["skipped_busy"] and busy.exists()
+    assert fresh.exists() and not old_staging.exists()
+    # --older-than 0 is raised to the one-day minimum: the live namespace stays.
+    assert live.exists() and git_backend.read(ref, cache).stale is False
+
+
+def test_cache_prune_clears_a_local_remotes_legacy_namespace(tmp_path: Path, monkeypatch, capsys) -> None:
+    from todo_db.cli import main
+
+    ref = _remote(tmp_path)
+    git_backend.bootstrap(ref)
+    cache = tmp_path / "cache"
+    monkeypatch.chdir(tmp_path)
+    rel = git_backend.StateRef(remote="state.git", branch="todo-state")
+    legacy = git_backend._ns_dir(cache, rel)
+    (legacy / "revs" / ("a" * 40)).mkdir(parents=True)
+    git_backend.read(rel, cache)
+    assert git_backend._store(rel, cache).ns != legacy
+    assert main(["cache", "prune", "--cache-dir", str(cache), "--state-remote", "state.git"]) == 0
+    capsys.readouterr()
+    assert not (legacy / "revs").exists()
+
+
+def test_inherited_command_level_config_cannot_reenable_hooks(tmp_path: Path, monkeypatch) -> None:
+    ref = _remote(tmp_path)
+    git_backend.bootstrap(ref)
+    hooks = tmp_path / "hooks"
+    hooks.mkdir()
+    for name in ("reference-transaction", "pre-push"):
+        hook = hooks / name
+        hook.write_text('#!/bin/sh\ncase "$(pwd)" in *default-cache*) exit 1;; esac\nexit 0\n')
+        hook.chmod(0o755)
+    monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
+    monkeypatch.setenv("GIT_CONFIG_KEY_0", "core.hooksPath")
+    monkeypatch.setenv("GIT_CONFIG_VALUE_0", str(hooks))
+    monkeypatch.setenv("GIT_CONFIG_PARAMETERS", f"'core.hookspath'='{hooks}'")
+    out = git_backend.mutate(ref, op="create", summary="a", worker="w",
+                             apply=lambda s: (S.op_create(s, item_id="a", title="A"), {})[1])
+    assert out.ok, out.error
+
+
+def test_hard_slack_cap_ignores_the_cooldown(tmp_path: Path, monkeypatch) -> None:
+    ref = _remote(tmp_path)
+    git_backend.bootstrap(ref)
+    cache = tmp_path / "cache"
+    git_backend.read(ref, cache)
+    store = git_backend._store(ref, cache)
+    (store.ns / git_store.MAINTENANCE_STAMP_NAME).touch()
+    calls: list[int] = []
+    monkeypatch.setattr(git_store.Store, "maintain", lambda self: calls.append(1) or True)
+    monkeypatch.setenv(git_store.MAINTENANCE_ENV, "background")
+    monkeypatch.setattr(git_store, "SLACK_CAP_BYTES", 0)
+    monkeypatch.setattr(git_store, "HARD_SLACK_CAP_BYTES", 10**12)
+    store.maybe_maintain()  # over the soft cap, inside the cooldown: nothing runs
+    assert calls == []
+    monkeypatch.setattr(git_store, "HARD_SLACK_CAP_BYTES", 0)
+    store.maybe_maintain()  # over the hard cap: runs inline despite the cooldown
+    assert calls == [1]
+
+
+def test_failed_maintenance_is_recorded_and_cleared(tmp_path: Path, monkeypatch) -> None:
+    ref = _remote(tmp_path)
+    git_backend.bootstrap(ref)
+    cache = tmp_path / "cache"
+    git_backend.read(ref, cache)
+    store = git_backend._store(ref, cache)
+    real_ok = git_store.Store._ok
+
+    def failing_repack(self, args, **kw):
+        if args[0] == "repack":
+            raise git_store.StoreError("simulated repack failure")
+        return real_ok(self, args, **kw)
+
+    monkeypatch.setattr(git_store.Store, "_ok", failing_repack)
+    with pytest.raises(git_store.StoreError):
+        store.maintain()
+    assert "simulated repack failure" in (store.ns / git_store.MAINTENANCE_ERROR_NAME).read_text()
+    monkeypatch.undo()
+    assert store.maintain() is True
+    assert not (store.ns / git_store.MAINTENANCE_ERROR_NAME).exists()
+
+
+def test_background_maintenance_runs_in_a_detached_process(tmp_path: Path, monkeypatch) -> None:
+    import time
+
+    ref = _remote(tmp_path)
+    git_backend.bootstrap(ref)
+    cache = tmp_path / "cache"
+    for n in range(3):
+        git_backend.mutate(ref, op="create", summary=f"t{n}", worker="w", cache_dir=cache,
+                           apply=lambda s, n=n: (S.op_create(s, item_id=f"t{n}", title="T"), {})[1])
+        git_backend.read(ref, cache)
+    store = git_backend._store(ref, cache)
+    objects = store.git_dir / "objects"
+
+    def loose() -> int:
+        return sum(1 for d in objects.iterdir() if len(d.name) == 2 for _ in d.iterdir())
+
+    assert loose() > 0
+    monkeypatch.setenv(git_store.MAINTENANCE_ENV, "background")
+    monkeypatch.setattr(git_store, "SLACK_CAP_BYTES", 0)
+    store.maybe_maintain()
+    deadline = time.time() + 60
+    while time.time() < deadline and loose() > 0:
+        time.sleep(0.2)
+    assert loose() == 0 and (store.ns / git_store.MAINTENANCE_STAMP_NAME).exists()
+    assert not (store.ns / git_store.MAINTENANCE_ERROR_NAME).exists()
+
+
+def test_small_edits_cost_a_bounded_fixed_overhead_per_commit(tmp_path: Path) -> None:
+    """Title-only edits touch ~140 bytes; git's per-commit record dominates.
+
+    The bound for small items is 2x the bytes touched (detail plus index
+    entry) plus FIXED_COMMIT_OVERHEAD per commit, not 2x alone.
+    """
+    fixed_commit_overhead = 1024
+    ref = _remote(tmp_path)
+    git_backend.bootstrap(ref)
+    cache = tmp_path / "cache"
+
+    def seed(snap: S.Snapshot) -> dict:
+        for n in range(300):
+            S.op_create(snap, item_id=f"i{n:03d}", title=f"task {n}")
+        return {}
+
+    assert git_backend.mutate(ref, op="seed", summary="seed", worker="w", apply=seed, cache_dir=cache).ok
+    git_backend.read(ref, cache)
+    store = git_backend._store(ref, cache)
+    store.maintain()
+    before = _objects_bytes(store)
+    rng = random.Random(5)
+    touched, commits = 0, 30
+    for k in range(commits):
+        item_id = f"i{rng.randrange(300):03d}"
+        out = git_backend.mutate(ref, op="update", summary=f"t{k}", worker="w", cache_dir=cache,
+                                 apply=lambda s, i=item_id, k=k: S.op_update(s, i, title=f"task {i} rev {k}"))
+        assert out.ok, out.error
+        snap = git_backend.read(ref, cache).snapshot
+        touched += len(S.serialize_state(snap.details[item_id]).encode())
+        touched += len(S.serialize_state({item_id: snap.index["items"][item_id]}).encode())
+    store.maintain()
+    growth = _objects_bytes(store) - before
+    print(f"small edits: {growth / commits:.0f} B per commit for {touched / commits:.0f} B touched")
+    assert growth <= 2 * touched + fixed_commit_overhead * commits, (growth, touched)
