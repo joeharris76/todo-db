@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-18
+
 ### Changed
 
 - The local state cache is now one bare Git object store per state
