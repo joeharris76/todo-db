@@ -624,7 +624,7 @@ class Store:
         with self._flock(MAINTENANCE_LOCK_NAME, fcntl.LOCK_EX if fcntl else 0, blocking=False) as got:
             if not got:
                 return False
-            with self._flock(LOCK_NAME, fcntl.LOCK_SH if fcntl else 0):
+            with self._flock(LOCK_NAME, fcntl.LOCK_EX if fcntl else 0):
                 if not self.exists():
                     return False
                 (self.ns / MAINTENANCE_STAMP_NAME).touch()
