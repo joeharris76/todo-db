@@ -63,8 +63,10 @@ mutations, history, reconciliation and restore (`src/todo_db/git_store.py`).
   outside the protocol (ADR 0007).
 - **Offline reads** serve the store's tip. Until a store has a tip, they
   fall back to a legacy `revs/<last>` snapshot.
-- **Maintenance.** Every fetch and write checks the store's slack (bytes
-  beyond its largest pack, read from the object directory). Above 8 MiB a
+- **Maintenance.** Every fetch and write checks the store's slack: loose
+  objects plus every pack but the largest, read from the object directory.
+  Pack indexes do not count, since counting them would keep a large store
+  over the cap for good. Above 8 MiB a
   detached process runs `repack -A -d -l` and `prune --expire=1.hour.ago`,
   at most every 10 minutes (every minute after a failure). Above 16 MiB
   it runs inline whatever the cooldown, so write bursts and a failing

@@ -6,6 +6,22 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-10-18
+
+### Fixed
+
+- Git subprocesses get a null stdin. Under the MCP server, stdin is the
+  JSON-RPC stream, and a git command that read from it could consume
+  requests.
+- Cache maintenance no longer counts pack indexes as slack. A large
+  store's indexes alone could exceed the cap and trigger a repack on every
+  operation.
+- `recover --restore-rev` and historical reads accept only full commit
+  IDs, so a revision starting with `-` can never reach git as an option.
+- `cache prune` leaves a top-level trash folder younger than an hour, which
+  may belong to a prune still deleting it. `--dry-run` reports namespaces
+  in use, without creating lock files.
+
 ## [0.10.0] - 2026-10-18
 
 ### Changed
