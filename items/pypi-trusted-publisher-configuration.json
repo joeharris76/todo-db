@@ -1,0 +1,18 @@
+{
+  "acceptance": [
+    "The pypi-publish job in publish.yml succeeds on tagged releases without exchange failures.",
+    "Tagged releases publish wheels and sdists to PyPI automatically."
+  ],
+  "context": "Observed during v0.10.0 and v0.10.1 releases: github-release succeeded, but pypi-publish failed with 'Trusted publishing exchange failure'. Past releases (v0.7.2, v0.8.0, v0.9.1) showed the same failure.",
+  "description": "In .github/workflows/publish.yml, the pypi-publish job has failed on every release since v0.7.2 (including v0.10.0 and v0.10.1) with 'Trusted publishing exchange failure'. The PyPI project 'todo-db' needs the GitHub repository environment / trusted publisher configuration configured on PyPI so tagged releases automatically publish to PyPI alongside GitHub Releases.",
+  "sessions": [
+    {
+      "actor": "mcp:omp-coding-agent:joe@joe-mac-mini.local:e1bf6917f088d16b5d3e2d6e",
+      "at": "2026-10-19T00:08:38Z",
+      "client": "omp-coding-agent",
+      "op": "create",
+      "op_id": "41bdcbd3d8b34205930b0b2b3edd0415",
+      "session_id": "914e0ebae53049d49a7cb89a52d463c6"
+    }
+  ]
+}

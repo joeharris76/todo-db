@@ -623,6 +623,13 @@
       "status": "done",
       "title": "Publish todo-db to PyPI so dependents can pin a released version"
     },
+    "pypi-trusted-publisher-configuration": {
+      "claim": null,
+      "needs": [],
+      "priority": "medium",
+      "status": "open",
+      "title": "Configure PyPI trusted publisher for publish workflow"
+    },
     "release-0-4-3-and-downstream-upgrade": {
       "claim": null,
       "needs": [
