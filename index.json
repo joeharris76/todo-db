@@ -720,6 +720,13 @@
       "status": "done",
       "title": "Bound the state-branch snapshot cache with safe, capped eviction"
     },
+    "store-ratio-bound-tiny-edits": {
+      "claim": null,
+      "needs": [],
+      "priority": "medium",
+      "status": "open",
+      "title": "Bound cache growth ratio for tiny edits via state sharding or delta pruning"
+    },
     "table-registries-must-be-hand-synced": {
       "claim": null,
       "needs": [],

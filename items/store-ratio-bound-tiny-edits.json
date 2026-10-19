@@ -1,0 +1,18 @@
+{
+  "acceptance": [
+    "Edits touching only metadata or small items adhere to <=2x bytes touched ratio, or a schema-4 sharded state format is introduced.",
+    "A test asserts storage ratio bounds on tiny (<200 byte) edits without requiring large descriptions."
+  ],
+  "context": "Discovered during adversarial reviews (Codex, Agy, Muse) of the 0.10.0 object-store cache. Fixed per-commit Git overhead (~0.5 to 1 KiB) dominates tiny edits.",
+  "description": "When task edits touch small state (e.g. title-only changes touching ~140 bytes of JSON), Git's fixed structural commit record (~0.5 to 1 KiB: commit object + commit trailers + 2 tree deltas + index.json delta + pack index entry) dominates, resulting in 3.6x to 6.4x the bytes touched. While realistic edits (~3.5 KB) meet the bound at 0.21x-0.72x, achieving <=2x universally on tiny edits requires architectural evolution: e.g. sharding index.json into subtrees (schema 4), grouping commits, or intermediate history pruning.",
+  "sessions": [
+    {
+      "actor": "mcp:omp-coding-agent:joe@joe-mac-mini.local:e1bf6917f088d16b5d3e2d6e",
+      "at": "2026-10-19T00:07:40Z",
+      "client": "omp-coding-agent",
+      "op": "create",
+      "op_id": "7dfd8cd3928e408abe7fb472388c0b6c",
+      "session_id": "914e0ebae53049d49a7cb89a52d463c6"
+    }
+  ]
+}
