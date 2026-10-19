@@ -1,0 +1,20 @@
+{
+  "acceptance": [
+    "Q1 1_v7 rewritten form executes at SF1 (or the largest feasible scale) on Trino/Presto without breaching ARRAY_AGG/ORDER BY memory limits, with peak memory and row counts recorded",
+    "If limits bind, the array-chunking or pagination remedy is specified in the item before any code change"
+  ],
+  "description": "The Q1 DuckDB-LIST to ARRAY_AGG+UNNEST rewrite was motivated by the Presto C++ 100,000-element REDUCE limit, but neither the old limit nor the new ARRAY_AGG ... ORDER BY memory behavior was tested at scale: the Trino 476 smoke could not load SF1 lineitem (memory-connector 128MiB limit) and ran only tpch tiny. A scale run needs a Trino deployment with a real connector (not the memory connector) or a native Presto cluster. This is correctness-adjacent performance verification, not a known failure.",
+  "links": [
+    "https://github.com/BenchBox-dev/benchbox/pull/3145"
+  ],
+  "sessions": [
+    {
+      "actor": "mcp:omp-coding-agent:joe@joe-mac-mini.local:67e27a5a2a531c957d25585c",
+      "at": "2026-10-19T00:03:42Z",
+      "client": "omp-coding-agent",
+      "op": "create",
+      "op_id": "ea01a832687a427abb1e7e9a901576e0",
+      "session_id": "103fdf0670144e33b09fe9f3d4f04aab"
+    }
+  ]
+}

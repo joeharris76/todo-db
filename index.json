@@ -741,6 +741,13 @@
       "status": "open",
       "title": "Verify TPC-Havoc V7 rewrites natively on PrestoDB, Athena, and BigQuery"
     },
+    "tpchavoc-q1-array-scale-check": {
+      "claim": null,
+      "needs": [],
+      "priority": "low",
+      "status": "open",
+      "title": "Check Q1 ARRAY_AGG rewrite memory behavior at SF1 on Trino/Presto"
+    },
     "update-scope-rules": {
       "claim": null,
       "needs": [],
