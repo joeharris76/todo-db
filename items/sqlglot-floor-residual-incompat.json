@@ -1,0 +1,20 @@
+{
+  "acceptance": [
+    "Either pyproject.toml declares a sqlglot minimum at or above the first version where exp.Expr, from_/with_ AST keys, and modern HAVING rendering all exist (verified by bisect), with uv.lock updated; or the spark_query_transformer.py exp.Expr use plus the Snowflake/Postgres HAVING-text expectations are repaired so the full tests/unit/tpchavoc suite passes under uv run --with sqlglot==<floor>",
+    "The narrow 20-node floor gate in make tpchavoc-sqlglot-minimum-check is widened to the full suite, or the floor claim is narrowed to match what is actually verified"
+  ],
+  "description": "PR #3145 repaired only the three reached TPC-Havoc rewrite paths (Presto-family 1_v7 ARRAY_AGG in dialect_compat.py, postgres dual in dialect_compat.py:124, BigQuery from-less in cloud_compat.py:59-62) and pins 20 regression nodes at the floor. Probing the declared minimum sqlglot==25.6.0 (pyproject.toml:28 allows >=25.6.0,<31.0.0) still fails: (1) benchbox/core/tpchavoc/spark_query_transformer.py:106 raises AttributeError: module 'sqlglot.expressions' has no attribute 'Expr', breaking every Databricks TPC-Havoc render; (2) tests/unit/tpchavoc/test_cloud_compat.py::test_snowflake_empty_group_rewrite_is_targeted fails because old sqlglot renders HAVING NOT SUM(...) IS NULL instead of HAVING SUM(; (3) tests/unit/tpchavoc/test_dialect_compat.py::test_postgres_alias_rewrite_preserves_order_by_aliases fails for the same HAVING-text drift. Repro: uv run --with sqlglot==25.6.0 -- python -m pytest -n 0 tests/unit/tpchavoc/test_presto_compat.py tests/unit/tpchavoc/test_cloud_compat.py tests/unit/tpchavoc/test_dialect_compat.py gives 3 failed, 35 passed. Bisect the first good version before choosing raise-floor vs repair-all; a partial claim is the worst outcome.",
+  "links": [
+    "https://github.com/BenchBox-dev/benchbox/pull/3145"
+  ],
+  "sessions": [
+    {
+      "actor": "mcp:omp-coding-agent:joe@joe-mac-mini.local:67e27a5a2a531c957d25585c",
+      "at": "2026-10-19T00:03:27Z",
+      "client": "omp-coding-agent",
+      "op": "create",
+      "op_id": "0f9c6c499994455bb10d7aabc61bf404",
+      "session_id": "103fdf0670144e33b09fe9f3d4f04aab"
+    }
+  ]
+}

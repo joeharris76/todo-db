@@ -706,6 +706,13 @@
       "status": "done",
       "title": "Route finding verbs in skills; document capture-to-landing end to end"
     },
+    "sqlglot-floor-residual-incompat": {
+      "claim": null,
+      "needs": [],
+      "priority": "high",
+      "status": "open",
+      "title": "Resolve remaining sqlglot==25.6.0 incompatibilities or raise the declared floor"
+    },
     "state-cache-rev-eviction": {
       "claim": null,
       "needs": [],
