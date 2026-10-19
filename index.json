@@ -159,6 +159,13 @@
       "status": "done",
       "title": "Bound config discovery; derive wrapper REPO_ROOT from its actual path"
     },
+    "cache-namespace-url-normalization": {
+      "claim": null,
+      "needs": [],
+      "priority": "low",
+      "status": "open",
+      "title": "Normalize remote URLs in namespace hashing with migration path"
+    },
     "capability-removal-replacement-rule": {
       "claim": null,
       "needs": [],

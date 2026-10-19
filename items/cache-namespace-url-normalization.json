@@ -1,0 +1,18 @@
+{
+  "acceptance": [
+    "namespace() normalizes remote URLs (stripping trailing slashes and .git) so equivalent URLs share one store.",
+    "A migration path unifies existing cache namespaces without breaking offline reads."
+  ],
+  "context": "Identified in Claim 3 of initial cache review. BenchBox has namespaces e688dcd1868ed3f8 (.git) and 5cf74613c45f4c2a (no .git), duplicating ~235 MB of cache.",
+  "description": "namespace(ref) hashes ref.remote + '\\0' + ref.branch. Remotes referring to the same repository with or without a trailing .git (e.g. https://github.com/BenchBox-dev/BenchBox vs .../BenchBox.git) hash to different namespaces (5cf74613c45f4c2a vs e688dcd1868ed3f8), duplicating cache storage. Normalizing URL spellings (stripping trailing slashes and .git suffix) with an automated migration path would unify them.",
+  "sessions": [
+    {
+      "actor": "mcp:omp-coding-agent:joe@joe-mac-mini.local:e1bf6917f088d16b5d3e2d6e",
+      "at": "2026-10-19T00:08:28Z",
+      "client": "omp-coding-agent",
+      "op": "create",
+      "op_id": "86d53a8b88d4422abecf94f96565aa76",
+      "session_id": "914e0ebae53049d49a7cb89a52d463c6"
+    }
+  ]
+}
