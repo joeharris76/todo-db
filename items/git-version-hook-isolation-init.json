@@ -1,0 +1,18 @@
+{
+  "acceptance": [
+    "Global core.hooksPath hooks do not fire during store init even on Git 2.28-2.30, or the declared minimum Git version is raised to 2.31.",
+    "A test verifies hook suppression across supported Git versions."
+  ],
+  "context": "Discovered during store init isolation testing (test_inherited_git_environment_and_global_hooks_are_ignored). GIT_CONFIG_COUNT requires Git >= 2.31.",
+  "description": "git init fires global core.hooksPath hooks before the repository's local config can be written. open() sets GIT_CONFIG_COUNT / GIT_CONFIG_KEY_0=core.hooksPath to /dev/null in the environment to isolate the init command, but GIT_CONFIG_COUNT requires Git >= 2.31. On Git 2.28 to 2.30, an installed global reference-transaction hook will still fire during git init. Either raise the minimum Git version to 2.31 or initialize stores with a template directory that disables hooks.",
+  "sessions": [
+    {
+      "actor": "mcp:omp-coding-agent:joe@joe-mac-mini.local:e1bf6917f088d16b5d3e2d6e",
+      "at": "2026-10-19T00:08:17Z",
+      "client": "omp-coding-agent",
+      "op": "create",
+      "op_id": "68099fb4e70344518f6500ea847e200f",
+      "session_id": "914e0ebae53049d49a7cb89a52d463c6"
+    }
+  ]
+}

@@ -203,6 +203,13 @@
       "status": "done",
       "title": "Restore CLI parser after wrapper constant removal"
     },
+    "git-version-hook-isolation-init": {
+      "claim": null,
+      "needs": [],
+      "priority": "low",
+      "status": "open",
+      "title": "Isolate store init from global hooks on Git versions below 2.31"
+    },
     "guard-env-db-no-identity": {
       "claim": null,
       "needs": [],
