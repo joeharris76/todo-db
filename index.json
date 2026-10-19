@@ -734,6 +734,13 @@
       "status": "done",
       "title": "Audit test doubles for stubs that agree with the implementation instead of testing it"
     },
+    "tpchavoc-native-engine-verification": {
+      "claim": null,
+      "needs": [],
+      "priority": "medium",
+      "status": "open",
+      "title": "Verify TPC-Havoc V7 rewrites natively on PrestoDB, Athena, and BigQuery"
+    },
     "update-scope-rules": {
       "claim": null,
       "needs": [],
