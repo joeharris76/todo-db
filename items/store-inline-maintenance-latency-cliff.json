@@ -1,0 +1,18 @@
+{
+  "acceptance": [
+    "Mutations and reads do not block on synchronous full repack when slack crosses HARD_SLACK_CAP_BYTES.",
+    "Heavy write bursts degrade gracefully via an incremental or tiered compaction strategy without unbounded latency spikes."
+  ],
+  "context": "Identified in Muse review of 0.10.0/0.10.1 maintenance triggers. HARD_SLACK_CAP_BYTES (16 MiB) triggers synchronous inline maintain() under LOCK_EX.",
+  "description": "When unpacked slack exceeds the 16 MiB HARD_SLACK_CAP_BYTES, maybe_maintain() executes maintain() synchronously inline rather than via detached background process. On large repositories (like BenchBox with 5,100+ commits), this causes a synchronous repack -A + prune run inside the caller's mutation or fetch (holding LOCK_EX for ~0.6-2s), introducing a latency spike for that specific request. A tiered or incremental compaction ladder would prevent this latency cliff.",
+  "sessions": [
+    {
+      "actor": "mcp:omp-coding-agent:joe@joe-mac-mini.local:e1bf6917f088d16b5d3e2d6e",
+      "at": "2026-10-19T00:07:52Z",
+      "client": "omp-coding-agent",
+      "op": "create",
+      "op_id": "f6bc22b10e1642dfaafc17b9674e8ac3",
+      "session_id": "914e0ebae53049d49a7cb89a52d463c6"
+    }
+  ]
+}

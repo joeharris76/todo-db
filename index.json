@@ -720,6 +720,13 @@
       "status": "done",
       "title": "Bound the state-branch snapshot cache with safe, capped eviction"
     },
+    "store-inline-maintenance-latency-cliff": {
+      "claim": null,
+      "needs": [],
+      "priority": "low",
+      "status": "open",
+      "title": "Mitigate inline maintenance latency cliff during heavy write bursts"
+    },
     "store-ratio-bound-tiny-edits": {
       "claim": null,
       "needs": [],
