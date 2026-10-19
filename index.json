@@ -720,6 +720,13 @@
       "status": "done",
       "title": "Bound the state-branch snapshot cache with safe, capped eviction"
     },
+    "store-ancestor-rewind-reconciliation": {
+      "claim": null,
+      "needs": [],
+      "priority": "low",
+      "status": "open",
+      "title": "Support reconciliation and recovery for intentional remote branch rewinds"
+    },
     "store-inline-maintenance-latency-cliff": {
       "claim": null,
       "needs": [],
