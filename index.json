@@ -728,15 +728,10 @@
       "title": "Route finding verbs in skills; document capture-to-landing end to end"
     },
     "sqlglot-floor-residual-incompat": {
-      "claim": {
-        "expires_at": "2026-10-21T00:20:13Z",
-        "generation": "34f757da5c144e2fa2b8a08b39576524",
-        "renewals": 0,
-        "worker": "mcp:omp-coding-agent:joe@joe-mac-mini.local:67e27a5a2a531c957d25585c"
-      },
+      "claim": null,
       "needs": [],
       "priority": "high",
-      "status": "active",
+      "status": "done",
       "title": "Resolve remaining sqlglot==25.6.0 incompatibilities or raise the declared floor"
     },
     "state-cache-rev-eviction": {
