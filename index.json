@@ -734,6 +734,13 @@
       "status": "done",
       "title": "Resolve remaining sqlglot==25.6.0 incompatibilities or raise the declared floor"
     },
+    "sqlglot-overlay-vacuous-guard": {
+      "claim": null,
+      "needs": [],
+      "priority": "low",
+      "status": "open",
+      "title": "Guard against vacuous sqlglot version overlays bypassing the vendored runtime"
+    },
     "state-cache-rev-eviction": {
       "claim": null,
       "needs": [],

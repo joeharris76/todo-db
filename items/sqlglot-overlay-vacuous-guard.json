@@ -1,0 +1,20 @@
+{
+  "acceptance": [
+    "A documented guard exists (CI lint, ruff rule, or make-target check) that fails when a workflow, Makefile target, or script passes --with sqlglot==<version> to uv run, or the soft-fork decision record explicitly documents that version overlays do not affect the runtime and names the supported way to test alternate parsers",
+    "The guard names benchbox/_vendor/__init__.py as the mechanism that makes overlays vacuous"
+  ],
+  "description": "Since the SQLGlot soft fork (#3139), every runtime import resolves through benchbox._vendor (benchbox/_vendor/__init__.py appends the bundled wheel zip to __path__), so uv run --with sqlglot==X installs a PyPI copy that no code under test imports. Discovered while implementing sqlglot-floor-residual-incompat: a probe with --with sqlglot==26.0.0 printed 26.0.0 while the exercised code used the vendored 30.23.0.2, and the retired make tpchavoc-sqlglot-minimum-check gate (--with sqlglot==25.6.0) had been green-but-meaningless since the fork (fixed by PR #3171, which removed it). Nothing prevents the next version-matrix check from repeating the pattern. Smallest fix is a lint-level guard or a short note in the vendoring decision record; do not reintroduce per-version overlays.",
+  "links": [
+    "https://github.com/BenchBox-dev/benchbox/pull/3171"
+  ],
+  "sessions": [
+    {
+      "actor": "mcp:omp-coding-agent:joe@joe-mac-mini.local:67e27a5a2a531c957d25585c",
+      "at": "2026-10-20T20:21:55Z",
+      "client": "omp-coding-agent",
+      "op": "create",
+      "op_id": "a8b2bd40ff114a60aab55b9758657055",
+      "session_id": "103fdf0670144e33b09fe9f3d4f04aab"
+    }
+  ]
+}
