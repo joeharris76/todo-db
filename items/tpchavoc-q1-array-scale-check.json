@@ -3,6 +3,7 @@
     "Q1 1_v7 rewritten form executes at SF1 (or the largest feasible scale) on Trino/Presto without breaching ARRAY_AGG/ORDER BY memory limits, with peak memory and row counts recorded",
     "If limits bind, the array-chunking or pagination remedy is specified in the item before any code change"
   ],
+  "context": "RESULT (committed harness _project/scripts/tpchavoc_trino_q1_scale_check.py at 9bf1f52d; evidence _project/audits/tpchavoc-q1-array-scale-2026-10-22.md): on Trino 476, 1_v7 PASSES at SF1 under stock limits (6 GiB heap, query.max-memory-per-node 1.80 GB): peaks 805/799/799 MiB (~44% of cap), equal to canonical Q1 within 3.9e-12. It FAILS with EXCEEDED_LOCAL_MEMORY_LIMIT at SF2, SF3, SF10 (top consumer HashAggregationOperator 1.48-1.65 GB = the four ARRAY_AGG states). With limits raised (8 GiB heap, 6 GB cap) SF1/2/3/5 all pass and match canonical (<=5.3e-11); peak is linear in rows, ~0.75-0.93 GiB per SF (SF5: 3.8-4.4 GiB). Canonical Q1 stays <=16 MiB. So limits BIND from SF2.\n\nREMEDY SPEC (acceptance bullet 2; no code changed here). Indicative candidate probe: throwaway script, NOT committed, single runs, SF3 unless noted, every result equal to canonical within ~3e-11; peaks noisy (+/-25% between runs of the same query), so only large effects are meaningful:\n- baseline, 4 ordered ARRAY_AGG: 2267-2377 MiB SF3; 4378 SF5.\n- chunk via GROUP BY (flag, status, l_orderkey/2097152): 2282 MiB. NO reduction: a hash aggregation holds every group before emitting.\n- UNION ALL of 4 l_orderkey-range slices: 2271 MiB, slower (22.6 s vs 15 s). NO reduction: branches run concurrently.\n- ONE ARRAY_AGG of ROW(q,p,d,t) ORDER BY l_orderkey,l_linenumber: 1226-1435 MiB SF3, 2322 SF5 (~0.5-0.6x baseline), faster.\n- same ROW array WITHOUT ORDER BY: 1075 MiB SF3, 2658 SF5: within noise of the ordered form.\nSPEC: (1) change the Presto-family rewrite (benchbox/core/tpchavoc/dialect_compat.py _rewrite_presto_array_aggregation and _PRESTO_UNNEST_AGGREGATION) from four positionally-aligned arrays to one array of ROW values unnested into the same outer aggregation. Alignment becomes intrinsic, so the ORDER BY that PR 3003 added for alignment is no longer required; keep or drop it based on harness measurement, not the probe. Expected effect: constant factor ~1.7-1.9x, moving the stock-limit break from SF2 to about SF4 (extrapolated from 0.41-0.48 GiB/SF). (2) This is NOT a bounded-memory fix: every single-statement form that materialises a group's rows as arrays is O(rows in the largest group), and Q1 has only four group keys so a cluster cannot divide the largest group. Say so in the variant description. (3) Decide with the owner whether 1_v7 on Presto/Trino needs a documented memory requirement or a scale-gated skip; skip rules are keyed by platform today (CLOUD_TPCHAVOC_SKIPS pattern), not by scale, so verify that mechanism before proposing it. Implementation is a follow-up item; its acceptance is this harness showing PASS at SF1-SF3 under stock limits, equivalence <=1e-8, and test_presto_compat structural assertions updated.\n\nSTILL UNKNOWN: Presto C++ worker behaviour (the 100,000-element REDUCE limit that motivated the rewrite is not exercised on Trino); multi-node memory split; SF>5 is extrapolated, not measured.",
   "description": "The Q1 DuckDB-LIST to ARRAY_AGG+UNNEST rewrite was motivated by the Presto C++ 100,000-element REDUCE limit, but neither the old limit nor the new ARRAY_AGG ... ORDER BY memory behavior was tested at scale: the Trino 476 smoke could not load SF1 lineitem (memory-connector 128MiB limit) and ran only tpch tiny. A scale run needs a Trino deployment with a real connector (not the memory connector) or a native Presto cluster. This is correctness-adjacent performance verification, not a known failure.",
   "links": [
     "https://github.com/BenchBox-dev/benchbox/pull/3145"
@@ -23,6 +24,14 @@
       "generation": "72c9d40309024bc68d1f7b1d185ab3c7",
       "op": "take",
       "op_id": "731fcb660f224b23983ad9ba2b256025",
+      "session_id": "3846a46131fd471ab6c38f2351dc3c52"
+    },
+    {
+      "actor": "mcp:omp-coding-agent:joe@joe-mac-mini.local:4d6c5c07183ccbc69e1e3858",
+      "at": "2026-10-22T15:48:41Z",
+      "client": "omp-coding-agent",
+      "op": "update",
+      "op_id": "500cc8df69fb4d06bf005b887904255a",
       "session_id": "3846a46131fd471ab6c38f2351dc3c52"
     }
   ]
