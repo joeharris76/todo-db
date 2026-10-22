@@ -790,6 +790,15 @@
       "status": "open",
       "title": "Verify TPC-Havoc V7 rewrites natively on PrestoDB, Athena, and BigQuery"
     },
+    "tpchavoc-q1-array-memory-reduction": {
+      "claim": null,
+      "needs": [
+        "tpchavoc-q1-array-scale-check"
+      ],
+      "priority": "medium",
+      "status": "open",
+      "title": "Reduce 1_v7 ARRAY_AGG memory on Presto/Trino with one array of ROW values"
+    },
     "tpchavoc-q1-array-scale-check": {
       "claim": {
         "expires_at": "2026-10-23T15:22:45Z",
