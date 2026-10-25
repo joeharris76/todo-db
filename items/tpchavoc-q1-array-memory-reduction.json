@@ -1,11 +1,11 @@
 {
   "acceptance": [
-    "The Presto-family 1_v7 rewrite uses one array of ROW values (alignment intrinsic) and, by the harness at a recorded clean commit, passes at SF1, SF2 and SF3 on Trino 476 under stock limits (1.80 GB per node on a 6 GiB heap) with results equal to canonical Q1 within 1e-8",
-    "Peak user memory per run is recorded for each scale and compared with the 0.75-0.93 GiB per SF baseline in _project/audits/tpchavoc-q1-array-scale-2026-10-22.md; the ORDER BY keep-or-drop decision is made from those harness numbers",
-    "tests/unit/tpchavoc/test_presto_compat.py structural assertions describe the new shape for presto, trino and athena dialects",
+    "The Presto-family 1_v7 text builds one array of ROW values (alignment intrinsic) and, by the harness at a recorded clean commit, passes at SF1, SF2 and SF3 on Trino under stock limits (1.80 GB per node on a 6 GiB heap) with results equal to canonical Q1 within 1e-8; SF3 fails today",
+    "Peak user memory per run is recorded for each scale and compared with the 780-830 MiB per SF baseline in _project/audits/tpchavoc-q1-array-scale-2026-10-22.md; the ORDER BY keep-or-drop decision is made from those harness numbers",
+    "Presto, Trino and Athena rendering assertions (tests/unit/tpchavoc/test_presto_compat.py and the sql_compat golden corpus entries for 1_v7) describe the new shape",
     "The 1_v7 variant description or docs state that memory is linear in rows of the largest Q1 group, and the owner decision on a documented requirement versus a scale-gated skip is recorded"
   ],
-  "description": "The 1_v7 rewrite for Presto and Trino (four ordered ARRAY_AGG columns unnested together) exceeds Trino's default per-node memory limit from SF2: it passes at SF1 at about 800 MiB but fails with EXCEEDED_LOCAL_MEMORY_LIMIT at SF2, SF3 and SF10, while canonical Q1 needs under 16 MiB. Memory is linear in rows, about 0.75-0.93 GiB per scale factor, dominated by HashAggregationOperator ARRAY_AGG state. See the remedy spec in the context of tpchavoc-q1-array-scale-check and _project/audits/tpchavoc-q1-array-scale-2026-10-22.md. Indicative probes showed one ARRAY_AGG of ROW values cut peak memory about 1.7-1.9x, whereas chunking by GROUP BY or UNION ALL slicing gave no reduction. This does not make memory bounded; it moves the stock-limit break from about SF2 to about SF4. Do not claim more.",
+  "description": "The 1_v7 text for Presto, Trino and Athena (the fork's order_list_aggregates + reduce_list_aggregates rewrites: four ordered ARRAY_AGG columns reduced with REDUCE/ZIP_WITH, develop #3326) exceeds Trino's default per-node memory limit from SF3. On Trino 484 with a 6 GiB heap it passes at SF1 (about 825 MiB) and SF2 (about 1.6 GiB, 87% of the 1843 MiB cap) and fails with EXCEEDED_LOCAL_MEMORY_LIMIT at SF3 and SF10, while canonical Q1 needs under 15 MiB. Memory is linear in rows, 780-830 MiB per scale factor, dominated by HashAggregationOperator ARRAY_AGG state. See the context of tpchavoc-q1-array-scale-check and _project/audits/tpchavoc-q1-array-scale-2026-10-22.md. A probe on the earlier UNNEST text showed one ARRAY_AGG of ROW values cut peak memory about 1.7-1.9x, whereas chunking by GROUP BY or UNION ALL slicing gave no reduction; that factor is not yet re-tested on the current REDUCE text. This does not make memory bounded. Do not claim more. The rewrite lives in the fork, so the change is a fork/rule change plus a BenchBox pin.",
   "links": [
     "https://github.com/BenchBox-dev/benchbox/pull/3310"
   ],
@@ -25,6 +25,14 @@
       "op": "update",
       "op_id": "4acffbd1129144fd8b53bccd04d8dc73",
       "session_id": "3846a46131fd471ab6c38f2351dc3c52"
+    },
+    {
+      "actor": "mcp:omp-coding-agent:joe@joe-mac-mini.local:2bcf0bcbcdfd58f6eedb7eb4",
+      "at": "2026-10-25T13:13:49Z",
+      "client": "omp-coding-agent",
+      "op": "update",
+      "op_id": "d749a9dacf2a4d37a9689702a4fdce15",
+      "session_id": "e8e023a71a7c4fa28bf1a3ede4ce056b"
     }
   ]
 }

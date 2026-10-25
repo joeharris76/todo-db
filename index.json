@@ -797,7 +797,7 @@
       ],
       "priority": "medium",
       "status": "open",
-      "title": "Reduce 1_v7 ARRAY_AGG memory on Presto/Trino with one array of ROW values"
+      "title": "Reduce 1_v7 list-aggregate memory on Presto/Trino with one array of ROW values"
     },
     "tpchavoc-q1-array-scale-check": {
       "claim": null,
