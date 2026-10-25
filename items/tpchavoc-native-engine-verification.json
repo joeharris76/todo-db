@@ -3,7 +3,7 @@
     "All 18 *_v7 variants plus 16_v6 execute successfully on a live PrestoDB/Trino-coordinator-backed Presto endpoint, a live Athena workgroup, and a live BigQuery dataset, with result comparison against canonical queries recorded as durable evidence (not transient console output)",
     "Variants that cannot run natively are enumerated with engine error text, or live credentials/approval are recorded as the blocking reason"
   ],
-  "description": "PRs #3003/#3112/#3145 verified the Presto-family V7 rewrites (alias inlining, window FILTER conversion, Q1 ARRAY_AGG+UNNEST, Q16 NOT IN) on native Trino 476 only (local server, tpch tiny in the memory connector; scripts /tmp/r6.py, /tmp/r9.py, server log /tmp/trino/server.log lines 1024-1129, since removed with the worktree). The presto-dialect and athena-dialect SQL strings were executed on Trino, never on PrestoDB or Athena; Athena coverage rests on Athena.get_target_dialect() returning trino (benchbox/platforms/athena.py:422) plus the _PRESTO_TRINO_DIALECTS entry. BigQuery FILTER rewrites were verified only through DuckDB round-trips at sqlglot 30.18.0/30.23.0, never on native BigQuery. Per repo policy live cloud tests need explicit owner approval and credentials.",
+  "description": "PRs #3003/#3112/#3145 verified the Presto-family V7 rewrites (alias inlining, window FILTER conversion, Q1 array aggregation, Q16 NOT IN) on native Trino 476 only (local server, tpch tiny in the memory connector; scripts /tmp/r6.py, /tmp/r9.py, server log /tmp/trino/server.log lines 1024-1129, since removed with the worktree). The presto-dialect and athena-dialect SQL strings were executed on Trino, never on PrestoDB or Athena; Athena coverage rests on Athena.get_target_dialect() returning trino (benchbox/platforms/athena.py:422) plus the _PRESTO_TRINO_DIALECTS entry. BigQuery FILTER rewrites were verified only through DuckDB round-trips at sqlglot 30.18.0/30.23.0, never on native BigQuery. Since develop #3326, 1_v7 on Presto, Trino and Athena uses the fork's REDUCE/ZIP_WITH text; that PR checked Trino 476 and PrestoDB 0.298.1 at TPC-H tiny scale only. Scale behaviour on Trino (Java) is recorded in _project/audits/tpchavoc-q1-array-scale-2026-10-22.md. Not tested anywhere: a Presto C++ worker, which is reported to cap REDUCE input at 100,000 elements, a size every Q1 group exceeds above about SF0.02. Per repo policy live cloud tests need explicit owner approval and credentials.",
   "links": [
     "https://github.com/BenchBox-dev/benchbox/pull/3145"
   ],
@@ -15,6 +15,14 @@
       "op": "create",
       "op_id": "2e11a60d33924ffabf70aa44c11d7a20",
       "session_id": "103fdf0670144e33b09fe9f3d4f04aab"
+    },
+    {
+      "actor": "mcp:omp-coding-agent:joe@joe-mac-mini.local:2bcf0bcbcdfd58f6eedb7eb4",
+      "at": "2026-10-25T13:14:01Z",
+      "client": "omp-coding-agent",
+      "op": "update",
+      "op_id": "f26dc0a15c894fd7b8390c91a79957fc",
+      "session_id": "e8e023a71a7c4fa28bf1a3ede4ce056b"
     }
   ]
 }
