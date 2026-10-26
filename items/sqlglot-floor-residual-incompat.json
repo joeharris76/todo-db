@@ -3,9 +3,11 @@
     "Either pyproject.toml declares a sqlglot minimum at or above the first version where exp.Expr, from_/with_ AST keys, and modern HAVING rendering all exist (verified by bisect), with uv.lock updated; or the spark_query_transformer.py exp.Expr use plus the Snowflake/Postgres HAVING-text expectations are repaired so the full tests/unit/tpchavoc suite passes under uv run --with sqlglot==<floor>",
     "The narrow 20-node floor gate in make tpchavoc-sqlglot-minimum-check is widened to the full suite, or the floor claim is narrowed to match what is actually verified"
   ],
+  "context": "Resolved by PR 3171 (merged). Since the SQLGlot soft fork (#3139) every runtime import resolves the vendored copy, so the sqlglot==25.6.0 overlay never exercised the declared floor: the make tpchavoc-sqlglot-minimum-check gate built on it was green but meaningless, and PR 3171 removed it. See PR 3171 for the full change. Follow-up guard against repeating the pattern: sqlglot-overlay-vacuous-guard.",
   "description": "PR #3145 repaired only the three reached TPC-Havoc rewrite paths (Presto-family 1_v7 ARRAY_AGG in dialect_compat.py, postgres dual in dialect_compat.py:124, BigQuery from-less in cloud_compat.py:59-62) and pins 20 regression nodes at the floor. Probing the declared minimum sqlglot==25.6.0 (pyproject.toml:28 allows >=25.6.0,<31.0.0) still fails: (1) benchbox/core/tpchavoc/spark_query_transformer.py:106 raises AttributeError: module 'sqlglot.expressions' has no attribute 'Expr', breaking every Databricks TPC-Havoc render; (2) tests/unit/tpchavoc/test_cloud_compat.py::test_snowflake_empty_group_rewrite_is_targeted fails because old sqlglot renders HAVING NOT SUM(...) IS NULL instead of HAVING SUM(; (3) tests/unit/tpchavoc/test_dialect_compat.py::test_postgres_alias_rewrite_preserves_order_by_aliases fails for the same HAVING-text drift. Repro: uv run --with sqlglot==25.6.0 -- python -m pytest -n 0 tests/unit/tpchavoc/test_presto_compat.py tests/unit/tpchavoc/test_cloud_compat.py tests/unit/tpchavoc/test_dialect_compat.py gives 3 failed, 35 passed. Bisect the first good version before choosing raise-floor vs repair-all; a partial claim is the worst outcome.",
   "links": [
-    "https://github.com/BenchBox-dev/benchbox/pull/3145"
+    "https://github.com/BenchBox-dev/benchbox/pull/3145",
+    "https://github.com/BenchBox-dev/benchbox/pull/3171"
   ],
   "sessions": [
     {
@@ -33,6 +35,14 @@
       "op": "finish",
       "op_id": "113257c117ac4f7b9245849875ea41a0",
       "session_id": "103fdf0670144e33b09fe9f3d4f04aab"
+    },
+    {
+      "actor": "mcp:omp-coding-agent:joe@joe-mac-mini.local:2bcf0bcbcdfd58f6eedb7eb4",
+      "at": "2026-10-26T15:22:18Z",
+      "client": "omp-coding-agent",
+      "op": "update",
+      "op_id": "c41495b4326243a8b4aba5d6913608d3",
+      "session_id": "e8e023a71a7c4fa28bf1a3ede4ce056b"
     }
   ]
 }
