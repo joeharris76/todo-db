@@ -801,7 +801,7 @@
         "tpchavoc-q1-array-scale-check"
       ],
       "priority": "medium",
-      "status": "open",
+      "status": "blocked",
       "title": "Reduce 1_v7 list-aggregate memory on Presto/Trino with one array of ROW values"
     },
     "tpchavoc-q1-array-scale-check": {
