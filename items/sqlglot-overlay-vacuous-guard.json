@@ -3,6 +3,7 @@
     "A documented guard exists (CI lint, ruff rule, or make-target check) that fails when a workflow, Makefile target, or script passes --with sqlglot==<version> to uv run, or the soft-fork decision record explicitly documents that version overlays do not affect the runtime and names the supported way to test alternate parsers",
     "The guard names benchbox/_vendor/__init__.py as the mechanism that makes overlays vacuous"
   ],
+  "context": "STATE: implemented and committed, not yet pushed; PR not opened. Branch fix/sqlglot-overlay-vacuous-guard, worktree /Users/joe/Developer/BenchBox.wt-sqlglot-overlay-guard, head 61f7881f2c366b4bdf916b5d6ba31eaa1ea23e5c (1 commit on origin/develop). Files: tests/unit/sql_compat/test_sqlglot_overlay_guard.py (new, 17 tests) and _project/decisions/sqlglot-soft-fork-plan.md (note that overlays do not affect the runtime and that `uv run --no-project --isolated --with sqlglot==VERSION -- python ...` is the supported way to test raw upstream releases). The test scans workflows, composite actions, .pre-commit-config.yaml, Makefile, Dockerfiles and scripts for `--with sqlglot...` on uv run/uvx/uv tool run without --no-project, and for pip/uv pip/uv add of PyPI sqlglot; failure text names benchbox/_vendor/__init__.py. It does not import _project/, so it runs on the release tree and needs no release-cut change. Verified: guard passes on repo; ten bad inputs flagged, five good inputs pass; ci-lint-parity, release-infrastructure and ci-units tests pass (171); make pr-preflight passes.\nBLOCKER: `make pr-open` refuses before pushing: local oracle review unavailable, omp 18.12.6 installed vs CI pin 18.12.1 (non-overridable). The owner said another session is fixing the pin; wait for it. PR body draft is at /tmp/overlay_pr_body.md (sections: Problem, What the guard checks, Verification); regenerate from this note if /tmp was cleared.\nNEXT: when pr-open works, run `make pr-open TITLE=\"test: reject SQLGlot version overlays that the vendored runtime ignores\" PR_BODY_FILE=<body>` from the worktree, wait for CI and oracle SHIP on the exact head, then (owner has authorized arming when green for PR work in this thread) `make pr-arm`, then finish this item with the claim generation and remove the worktree. Claim lease expires 2026-10-27T14:59:16Z; renew if the pin fix takes longer.",
   "description": "Since the SQLGlot soft fork (#3139), every runtime import resolves through benchbox._vendor (benchbox/_vendor/__init__.py appends the bundled wheel zip to __path__), so uv run --with sqlglot==X installs a PyPI copy that no code under test imports. Discovered while implementing sqlglot-floor-residual-incompat: a probe with --with sqlglot==26.0.0 printed 26.0.0 while the exercised code used the vendored 30.23.0.2, and the retired make tpchavoc-sqlglot-minimum-check gate (--with sqlglot==25.6.0) had been green-but-meaningless since the fork (fixed by PR #3171, which removed it). Nothing prevents the next version-matrix check from repeating the pattern. Smallest fix is a lint-level guard or a short note in the vendoring decision record; do not reintroduce per-version overlays.",
   "links": [
     "https://github.com/BenchBox-dev/benchbox/pull/3171"
@@ -23,6 +24,14 @@
       "generation": "62fcfbd7f8574eaf9f4a7a0d923d469b",
       "op": "take",
       "op_id": "059ccc170f354142be143e923d22cf9c",
+      "session_id": "e8e023a71a7c4fa28bf1a3ede4ce056b"
+    },
+    {
+      "actor": "mcp:omp-coding-agent:joe@joe-mac-mini.local:2bcf0bcbcdfd58f6eedb7eb4",
+      "at": "2026-10-26T15:19:43Z",
+      "client": "omp-coding-agent",
+      "op": "update",
+      "op_id": "6090676c158347d6adcbc1d470650145",
       "session_id": "e8e023a71a7c4fa28bf1a3ede4ce056b"
     }
   ]
