@@ -735,15 +735,10 @@
       "title": "Resolve remaining sqlglot==25.6.0 incompatibilities or raise the declared floor"
     },
     "sqlglot-overlay-vacuous-guard": {
-      "claim": {
-        "expires_at": "2026-10-27T14:59:16Z",
-        "generation": "62fcfbd7f8574eaf9f4a7a0d923d469b",
-        "renewals": 0,
-        "worker": "mcp:omp-coding-agent:joe@joe-mac-mini.local:2bcf0bcbcdfd58f6eedb7eb4"
-      },
+      "claim": null,
       "needs": [],
       "priority": "low",
-      "status": "active",
+      "status": "done",
       "title": "Guard against vacuous sqlglot version overlays bypassing the vendored runtime"
     },
     "state-cache-rev-eviction": {
