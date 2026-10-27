@@ -802,7 +802,7 @@
       "needs": [],
       "priority": "medium",
       "status": "open",
-      "title": "Verify TPC-Havoc V7 rewrites natively on PrestoDB, Athena, and BigQuery"
+      "title": "Verify TPC-Havoc V7 rewrites natively on PrestoDB and Presto C++"
     },
     "tpchavoc-q1-array-memory-reduction": {
       "claim": null,
