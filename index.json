@@ -783,6 +783,13 @@
       "status": "done",
       "title": "Audit test doubles for stubs that agree with the implementation instead of testing it"
     },
+    "tpchavoc-1v8-qualify-order-by-loss": {
+      "claim": null,
+      "needs": [],
+      "priority": "medium",
+      "status": "open",
+      "title": "Keep the outer ORDER BY of TPC-Havoc 1_v8 when QUALIFY is eliminated for Presto-family engines"
+    },
     "tpchavoc-native-engine-verification": {
       "claim": null,
       "needs": [],
