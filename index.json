@@ -798,15 +798,10 @@
       "title": "Run TPC-Havoc 1_v7 and the Presto-family rewrites on live Amazon Athena and Google BigQuery"
     },
     "tpchavoc-native-engine-verification": {
-      "claim": {
-        "expires_at": "2026-10-28T22:24:39Z",
-        "generation": "5e79cbf758614af29941c908b06786f0",
-        "renewals": 0,
-        "worker": "mcp:omp-coding-agent:joe@joe-mac-mini.local:2bcf0bcbcdfd58f6eedb7eb4"
-      },
+      "claim": null,
       "needs": [],
       "priority": "medium",
-      "status": "active",
+      "status": "done",
       "title": "Verify TPC-Havoc V7 rewrites natively on PrestoDB and Presto C++"
     },
     "tpchavoc-q1-array-memory-reduction": {
