@@ -813,6 +813,13 @@
       "status": "done",
       "title": "Check Q1 ARRAY_AGG rewrite memory behavior at SF1 on Trino/Presto"
     },
+    "tpchavoc-q15-double-equality-flake": {
+      "claim": null,
+      "needs": [],
+      "priority": "low",
+      "status": "open",
+      "title": "Stop TPC-H Q15 and its 15_v* variants returning no row on engines that sum DOUBLE in varying order"
+    },
     "update-scope-rules": {
       "claim": null,
       "needs": [],
