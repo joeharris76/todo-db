@@ -919,15 +919,10 @@
       "title": "Pin update_item clearing of text fields over MCP with tests"
     },
     "update-item-not-before-clear": {
-      "claim": {
-        "expires_at": "2026-10-29T20:57:34Z",
-        "generation": "3d1e3edac1694132aca9a0cfe914f9fe",
-        "renewals": 1,
-        "worker": "mcp:omp-coding-agent:joe@joe-mac-mini.local:2bcf0bcbcdfd58f6eedb7eb4"
-      },
+      "claim": null,
       "needs": [],
       "priority": "low",
-      "status": "active",
+      "status": "done",
       "title": "Pin update_item clearing of not_before over MCP with tests and tool text"
     },
     "update-scope-rules": {
