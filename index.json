@@ -339,6 +339,13 @@
       "status": "done",
       "title": "Coordinate the BenchBox parity command list migration"
     },
+    "mcp-bound-store-not-reported": {
+      "claim": null,
+      "needs": [],
+      "priority": "high",
+      "status": "open",
+      "title": "Let MCP clients see which state remote and branch the server is bound to"
+    },
     "mcp-cli-floor-and-gates": {
       "claim": null,
       "needs": [
