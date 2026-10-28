@@ -607,6 +607,13 @@
       "status": "done",
       "title": "Add read-only Pi status UI without a background heartbeat"
     },
+    "pr-open-omp-pin-guidance": {
+      "claim": null,
+      "needs": [],
+      "priority": "low",
+      "status": "open",
+      "title": "Tell make pr-open users how to obtain the pinned omp build when the installed one differs"
+    },
     "pr-rerun-oracle-gate-coverage": {
       "claim": null,
       "needs": [],
