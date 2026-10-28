@@ -607,6 +607,13 @@
       "status": "done",
       "title": "Add read-only Pi status UI without a background heartbeat"
     },
+    "presto-cpp-1v7-sf1-stuck-operator": {
+      "claim": null,
+      "needs": [],
+      "priority": "low",
+      "status": "open",
+      "title": "Find why TPC-Havoc 1_v7 hangs on a Presto C++ worker at SF1 once the REDUCE cap is raised"
+    },
     "provider-capability-provenance": {
       "claim": null,
       "needs": [
