@@ -3,7 +3,7 @@
     "The refusal message names the cached pinned binary path (or the command that installs it) for the current platform",
     "Or make pr-open uses the cached pinned build automatically when it exists, covered by a test"
   ],
-  "context": "Evidence: _project/scripts/oracle_reviewers/local.py (pinned_omp_version, installed_omp_version, mismatch check around lines 321-347 on develop) and _project/scripts/oracle_reviewers/omp_pin.py (binary_path, install, BENCHBOX_OMP_CACHE). cli.py install-omp must run as a module, because running the file directly fails with 'attempted relative import with no known parent package'. Filed from session review 2026-10-27.",
+  "context": "Evidence: _project/scripts/oracle_reviewers/local.py (pinned_omp_version, installed_omp_version, mismatch check around lines 321-347 on develop) and _project/scripts/oracle_reviewers/omp_pin.py (binary_path, install, BENCHBOX_OMP_CACHE). cli.py install-omp must run as a module, because running the file directly fails with 'attempted relative import with no known parent package'. Filed from session review 2026-10-27.\n\nDROPPED 2026-10-28: this BenchBox item was filed in the todo-db tracker by mistake. The live record is the item with the same id in the BenchBox-dev/BenchBox tracker.",
   "description": "make pr-open refuses with 'local oracle review is unavailable: omp version mismatch: installed 18.13.1, CI pins 18.12.1; install the pinned build' and a note that a 'Local oracle override:' line does not cover it. The message gives no way to get the pinned build, although the repo's installer already caches a SHA-256-verified build at ~/.cache/benchbox/omp/<version>/<platform>/omp. The workaround is to put that directory first on PATH for the one command; it was found by looking at another session's cache.",
   "links": [
     "https://github.com/BenchBox-dev/benchbox/pull/3577"
@@ -16,6 +16,14 @@
       "op": "create",
       "op_id": "51fd4820da1f4992992157867392d2ef",
       "session_id": "e8e023a71a7c4fa28bf1a3ede4ce056b"
+    },
+    {
+      "actor": "mcp:mcp:joe@joe-mac-mini.local:111ba61bf05e8dd179fdc975",
+      "at": "2026-10-28T13:48:10Z",
+      "client": "mcp",
+      "op": "update",
+      "op_id": "930b24f4579844efb35f1445e2beabfb",
+      "session_id": "ff30036c66154028bc2750c74b1ff723"
     }
   ]
 }
