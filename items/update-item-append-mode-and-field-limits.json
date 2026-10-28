@@ -1,9 +1,10 @@
 {
   "acceptance": [
-    "RUBRIC 1 append: a progress note can be added to context without resending the existing text, with a test",
-    "RUBRIC 2 docs: defer's summary limit and the done-item restriction appear in the tool schema or description"
+    "update_item accepts context_append, text added to the end of the current context at the tip the write is applied on, so concurrent edits are not lost; it is refused together with context in the same call, and a test covers append to empty, append to non-empty and the conflict case",
+    "The update_item tool description states that text fields are replaced wholesale, that an empty string clears title-independent text fields and not_before, and names context_append; the defer tool description states the 200-character single-line summary limit and that terminal tasks refuse deferrals",
+    "The tool schema snapshot is regenerated, tests/test_mcp_stdio.py passes, and the CHANGELOG records the new parameter"
   ],
-  "context": "Imported on 2026-10-28 from the BenchBox tracker item(s): todo-db-context-update-replaces-shared-guardrails-20261023. Those items stay open in BenchBox to track the dependency.\n\nSource context (todo-db-context-update-replaces-shared-guardrails-20261023): NOTE 2026-10-24 (Advisor review): confirmed against the live MCP schema - update_item has plain `context?: string|null` with no append operation, and defer.summary documents no length limit. The fix belongs to the todo-db project, not BenchBox; keep as a tracking item until todo-db ships it.",
+  "context": "Imported on 2026-10-28 from the BenchBox tracker item(s): todo-db-context-update-replaces-shared-guardrails-20261023. Those items stay open in BenchBox to track the dependency.\n\nSource context (todo-db-context-update-replaces-shared-guardrails-20261023): NOTE 2026-10-24 (Advisor review): confirmed against the live MCP schema - update_item has plain `context?: string|null` with no append operation, and defer.summary documents no length limit. The fix belongs to the todo-db project, not BenchBox; keep as a tracking item until todo-db ships it.\n\nREVIEW 2026-10-28 against todo-db 0.10.1 (main d85cdf3), per the todo review checklist and review-protocol L2/L3. VERDICT: VALID and required. Verified: update_item replaces text fields wholesale (store.op_update), the tool description is only 'Edit task fields or move between open and blocked.', defer's 200-character limit is store.MAX_DEFERRAL_SUMMARY_LEN and 'cannot defer on done task' is raised in store.op_defer, neither visible in the tool schema. NARROWED: append applies to context only (the field the reported incident wiped); description append is not added. Re-homed: nothing removed except description append, which is killed because no incident or request supports it.",
   "description": "On 2026-10-22, updating item context with a progress note (update_item with context) replaced the field and removed the COMMON GUARDRAILS C1-C10 block from 15 batch items; they were restored by hand from the original specs. There is no append mode, and nothing warns that a large field is being replaced by a much shorter one. Related friction in the same session: defer is refused on a done item, so the order finish-then-defer silently loses the deferral; the deferral summary has an undocumented 200-character limit (not in the tool schema).\n\nCHANGE: add an append/prepend option for text fields (or a separate note operation), and document field limits and lifecycle restrictions in the tool schemas.",
   "sessions": [
     {
@@ -13,6 +14,14 @@
       "op": "create",
       "op_id": "52b17d1589b44db594111b0f14ade715",
       "session_id": "154f8ed817e149b1a3e1ddef318d8a18"
+    },
+    {
+      "actor": "review-batch",
+      "at": "2026-10-28T20:14:44Z",
+      "client": "mcp",
+      "op": "update",
+      "op_id": "2c6083d2d4564c70bc9b2804e1ccf71e",
+      "session_id": "77ee5afa5de545319db38006dfa2f591"
     }
   ]
 }
