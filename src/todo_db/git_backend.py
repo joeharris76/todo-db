@@ -353,7 +353,7 @@ def _store(ref: StateRef, cache_dir: str | Path | None) -> Store:
 def _open_store(store: Store) -> None:
     try:
         store.open()
-    except (OSError, StoreError) as exc:
+    except (OSError, StoreError, subprocess.TimeoutExpired) as exc:
         raise TodoError(f"cannot open the local state store {store.git_dir}: {exc}", code=E_STATE) from exc
 
 
@@ -361,7 +361,7 @@ def _repair(store: Store) -> None:
     """Rebuild the store the failing operation used; raise if that fails."""
     try:
         store.repair(store.active_id)
-    except (OSError, StoreError) as exc:
+    except (OSError, StoreError, subprocess.TimeoutExpired) as exc:
         raise TodoError(f"cannot rebuild the local state store {store.git_dir}: {exc}", code=E_STATE) from exc
 
 
@@ -373,6 +373,37 @@ def _store_errors() -> Iterator[None]:
     except StoreError as exc:
         raise TodoError(f"local state store failed: {exc}; the next read or write rebuilds it",
                         code=E_STATE) from exc
+    except subprocess.TimeoutExpired as exc:
+        raise _local_timeout(exc) from exc
+
+
+def _local_command(exc: subprocess.TimeoutExpired) -> str:
+    command = exc.cmd if isinstance(exc.cmd, (list, tuple)) else [exc.cmd]
+    return " ".join(str(part) for part in command[:3])
+
+
+def _local_timeout(exc: subprocess.TimeoutExpired) -> TodoError:
+    """A local git command that timed out: a coded error, never a rebuild of the store."""
+    return TodoError(
+        f"a local git command ({_local_command(exc)}) timed out after {exc.timeout}s; nothing was changed",
+        code=E_STATE,
+        recovery=["retry the call"],
+    )
+
+
+def _local_timeout_outcome(exc: subprocess.TimeoutExpired, op_id: str, *, pushed: bool) -> MutationOutcome:
+    what = f"a local git command ({_local_command(exc)}) timed out after {exc.timeout}s"
+    if pushed:
+        return MutationOutcome(
+            ok=False, outcome="unknown", op_id=op_id, code=E_UNKNOWN,
+            error=f"{what} after the push started and the outcome cannot be determined; "
+            f"reconcile later with operation ID {op_id}",
+        )
+    return MutationOutcome(
+        ok=False, outcome="error", op_id=op_id, code=E_STATE,
+        error=f"{what} before anything was pushed; the state is unchanged, retry (operation ID {op_id})",
+        recovery=["retry the call"],
+    )
 
 
 def _fetch_timeout(store: Store) -> int:
@@ -472,9 +503,12 @@ def _mutate_loop(
     repaired = False
     attempts = 0
     while True:
+        progress: list[str] = []
         try:
             with store.using():
-                step = _mutate_once(store, ref, url, op, summary, worker, op_id, apply, session)
+                step = _mutate_once(store, ref, url, op, summary, worker, op_id, apply, session, progress)
+        except subprocess.TimeoutExpired as exc:
+            return _local_timeout_outcome(exc, op_id, pushed=bool(progress))
         except StoreError as exc:
             if repaired:
                 return MutationOutcome(
@@ -507,6 +541,7 @@ def _mutate_once(
     op_id: str,
     apply: Callable[[Snapshot], dict[str, Any]],
     session: str | None,
+    progress: list[str] | None = None,
 ) -> MutationOutcome | None:
     """One fetch-apply-push attempt. None means a competing push won: retry."""
     timeout = _fetch_timeout(store)
@@ -561,6 +596,8 @@ def _mutate_once(
                 error="operation produced no state change",
             )
         new_sha = store.commit(tree, tip, _commit_message(op, summary, op_id, worker, session))
+        if progress is not None:
+            progress.append("push")
         try:
             push = store.push(url, new_sha, ref.branch)
         except subprocess.TimeoutExpired:
@@ -725,6 +762,8 @@ def read(ref: StateRef, cache_dir: str | Path) -> ReadOutcome:
         try:
             with store.using():
                 outcome = _read_tip(store, ref, tip)
+        except subprocess.TimeoutExpired as exc:
+            raise _local_timeout(exc) from exc
         except StoreError as exc:
             if attempt == 2:
                 raise TodoError(f"local state store failed: {exc}", code=E_STATE) from exc
