@@ -354,10 +354,15 @@
       "title": "Coordinate the BenchBox parity command list migration"
     },
     "mcp-bound-store-not-reported": {
-      "claim": null,
+      "claim": {
+        "expires_at": "2026-10-29T20:16:06Z",
+        "generation": "ed725d17d8a14e2b8956e6de213e43c9",
+        "renewals": 0,
+        "worker": "mcp:omp-coding-agent:joe@joe-mac-mini.local:2bcf0bcbcdfd58f6eedb7eb4"
+      },
       "needs": [],
       "priority": "high",
-      "status": "open",
+      "status": "active",
       "title": "Let MCP clients see which state remote and branch the server is bound to"
     },
     "mcp-cli-floor-and-gates": {
