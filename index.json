@@ -748,6 +748,13 @@
       "status": "done",
       "title": "Route finding verbs in skills; document capture-to-landing end to end"
     },
+    "sql-execution-gate-sqlite-q19-timeout": {
+      "claim": null,
+      "needs": [],
+      "priority": "medium",
+      "status": "open",
+      "title": "Stop the executed SQL comparison gate failing on SQLite q19 timeouts"
+    },
     "sqlglot-floor-residual-incompat": {
       "claim": null,
       "needs": [],
