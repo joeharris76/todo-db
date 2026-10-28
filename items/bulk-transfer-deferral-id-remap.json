@@ -1,0 +1,14 @@
+{
+  "context": "Imported on 2026-10-28 from the BenchBox tracker item(s): bulk-transfer-deferral-id-reference-remap. Those items stay open in BenchBox to track the dependency.",
+  "description": "PR #1544 excluded deferrals from the reassignable-PK allowlist because deferrals.id is referenced by value from places SQLite does not police: defer_work, promote_deferral and dismiss_deferral write it into events.detail as deferral_id, and promote_deferral embeds it in the promoted item's description as 'Promoted from deferral #N'. Reassigning it would not raise, it would silently re-point transferred audit rows at whatever deferral already held that id. Excluding it restores the loud abort, which is safe but leaves the original collision hazard open for deferrals specifically. Closing it needs a consistent remap: rewrite events.detail JSON and the interpolated description text alongside the new ids, in the same transaction.",
+  "sessions": [
+    {
+      "actor": "mcp:mcp:joe@joe-mac-mini.local:c8da52fc1b57c0cc013c5fe9",
+      "at": "2026-10-28T19:53:08Z",
+      "client": "mcp",
+      "op": "create",
+      "op_id": "527fc3a9568c47d5bfa631edc90b8fbf",
+      "session_id": "154f8ed817e149b1a3e1ddef318d8a18"
+    }
+  ]
+}

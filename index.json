@@ -173,6 +173,13 @@
       "status": "done",
       "title": "Bound config discovery; derive wrapper REPO_ROOT from its actual path"
     },
+    "bulk-transfer-deferral-id-remap": {
+      "claim": null,
+      "needs": [],
+      "priority": "low",
+      "status": "open",
+      "title": "Additive bulk_transfer aborts on colliding deferrals.id because the references in event payloads are not remapped"
+    },
     "cache-namespace-url-normalization": {
       "claim": null,
       "needs": [],
