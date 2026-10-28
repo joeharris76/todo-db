@@ -1,0 +1,21 @@
+{
+  "acceptance": [
+    "After the verdict lands, make pr-rerun (or the documented next step in the gate's failure message) re-runs the failed gate job, covered by a test of the selection logic",
+    "The gate's failure text names the exact command to use"
+  ],
+  "context": "Observed on PR 3577 at head f81dd929c: gate job in run 40497431237 failed with exit code 3 at 2026-10-27T11:36Z; oracle-verdict then passed; make pr-rerun (scripts/pr_rerun.py) only inspects the CI run 40497431205. Not checked whether the gate would also re-run itself on a later event (it did not before the manual rerun). Filed from session review 2026-10-27.",
+  "description": "The oracle-gate workflow's gate job fails with 'waiting for the oracle's verdict on <sha> ... rerun this check after it lands' when it starts before the verdict exists. After the verdict landed, make pr-rerun answered 'CI run <id> on <sha> succeeded; nothing to re-run' and the failed gate stayed red until the run was re-run by hand with gh run rerun <run> --failed. The gate then passed.",
+  "links": [
+    "https://github.com/BenchBox-dev/benchbox/pull/3577"
+  ],
+  "sessions": [
+    {
+      "actor": "mcp:omp-coding-agent:joe@joe-mac-mini.local:2bcf0bcbcdfd58f6eedb7eb4",
+      "at": "2026-10-28T01:09:03Z",
+      "client": "omp-coding-agent",
+      "op": "create",
+      "op_id": "fbdfa2256aef478a86856dd9efdf6854",
+      "session_id": "e8e023a71a7c4fa28bf1a3ede4ce056b"
+    }
+  ]
+}

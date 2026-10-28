@@ -607,6 +607,13 @@
       "status": "done",
       "title": "Add read-only Pi status UI without a background heartbeat"
     },
+    "pr-rerun-oracle-gate-coverage": {
+      "claim": null,
+      "needs": [],
+      "priority": "low",
+      "status": "open",
+      "title": "Make pr-rerun re-run the oracle-gate job that failed waiting for a verdict"
+    },
     "presto-cpp-1v7-sf1-stuck-operator": {
       "claim": null,
       "needs": [],
