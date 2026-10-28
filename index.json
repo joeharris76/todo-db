@@ -163,7 +163,7 @@
       "claim": null,
       "needs": [],
       "priority": "low",
-      "status": "open",
+      "status": "dropped",
       "title": "Add a way to exclude queries from a BenchBox run"
     },
     "bound-config-discovery": {
