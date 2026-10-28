@@ -224,6 +224,13 @@
       "status": "done",
       "title": "Restore CLI parser after wrapper constant removal"
     },
+    "git-backend-checkout-timeout": {
+      "claim": null,
+      "needs": [],
+      "priority": "medium",
+      "status": "open",
+      "title": "Handle git checkout timeouts in todo_db git_backend with structured error and retry"
+    },
     "git-version-hook-isolation-init": {
       "claim": null,
       "needs": [],
