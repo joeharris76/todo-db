@@ -1,10 +1,10 @@
 {
   "acceptance": [
-    "update_item with an empty string clears a non-empty optional text field and records an update operation; a test covers it.",
-    "A request that changes nothing still returns E_STATE."
+    "A test through the MCP stdio server proves update_item with an empty string clears a non-empty context and description, and records an update operation in the item's sessions",
+    "A test proves an update_item that changes nothing still returns E_STATE"
   ],
-  "context": "Imported on 2026-10-28 from the BenchBox tracker item(s): todo-db-update-cannot-clear-field-20261022. Those items stay open in BenchBox to track the dependency.\n\nSee the note on update-item-not-before-clear: store.op_update in 0.10.1 clears an empty context, so reproduce on 0.10.1 first. Other optional text fields were untested in the report.",
-  "description": "`update_item` with `context` set to an empty value on an item whose context is non-empty returns `E_STATE` `operation produced no state change`, so the field cannot be cleared. Observed 2026-10-21 on `oracle-local-b6-drop-in-repo-engine` (context set by mistake; restoring it to empty was refused). That item has since been dropped. Seen for `context`; other optional text fields untested.",
+  "context": "Imported on 2026-10-28 from the BenchBox tracker item(s): todo-db-update-cannot-clear-field-20261022. Those items stay open in BenchBox to track the dependency.\n\nSee the note on update-item-not-before-clear: store.op_update in 0.10.1 clears an empty context, so reproduce on 0.10.1 first. Other optional text fields were untested in the report.\n\nREVIEW 2026-10-28 against todo-db 0.10.1 (main d85cdf3), per the todo review checklist and review-protocol L2/L3. VERDICT: NOT REPRODUCIBLE as a server defect; kept for its valid remainder (stdio-level tests). Repro on a scratch state remote: create_item(context='CTX', description='D'); update_item(context='') ok and show_item context ''; update_item(description='') ok. Not verified: the omp MCP bridge used in the reporting session. The tool text for this behavior is delivered with update-item-append-mode-and-field-limits.",
+  "description": "The BenchBox report says update_item with an empty context on an item whose context is non-empty returns E_STATE 'operation produced no state change' and leaves the field. On todo-db 0.10.1 this does not reproduce: through the real todo-db-mcp stdio server, context=\"\" and description=\"\" both clear the field and are recorded as updates. store.op_update removes the key when given an empty string. What is missing is a test that proves it over the MCP path and for an update that changes nothing.",
   "sessions": [
     {
       "actor": "mcp:mcp:joe@joe-mac-mini.local:c8da52fc1b57c0cc013c5fe9",
@@ -13,6 +13,14 @@
       "op": "create",
       "op_id": "f4c77658a38c4566b4e5c93483c3cc02",
       "session_id": "154f8ed817e149b1a3e1ddef318d8a18"
+    },
+    {
+      "actor": "review-batch",
+      "at": "2026-10-28T20:14:49Z",
+      "client": "mcp",
+      "op": "update",
+      "op_id": "cbe4770f99eb4f1e827c086ae24e5bfe",
+      "session_id": "77ee5afa5de545319db38006dfa2f591"
     }
   ]
 }

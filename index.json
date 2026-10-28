@@ -916,7 +916,7 @@
       "needs": [],
       "priority": "low",
       "status": "open",
-      "title": "todo-db update_item cannot clear a non-empty text field"
+      "title": "Pin update_item clearing of text fields over MCP with tests"
     },
     "update-item-not-before-clear": {
       "claim": null,
