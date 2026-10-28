@@ -232,15 +232,10 @@
       "title": "Restore CLI parser after wrapper constant removal"
     },
     "git-backend-checkout-timeout": {
-      "claim": {
-        "expires_at": "2026-10-29T20:58:26Z",
-        "generation": "9df20e6949a44ef696ce97ab4207cb18",
-        "renewals": 0,
-        "worker": "mcp:omp-coding-agent:joe@joe-mac-mini.local:2bcf0bcbcdfd58f6eedb7eb4"
-      },
+      "claim": null,
       "needs": [],
       "priority": "low",
-      "status": "active",
+      "status": "done",
       "title": "Return coded errors when a local git subprocess times out"
     },
     "git-version-hook-isolation-init": {
