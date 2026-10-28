@@ -897,6 +897,13 @@
       "status": "dropped",
       "title": "Stop TPC-H Q15 and its 15_v* variants returning no row on engines that sum DOUBLE in varying order"
     },
+    "update-item-append-mode-and-field-limits": {
+      "claim": null,
+      "needs": [],
+      "priority": "low",
+      "status": "open",
+      "title": "todo-db update_item replaces the whole context field, so progress notes wipe shared guardrails"
+    },
     "update-scope-rules": {
       "claim": null,
       "needs": [],

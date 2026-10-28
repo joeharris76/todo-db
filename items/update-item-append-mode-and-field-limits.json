@@ -1,0 +1,18 @@
+{
+  "acceptance": [
+    "RUBRIC 1 append: a progress note can be added to context without resending the existing text, with a test",
+    "RUBRIC 2 docs: defer's summary limit and the done-item restriction appear in the tool schema or description"
+  ],
+  "context": "Imported on 2026-10-28 from the BenchBox tracker item(s): todo-db-context-update-replaces-shared-guardrails-20261023. Those items stay open in BenchBox to track the dependency.\n\nSource context (todo-db-context-update-replaces-shared-guardrails-20261023): NOTE 2026-10-24 (Advisor review): confirmed against the live MCP schema - update_item has plain `context?: string|null` with no append operation, and defer.summary documents no length limit. The fix belongs to the todo-db project, not BenchBox; keep as a tracking item until todo-db ships it.",
+  "description": "On 2026-10-22, updating item context with a progress note (update_item with context) replaced the field and removed the COMMON GUARDRAILS C1-C10 block from 15 batch items; they were restored by hand from the original specs. There is no append mode, and nothing warns that a large field is being replaced by a much shorter one. Related friction in the same session: defer is refused on a done item, so the order finish-then-defer silently loses the deferral; the deferral summary has an undocumented 200-character limit (not in the tool schema).\n\nCHANGE: add an append/prepend option for text fields (or a separate note operation), and document field limits and lifecycle restrictions in the tool schemas.",
+  "sessions": [
+    {
+      "actor": "mcp:mcp:joe@joe-mac-mini.local:c8da52fc1b57c0cc013c5fe9",
+      "at": "2026-10-28T19:52:46Z",
+      "client": "mcp",
+      "op": "create",
+      "op_id": "52b17d1589b44db594111b0f14ade715",
+      "session_id": "154f8ed817e149b1a3e1ddef318d8a18"
+    }
+  ]
+}
