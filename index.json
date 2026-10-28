@@ -234,9 +234,9 @@
     "git-backend-checkout-timeout": {
       "claim": null,
       "needs": [],
-      "priority": "medium",
+      "priority": "low",
       "status": "open",
-      "title": "Handle git checkout timeouts in todo_db git_backend with structured error and retry"
+      "title": "Return coded errors when a local git subprocess times out"
     },
     "git-version-hook-isolation-init": {
       "claim": null,
