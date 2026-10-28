@@ -159,6 +159,13 @@
       "status": "done",
       "title": "Ledger schema for pending tracker writes so halt/replay is executable"
     },
+    "benchbox-cli-query-exclude-option": {
+      "claim": null,
+      "needs": [],
+      "priority": "low",
+      "status": "open",
+      "title": "Add a way to exclude queries from a BenchBox run"
+    },
     "bound-config-discovery": {
       "claim": null,
       "needs": [],
