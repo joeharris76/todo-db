@@ -773,7 +773,7 @@
       "claim": null,
       "needs": [],
       "priority": "medium",
-      "status": "open",
+      "status": "dropped",
       "title": "Stop the executed SQL comparison gate failing on SQLite q19 timeouts"
     },
     "sqlglot-floor-residual-incompat": {
