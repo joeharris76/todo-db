@@ -85,6 +85,13 @@
       "status": "done",
       "title": "Build bounded agent context projections independent of CLI rendering"
     },
+    "agent-test-policy-documentation": {
+      "claim": null,
+      "needs": [],
+      "priority": "medium",
+      "status": "open",
+      "title": "Write down how agents may run tests: through make targets, one at a time, and what -n 0 skips"
+    },
     "agent-turso-claim-acceptance": {
       "claim": null,
       "needs": [
