@@ -463,7 +463,7 @@
       "needs": [],
       "priority": "medium",
       "status": "open",
-      "title": "Subagents sharing one tracker MCP server share one claim slot, so one agent's claim blocks every other agent's take"
+      "title": "Explain E_MULTIPLE_CLAIMS to agents that share one server's worker identity"
     },
     "mcp-stdio-conformance": {
       "claim": null,

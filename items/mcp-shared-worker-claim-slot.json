@@ -1,11 +1,11 @@
 {
   "acceptance": [
-    "Two agents in one Claude Code session can each hold a claim at the same time, or the tool refuses with a message naming the holding agent and how to wait",
-    "A claim taken by one agent cannot be finished or released by another agent without takeover",
-    "A test covers two agents on one server"
+    "E_MULTIPLE_CLAIMS responses (take and any other path that raises it) carry recovery steps that name the holding item, say that agents on this server share one worker identity, and give the supported ways forward: finish or release the claim, or run each concurrent agent on its own todo-db-mcp server with a distinct --actor",
+    "A test asserts the recovery text through the MCP envelope for the take path",
+    "The instructions text states the shared-identity consequence next to the E_MULTIPLE_CLAIMS line"
   ],
-  "context": "Imported on 2026-10-28 from the BenchBox tracker item(s): todo-db-mcp-shared-worker-claim-20261017. Those items stay open in BenchBox to track the dependency.\n\nSource context (todo-db-mcp-shared-worker-claim-20261017): Found 2026-10-17 during the site-split remediation; the error text is in that session's transcript. The coordinator's workaround was to retry until the shared slot was free. todo-db source: ~/Developer/todo-db (src/todo_db/service.py has the same check at the same lines).",
-  "description": "The tracker allows one live claim per worker (vendored todo_db 0.9.1, todo_db/service.py:933-943 raises E_MULTIPLE_CLAIMS). The MCP server derives the worker identity once per server process when --actor and TODO_DB_ACTOR are unset (todo_db/mcp/server.py:45,75,106). Every subagent of one Claude Code session talks to the same server, so they all act as one worker, `mcp:claude-code:joe@joe-mac-mini.local:0f148a36cca5316266af272c`.\n\nOn 2026-10-17 a site-split agent's take on site-split-50 and site-split-55 failed with E_MULTIPLE_CLAIMS at least 12 times, because unrelated agents in the same session held claims on spark-tuning-discovery-cli, spark-effective-config-preflight-capture, spark-family-session-config-velox-lakesail and tuning-render-layout-postgres-family-20261001. Those agents could finish and release each other's work, so claim ownership did not protect anything either.\n\nGive each agent its own worker identity, for example a per-call agent or session id that becomes part of the worker, or document and enforce one claim per session with a clear recovery hint naming the holder.",
+  "context": "Imported on 2026-10-28 from the BenchBox tracker item(s): todo-db-mcp-shared-worker-claim-20261017. Those items stay open in BenchBox to track the dependency.\n\nSource context (todo-db-mcp-shared-worker-claim-20261017): Found 2026-10-17 during the site-split remediation; the error text is in that session's transcript. The coordinator's workaround was to retry until the shared slot was free. todo-db source: ~/Developer/todo-db (src/todo_db/service.py has the same check at the same lines).\n\nREVIEW 2026-10-28 against todo-db 0.10.1 (main d85cdf3), per the todo review checklist and review-protocol L2/L3. VERDICT: PARTLY VALID; narrowed. Verified: service.py raises E_MULTIPLE_CLAIMS at the take and finish/renew claim checks through err(code, message), which sets no recovery. The original acceptance asked for two agents on one server to hold claims at once, and for one agent's claim to be protected from another agent without takeover. Both contradict ADR 0003 (one live claim per worker) and ADR 0006 G5 (instance-scoped worker), and are impossible without a per-agent identity on the wire; killed with that reason. The supported answer is separate servers with distinct --actor values, which this item now documents in the error.",
+  "description": "All agents that use one todo-db-mcp server share one worker identity, so one agent's live claim makes every other agent's take fail with E_MULTIPLE_CLAIMS. That identity model is deliberate (ADR 0003 section 2.3, ADR 0006 G5, and the get_instructions text 'One server instance is one logical worker'), but the error says only \"worker 'X' already holds a live claim on 'Y'; release or finish it first\" with an empty recovery list, so a subagent cannot tell that the holder is a sibling agent, not itself, or what to do. Seen as 12+ failed takes in one BenchBox session.",
   "sessions": [
     {
       "actor": "mcp:mcp:joe@joe-mac-mini.local:c8da52fc1b57c0cc013c5fe9",
@@ -14,6 +14,14 @@
       "op": "create",
       "op_id": "236cc91ac7be4d328eb2cb97034d2ffe",
       "session_id": "154f8ed817e149b1a3e1ddef318d8a18"
+    },
+    {
+      "actor": "review-batch",
+      "at": "2026-10-28T20:14:36Z",
+      "client": "mcp",
+      "op": "update",
+      "op_id": "a9a20a5e444f4c3fbe86273e7219cd2c",
+      "session_id": "77ee5afa5de545319db38006dfa2f591"
     }
   ]
 }
