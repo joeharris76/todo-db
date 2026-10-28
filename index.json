@@ -632,7 +632,7 @@
       "claim": null,
       "needs": [],
       "priority": "low",
-      "status": "open",
+      "status": "dropped",
       "title": "Tell make pr-open users how to obtain the pinned omp build when the installed one differs"
     },
     "pr-rerun-oracle-gate-coverage": {
