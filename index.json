@@ -904,6 +904,13 @@
       "status": "open",
       "title": "todo-db update_item replaces the whole context field, so progress notes wipe shared guardrails"
     },
+    "update-item-not-before-clear": {
+      "claim": null,
+      "needs": [],
+      "priority": "low",
+      "status": "open",
+      "title": "update_item with not_before set to an empty string does not clear the hold when called through the MCP bridge"
+    },
     "update-scope-rules": {
       "claim": null,
       "needs": [],
