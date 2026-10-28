@@ -89,7 +89,7 @@
       "claim": null,
       "needs": [],
       "priority": "medium",
-      "status": "open",
+      "status": "dropped",
       "title": "Write down how agents may run tests: through make targets, one at a time, and what -n 0 skips"
     },
     "agent-turso-claim-acceptance": {
