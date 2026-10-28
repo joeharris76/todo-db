@@ -836,7 +836,7 @@
       "claim": null,
       "needs": [],
       "priority": "medium",
-      "status": "open",
+      "status": "dropped",
       "title": "Keep the outer ORDER BY of TPC-Havoc 1_v8 when QUALIFY is eliminated for Presto-family engines"
     },
     "tpchavoc-live-cloud-variant-verification": {
