@@ -857,7 +857,7 @@
       "claim": null,
       "needs": [],
       "priority": "low",
-      "status": "open",
+      "status": "dropped",
       "title": "Re-run the PrestoDB TPC-Havoc variant comparison on BenchBox-generated DECIMAL data at a scale that exercises grouping"
     },
     "tpchavoc-q1-array-memory-reduction": {

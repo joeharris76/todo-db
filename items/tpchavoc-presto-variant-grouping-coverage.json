@@ -24,6 +24,14 @@
       "op": "update",
       "op_id": "2e7472e6c7cd4fcc8401ee0b99a43ade",
       "session_id": "ff30036c66154028bc2750c74b1ff723"
+    },
+    {
+      "actor": "mcp:mcp:joe@joe-mac-mini.local:111ba61bf05e8dd179fdc975",
+      "at": "2026-10-28T13:47:58Z",
+      "client": "mcp",
+      "op": "drop",
+      "op_id": "90c811d3d6af41c2a8ee5f1b677540bc",
+      "session_id": "ff30036c66154028bc2750c74b1ff723"
     }
   ]
 }
