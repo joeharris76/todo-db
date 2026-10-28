@@ -1294,6 +1294,7 @@ def op_update(
     acceptance: list[str] | tuple[str, ...] | None = None,
     links: list[str] | tuple[str, ...] | None = None,
     context: str | None = None,
+    context_append: str | None = None,
     status: str | None = None,
     batch: dict[str, Any] | None = None,
     not_before: str | None = None,
@@ -1302,6 +1303,11 @@ def op_update(
     items = snapshot.index["items"]
     if item_id not in items:
         raise TodoError(f"unknown task {item_id!r}", code=E_STATE)
+    if context_append is not None:
+        if context is not None:
+            raise TodoError("pass context or context_append, not both", code=E_STATE)
+        if not context_append.strip():
+            raise TodoError("context_append must not be empty", code=E_STATE)
     # An empty string clears the hold, as it clears the other detail fields.
     hold = normalize_not_before(not_before, now) if not_before else None
     existing_batch = snapshot.details[item_id].get("batch")
@@ -1373,6 +1379,10 @@ def op_update(
             detail["context"] = context
         else:
             detail.pop("context", None)
+        changed.append("context")
+    if context_append is not None:
+        current = detail.get("context", "")
+        detail["context"] = f"{current}\n\n{context_append}" if current else context_append
         changed.append("context")
     if not_before is not None:
         if hold is not None:

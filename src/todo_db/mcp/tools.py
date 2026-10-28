@@ -169,7 +169,11 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
 
     @server.tool(
         name="update_item",
-        description="Edit task fields or move between open and blocked.",
+        description=(
+            "Edit task fields or move between open and blocked. Text and list fields are replaced "
+            "wholesale; an empty value clears one, and not_before=\"\" clears a hold. context_append "
+            "adds a note to the end of the current context and keeps concurrent notes; not with context."
+        ),
     )
     async def update_item_tool(
         id: str,
@@ -180,6 +184,7 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
         acceptance: list[str] | None = None,
         links: list[str] | None = None,
         context: str | None = None,
+        context_append: str | None = None,
         batch: dict[str, Any] | None = None,
         status: str | None = None,
         not_before: str | None = None,
@@ -204,6 +209,8 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
             kwargs["links"] = links
         if context is not None:
             kwargs["context"] = context
+        if context_append is not None:
+            kwargs["context_append"] = context_append
         if batch is not None:
             kwargs["batch"] = batch
         if status is not None:
@@ -403,7 +410,10 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
 
     @server.tool(
         name="defer",
-        description="Record deferred work on a task without changing its lifecycle.",
+        description=(
+            "Record deferred work on a task without changing its lifecycle. summary is one line, "
+            "200 characters at most; done or dropped tasks refuse deferrals."
+        ),
     )
     async def defer_tool(
         id: str,
