@@ -1,10 +1,11 @@
 {
   "acceptance": [
-    "update_item with not_before set to an empty string clears the hold and the item is claimable immediately (test or live proof)",
-    "A documented way adds text to context or description without overwriting concurrent edits, or the replace-only behaviour is stated in the tool description"
+    "A test through the MCP stdio server proves not_before=\"\" clears a hold (item ready, take succeeds), also when context is changed in the same call, and that update_item without not_before leaves a hold untouched",
+    "The update_item tool description states that not_before=\"\" clears a hold",
+    "If an MCP client is found to drop empty strings, the finding is recorded here with the client and version"
   ],
-  "context": "Imported on 2026-10-28 from the BenchBox tracker item(s): todo-db-update-item-not-before-clear-noop-20261023, todo-db-not-before-clear-and-field-append-20261028. Those items stay open in BenchBox to track the dependency.\n\nIn todo-db 0.10.1, store.op_update clears not_before and context when given an empty string (src/todo_db/store.py, op_update), and the changelog documents not_before=\"\" as the way to clear a hold. The reports may therefore come from the MCP client bridge dropping empty strings, or from an older build. Reproduce through todo-db-mcp 0.10.1 on a scratch item before changing code. The append-mode request in the second source item is tracked as update-item-append-mode-and-field-limits.\n\nSource context (todo-db-not-before-clear-and-field-append-20261028): Seen while closing items held until 2026-11-02 after the calendar waits were waived: clearing with an empty string was accepted but the hold stayed. The note-prepend workaround reads then rewrites the whole context field.",
-  "description": "The tracker says `not_before=\"\"` clears a hold, and `take` tells callers to use it. Called through the MCP bridge in a coding-agent session on 2026-10-23, `update_item(id, not_before=\"\")` returned `E_STATE operation produced no state change` (and with a context field alongside it changed only the context), so the hold stayed. `not_before=null` was also a no-op. The only way to release the hold was to set a near-future timestamp and wait. Reproduce, then fix in todo-db (argument handling drops empty strings, or the clear path is not wired), add a regression test, and make `take`'s hint accurate.\n\nupdate_item with not_before set to an empty string does not clear a hold, so an item held to a future date cannot be released early; the only workaround is to set not_before a few seconds ahead, wait, then take. update_item also replaces text fields wholesale, so adding a note to context requires reading the field and writing it back. Both cost extra steps and risk overwriting concurrent edits.",
+  "context": "Imported on 2026-10-28 from the BenchBox tracker item(s): todo-db-update-item-not-before-clear-noop-20261023, todo-db-not-before-clear-and-field-append-20261028. Those items stay open in BenchBox to track the dependency.\n\nIn todo-db 0.10.1, store.op_update clears not_before and context when given an empty string (src/todo_db/store.py, op_update), and the changelog documents not_before=\"\" as the way to clear a hold. The reports may therefore come from the MCP client bridge dropping empty strings, or from an older build. Reproduce through todo-db-mcp 0.10.1 on a scratch item before changing code. The append-mode request in the second source item is tracked as update-item-append-mode-and-field-limits.\n\nSource context (todo-db-not-before-clear-and-field-append-20261028): Seen while closing items held until 2026-11-02 after the calendar waits were waived: clearing with an empty string was accepted but the hold stayed. The note-prepend workaround reads then rewrites the whole context field.\n\nREVIEW 2026-10-28 against todo-db 0.10.1 (main d85cdf3), per the todo review checklist and review-protocol L2/L3. VERDICT: NOT REPRODUCIBLE as a server defect; kept for its valid remainder (stdio-level proof and tool text). Repro on a scratch state remote: create_item(not_before='2099-01-01T00:00:00Z') -> take = E_NOTHING_READY; update_item(not_before='') ok, waiting_until absent, ready true; take ok. Same result with context changed in the same call. The two BenchBox items merged here: todo-db-update-item-not-before-clear-noop-20261023 and todo-db-not-before-clear-and-field-append-20261028. The append-mode half of the second is tracked in update-item-append-mode-and-field-limits. Not verified: the omp MCP bridge used in those sessions.",
+  "description": "Two BenchBox reports say update_item with not_before set to an empty string leaves a hold in place and returns E_STATE 'operation produced no state change'. On todo-db 0.10.1 this does not reproduce: through the real todo-db-mcp stdio server, not_before=\"\" clears the hold, the item becomes ready and take succeeds, including when context is changed in the same call. The service layer already has tests (tests/test_not_before.py) but the MCP stdio path does not. The reports match a client that drops empty-string arguments before they reach the server (the symptom 'only context changed' fits that), or an older build.",
   "sessions": [
     {
       "actor": "mcp:mcp:joe@joe-mac-mini.local:c8da52fc1b57c0cc013c5fe9",
@@ -13,6 +14,14 @@
       "op": "create",
       "op_id": "499ca7b029524d49bbf1941c81343558",
       "session_id": "154f8ed817e149b1a3e1ddef318d8a18"
+    },
+    {
+      "actor": "review-batch",
+      "at": "2026-10-28T20:14:46Z",
+      "client": "mcp",
+      "op": "update",
+      "op_id": "e75ef461e4674b85af6b24e8da19fdc4",
+      "session_id": "77ee5afa5de545319db38006dfa2f591"
     }
   ]
 }

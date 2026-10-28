@@ -923,7 +923,7 @@
       "needs": [],
       "priority": "low",
       "status": "open",
-      "title": "update_item with not_before set to an empty string does not clear the hold when called through the MCP bridge"
+      "title": "Pin update_item clearing of not_before over MCP with tests and tool text"
     },
     "update-scope-rules": {
       "claim": null,
