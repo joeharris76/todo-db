@@ -4,7 +4,7 @@
     "A test asserts the recovery text through the MCP envelope for the take path",
     "The instructions text states the shared-identity consequence next to the E_MULTIPLE_CLAIMS line"
   ],
-  "context": "Imported on 2026-10-28 from the BenchBox tracker item(s): todo-db-mcp-shared-worker-claim-20261017. Those items stay open in BenchBox to track the dependency.\n\nSource context (todo-db-mcp-shared-worker-claim-20261017): Found 2026-10-17 during the site-split remediation; the error text is in that session's transcript. The coordinator's workaround was to retry until the shared slot was free. todo-db source: ~/Developer/todo-db (src/todo_db/service.py has the same check at the same lines).\n\nREVIEW 2026-10-28 against todo-db 0.10.1 (main d85cdf3), per the todo review checklist and review-protocol L2/L3. VERDICT: PARTLY VALID; narrowed. Verified: service.py raises E_MULTIPLE_CLAIMS at the take and finish/renew claim checks through err(code, message), which sets no recovery. The original acceptance asked for two agents on one server to hold claims at once, and for one agent's claim to be protected from another agent without takeover. Both contradict ADR 0003 (one live claim per worker) and ADR 0006 G5 (instance-scoped worker), and are impossible without a per-agent identity on the wire; killed with that reason. The supported answer is separate servers with distinct --actor values, which this item now documents in the error.",
+  "context": "Imported on 2026-10-28 from the BenchBox tracker item(s): todo-db-mcp-shared-worker-claim-20261017. Those items stay open in BenchBox to track the dependency.\n\nSource context (todo-db-mcp-shared-worker-claim-20261017): Found 2026-10-17 during the site-split remediation; the error text is in that session's transcript. The coordinator's workaround was to retry until the shared slot was free. todo-db source: ~/Developer/todo-db (src/todo_db/service.py has the same check at the same lines).\n\nREVIEW 2026-10-28 against todo-db 0.10.1 (main d85cdf3), per the todo review checklist and review-protocol L2/L3. VERDICT: PARTLY VALID; narrowed. Verified: service.py raises E_MULTIPLE_CLAIMS at the take and finish/renew claim checks through err(code, message), which sets no recovery. The original acceptance asked for two agents on one server to hold claims at once, and for one agent's claim to be protected from another agent without takeover. Both contradict ADR 0003 (one live claim per worker) and ADR 0006 G5 (instance-scoped worker), and are impossible without a per-agent identity on the wire; killed with that reason. The supported answer is separate servers with distinct --actor values, which this item now documents in the error.\n\nDELIVERED 2026-10-28: draft PR https://github.com/joeharris76/todo-db/pull/51, stacked on PR 50 (base fix/mcp-bound-store-visibility), branch fix/multiple-claims-recovery, commit 279c23f (not merged). E_MULTIPLE_CLAIMS from take and takeover carries recovery steps (finish or release the named task; every agent on one server shares the worker identity; one server per concurrent agent with a distinct --actor). TodoError and MutationOutcome carry an optional recovery list that _mutate passes into the envelope. Instructions and CHANGELOG updated. Verification: ruff clean, pytest 269 passed before one incidental test was removed, service tests pass after, and a real stdio server showed the envelope. Killed scope, as reviewed: concurrent per-agent claims on one server (ADR 0003 2.3, ADR 0006 G5).",
   "description": "All agents that use one todo-db-mcp server share one worker identity, so one agent's live claim makes every other agent's take fail with E_MULTIPLE_CLAIMS. That identity model is deliberate (ADR 0003 section 2.3, ADR 0006 G5, and the get_instructions text 'One server instance is one logical worker'), but the error says only \"worker 'X' already holds a live claim on 'Y'; release or finish it first\" with an empty recovery list, so a subagent cannot tell that the holder is a sibling agent, not itself, or what to do. Seen as 12+ failed takes in one BenchBox session.",
   "sessions": [
     {
@@ -31,6 +31,14 @@
       "op": "take",
       "op_id": "fc17c22bb3d942d4a2b404d69bd18b68",
       "session_id": "e8e023a71a7c4fa28bf1a3ede4ce056b"
+    },
+    {
+      "actor": "note-helper",
+      "at": "2026-10-28T20:39:33Z",
+      "client": "mcp",
+      "op": "update",
+      "op_id": "ed798951f0034ce283647993e6a881c1",
+      "session_id": "3b63d58e807c41f48e8f0708ff36e46b"
     }
   ]
 }
