@@ -459,10 +459,15 @@
       "title": "MCP server package, entry point, lifespan, identity, and worker thread"
     },
     "mcp-shared-worker-claim-slot": {
-      "claim": null,
+      "claim": {
+        "expires_at": "2026-10-29T20:25:31Z",
+        "generation": "c7e060a4e84d475a8a1e23bebcd6fe1d",
+        "renewals": 0,
+        "worker": "mcp:omp-coding-agent:joe@joe-mac-mini.local:2bcf0bcbcdfd58f6eedb7eb4"
+      },
       "needs": [],
       "priority": "medium",
-      "status": "open",
+      "status": "active",
       "title": "Explain E_MULTIPLE_CLAIMS to agents that share one server's worker identity"
     },
     "mcp-stdio-conformance": {
