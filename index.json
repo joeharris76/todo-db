@@ -639,7 +639,7 @@
       "claim": null,
       "needs": [],
       "priority": "low",
-      "status": "open",
+      "status": "dropped",
       "title": "Make pr-rerun re-run the oracle-gate job that failed waiting for a verdict"
     },
     "presto-cpp-1v7-sf1-stuck-operator": {
