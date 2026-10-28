@@ -1,4 +1,8 @@
 {
+  "acceptance": [
+    "An additive bulk_transfer into a store that already holds a deferral with the same id completes, assigning new deferral ids and rewriting every stored reference to them in the same transaction: deferral_id in events.detail and the 'Promoted from deferral #N' text in promoted items' descriptions",
+    "A test with colliding deferral ids proves that no transferred audit row points at a different deferral than before, and that a failure rolls back the whole transfer"
+  ],
   "context": "Imported on 2026-10-28 from the BenchBox tracker item(s): bulk-transfer-deferral-id-reference-remap. Those items stay open in BenchBox to track the dependency.",
   "description": "PR #1544 excluded deferrals from the reassignable-PK allowlist because deferrals.id is referenced by value from places SQLite does not police: defer_work, promote_deferral and dismiss_deferral write it into events.detail as deferral_id, and promote_deferral embeds it in the promoted item's description as 'Promoted from deferral #N'. Reassigning it would not raise, it would silently re-point transferred audit rows at whatever deferral already held that id. Excluding it restores the loud abort, which is safe but leaves the original collision hazard open for deferrals specifically. Closing it needs a consistent remap: rewrite events.detail JSON and the interpolated description text alongside the new ids, in the same transaction.",
   "sessions": [
@@ -9,6 +13,14 @@
       "op": "create",
       "op_id": "527fc3a9568c47d5bfa631edc90b8fbf",
       "session_id": "154f8ed817e149b1a3e1ddef318d8a18"
+    },
+    {
+      "actor": "mcp:omp-coding-agent:joe@joe-mac-mini.local:2bcf0bcbcdfd58f6eedb7eb4",
+      "at": "2026-10-28T19:53:29Z",
+      "client": "omp-coding-agent",
+      "op": "update",
+      "op_id": "aac538bccfed4984abd6d16f9b9f9ebf",
+      "session_id": "e8e023a71a7c4fa28bf1a3ede4ce056b"
     }
   ]
 }
