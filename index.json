@@ -904,6 +904,13 @@
       "status": "open",
       "title": "todo-db update_item replaces the whole context field, so progress notes wipe shared guardrails"
     },
+    "update-item-clear-context": {
+      "claim": null,
+      "needs": [],
+      "priority": "low",
+      "status": "open",
+      "title": "todo-db update_item cannot clear a non-empty text field"
+    },
     "update-item-not-before-clear": {
       "claim": null,
       "needs": [],
