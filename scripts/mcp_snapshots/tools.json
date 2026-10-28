@@ -313,17 +313,38 @@
   },
   {
     "name": "get_instructions",
-    "description": "Return the todo-db autonomous-agent workflow protocol as Markdown. Portable fallback for the todo://instructions resource and the todo/workflow prompt.",
+    "description": "Return the todo-db autonomous-agent workflow protocol as Markdown, including the bound state store. Pass expect_store, a fragment of the repository name the work belongs to, to refuse a tracker for another project. Portable fallback for the todo://instructions resource and the todo/workflow prompt.",
     "inputSchema": {
-      "properties": {},
+      "properties": {
+        "expect_store": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expect Store"
+        }
+      },
       "title": "get_instructionsArguments",
       "type": "object"
     },
     "outputSchema": {
       "properties": {
         "result": {
-          "title": "Result",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "additionalProperties": true,
+              "type": "object"
+            }
+          ],
+          "title": "Result"
         }
       },
       "required": [

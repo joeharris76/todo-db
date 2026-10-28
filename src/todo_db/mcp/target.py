@@ -21,6 +21,19 @@ class ResolvedTarget:
     source: str
     config_path: Path | None
 
+    def source_text(self) -> str:
+        """How the target was resolved, in words an agent can read."""
+        if self.source == "flag":
+            return "launch flags (--state-remote)"
+        if self.source == "env":
+            return "environment (TODO_DB_STATE_REMOTE)"
+        label = "config file" if self.source == "config" else "discovered config file"
+        return f"{label} {self.config_path}" if self.config_path else label
+
+    def describe(self) -> str:
+        """One log line: the redacted store, how it was resolved, and the cache."""
+        return f"{self.state_ref.display} (source={self.source}, cache={self.cache_dir})"
+
 
 def _default_cache() -> Path:
     return default_cache_dir()

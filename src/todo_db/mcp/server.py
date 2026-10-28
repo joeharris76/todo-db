@@ -16,7 +16,7 @@ from dataclasses import dataclass
 
 from ..errors import TodoDBError, TodoError
 from .identity import Identity, PrincipalHolder, resolve_identity
-from .instructions import INSTRUCTIONS
+from .instructions import render_instructions
 from .target import ResolvedTarget, resolve_target
 
 LOG = logging.getLogger("todo_db.mcp")
@@ -93,7 +93,7 @@ def startup_check(target: ResolvedTarget) -> None:
     if tip is None:
         raise TodoError(
             f"state branch {target.state_ref.branch!r} does not exist on "
-            f"{target.state_ref.remote!r}; run `todo-db bootstrap` first",
+            f"{target.state_ref.display_remote!r}; run `todo-db bootstrap` first",
             code="E_STATE",
         )
 
@@ -106,13 +106,7 @@ async def _lifespan(server: "FastMCP", launch: LaunchConfig, principal: Principa
         LOG.info("principal: pending (no --actor/TODO_DB_ACTOR; derived at initialize)")
     else:
         LOG.info("principal: %s", principal.principal)
-    LOG.info(
-        "target: %s#%s (source=%s, cache=%s)",
-        launch.target.state_ref.remote,
-        launch.target.state_ref.branch,
-        launch.target.source,
-        launch.target.cache_dir,
-    )
+    LOG.info("target: %s", launch.target.describe())
     try:
         yield {"launch": launch, "identity": ident, "target": launch.target, "principal": principal}
     finally:
@@ -135,7 +129,7 @@ def build_server(launch: LaunchConfig) -> "FastMCP":  # noqa: F821
 
     server = FastMCP(
         name="todo-db",
-        instructions=INSTRUCTIONS,
+        instructions=render_instructions(launch.target, launch.identity.actor),
         lifespan=lifespan,
     )
     # FastMCP does not forward a version to the lowlevel server, so `serverInfo`
@@ -145,7 +139,7 @@ def build_server(launch: LaunchConfig) -> "FastMCP":  # noqa: F821
         server._mcp_server.version = TOOL_VERSION
     except AttributeError:  # pragma: no cover - depends on the installed SDK
         LOG.debug("MCP SDK does not expose a server version field; leaving it unset")
-    register_instructions(server, principal)
+    register_instructions(server, launch.target, principal)
     register_tools(server, launch.target, principal)
     return server
 

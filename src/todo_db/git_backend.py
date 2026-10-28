@@ -41,6 +41,7 @@ from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterator
+from urllib.parse import urlsplit, urlunsplit
 from uuid import uuid4
 
 from .errors import E_CONFLICT, E_OFFLINE, E_STATE, E_UNKNOWN, TodoError
@@ -55,6 +56,18 @@ def _brief(stderr: str, limit: int = MAX_STDERR_CHARS) -> str:
     """Bound remote stderr before it reaches a user-facing message."""
     text = " ".join(stderr.strip().split())
     return text if len(text) <= limit else text[:limit] + "…"
+
+
+def redact_remote(remote: str) -> str:
+    """Return *remote* without userinfo, query or fragment, so it is safe to print.
+
+    Only URLs with a scheme and credentials change. A path, a file URL and the
+    scp-like ``host:path`` form carry no password and are returned as given.
+    """
+    parts = urlsplit(remote)
+    if not parts.scheme or "@" not in parts.netloc:
+        return remote
+    return urlunsplit((parts.scheme, parts.netloc.rpartition("@")[2], parts.path, "", ""))
 
 
 def _check_op_id(op_id: str) -> str:
@@ -166,6 +179,15 @@ class StateRef:
     remote: str
     branch: str = STATE_BRANCH_FALLBACK
 
+    @property
+    def display_remote(self) -> str:
+        """The remote with any embedded credentials removed, for messages and logs."""
+        return redact_remote(self.remote)
+
+    @property
+    def display(self) -> str:
+        return f"{self.display_remote}#{self.branch}"
+
 
 @dataclass
 class MutationOutcome:
@@ -239,11 +261,11 @@ def ls_remote_tip(ref: StateRef) -> str | None:
         proc = _git(["ls-remote", ref.remote, ref.branch])
     except subprocess.TimeoutExpired as exc:
         raise TodoError(
-            f"remote {ref.remote!r} did not answer within {GIT_TIMEOUT_S}s", code=E_OFFLINE,
+            f"remote {ref.display_remote!r} did not answer within {GIT_TIMEOUT_S}s", code=E_OFFLINE,
         ) from exc
     if proc.returncode != 0:
         raise TodoError(
-            f"remote {ref.remote!r} unreachable or not permitted: {_brief(proc.stderr)}",
+            f"remote {ref.display_remote!r} unreachable or not permitted: {_brief(proc.stderr)}",
             code=E_OFFLINE,
         )
     line = proc.stdout.strip()
@@ -383,7 +405,7 @@ def reconcile(ref: StateRef, op_id: str, *, cache_dir: str | Path | None = None)
     _check_op_id(op_id)
     found = _reconcile_best_effort(ref, op_id, cache_dir)
     if found is None:
-        return ReconcileResult(state="unknown", detail=f"remote {ref.remote!r} unreachable")
+        return ReconcileResult(state="unknown", detail=f"remote {ref.display_remote!r} unreachable")
     return found
 
 
@@ -668,7 +690,7 @@ def _offline_cached(store: Store, ref: StateRef, cache_dir: str | Path) -> ReadO
             if attempt == 2:
                 raise
     raise TodoError(
-        f"remote {ref.remote!r} unreachable and no cached revision "
+        f"remote {ref.display_remote!r} unreachable and no cached revision "
         "for this state branch is available",
         code=E_OFFLINE,
     )
@@ -735,11 +757,11 @@ def _fetch_for_history(store: Store, ref: StateRef) -> str:
             if fetch.returncode != 0 or tip is None:
                 if _branch_missing(fetch.stderr):
                     raise _missing_branch_error(ref)
-                raise TodoError(f"remote {ref.remote!r} unreachable: {_brief(fetch.stderr)}", code=E_OFFLINE)
+                raise TodoError(f"remote {ref.display_remote!r} unreachable: {_brief(fetch.stderr)}", code=E_OFFLINE)
             store.advance_tip(tip)
             return tip
     except subprocess.TimeoutExpired as exc:
-        raise TodoError(f"remote {ref.remote!r} did not answer within {GIT_TIMEOUT_S}s", code=E_OFFLINE) from exc
+        raise TodoError(f"remote {ref.display_remote!r} did not answer within {GIT_TIMEOUT_S}s", code=E_OFFLINE) from exc
 
 
 class RevisionNotFound(TodoError):
@@ -760,7 +782,7 @@ def read_rev(ref: StateRef, rev: str, *, cache_dir: str | Path | None = None) ->
         with _store_errors(), store.using():
             tip = _fetch_for_history(store, ref)
             if not store.has_commit(rev) or not store.is_ancestor(rev, tip):
-                raise RevisionNotFound(f"revision {rev!r} not found on {ref.remote!r}", code=E_STATE)
+                raise RevisionNotFound(f"revision {rev!r} not found on {ref.display_remote!r}", code=E_STATE)
             return store.load(rev)[0]
     finally:
         store.maybe_maintain()
