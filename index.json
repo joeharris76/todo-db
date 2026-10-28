@@ -912,10 +912,15 @@
       "title": "todo-db update_item replaces the whole context field, so progress notes wipe shared guardrails"
     },
     "update-item-clear-context": {
-      "claim": null,
+      "claim": {
+        "expires_at": "2026-10-29T20:57:43Z",
+        "generation": "201462ecc7ed4dcdac869d4261959ad9",
+        "renewals": 0,
+        "worker": "mcp:omp-coding-agent:joe@joe-mac-mini.local:2bcf0bcbcdfd58f6eedb7eb4"
+      },
       "needs": [],
       "priority": "low",
-      "status": "open",
+      "status": "active",
       "title": "Pin update_item clearing of text fields over MCP with tests"
     },
     "update-item-not-before-clear": {
