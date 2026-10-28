@@ -4,7 +4,7 @@
     "1_v7 runs on live BigQuery and matches the canonical Q1; the CLOUD_TPCHAVOC_SKIPS entry is removed or its reason updated with the engine error",
     "Every variant that cannot run is listed with the engine error text"
   ],
-  "context": "BLOCKED on owner-provided credentials, a cost cap and explicit approval for live cloud runs (repo policy). Not run by this effort: owner chose local PrestoDB Java and Presto C++ only. Harness to reuse: _project/scripts/tpchavoc_presto_variant_check.py (PR 3577) speaks the Presto REST protocol only, so Athena and BigQuery need their own runner. Created at owner request 2026-10-27.",
+  "context": "BLOCKED on owner-provided credentials, a cost cap and explicit approval for live cloud runs (repo policy). Not run by this effort: owner chose local PrestoDB Java and Presto C++ only. Harness to reuse: _project/scripts/tpchavoc_presto_variant_check.py (PR 3577) speaks the Presto REST protocol only, so Athena and BigQuery need their own runner. Created at owner request 2026-10-27.\n\nDROPPED 2026-10-28: this BenchBox item was filed in the todo-db tracker by mistake. The live record is the item with the same id in the BenchBox-dev/BenchBox tracker.",
   "description": "No committed evidence shows the Presto-family rewrites running on live Athena, or the BigQuery rewrites running on live BigQuery; Athena rests on its Trino dialect mapping and BigQuery on DuckDB round-trips. The BigQuery 1_v7 entry in CLOUD_TPCHAVOC_SKIPS looks stale since the GENERATE_ARRAY rewrite in develop #3326 and may only be lifted after a live BigQuery result.",
   "links": [
     "https://github.com/BenchBox-dev/benchbox/pull/3577"
@@ -25,6 +25,14 @@
       "op": "update",
       "op_id": "7334fb85616943f59efd770184e5394d",
       "session_id": "e8e023a71a7c4fa28bf1a3ede4ce056b"
+    },
+    {
+      "actor": "mcp:mcp:joe@joe-mac-mini.local:111ba61bf05e8dd179fdc975",
+      "at": "2026-10-28T13:47:52Z",
+      "client": "mcp",
+      "op": "update",
+      "op_id": "f0afa98347a246e697d8a81fa5746ebc",
+      "session_id": "ff30036c66154028bc2750c74b1ff723"
     }
   ]
 }
