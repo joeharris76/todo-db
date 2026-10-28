@@ -3,7 +3,7 @@
     "An additive bulk_transfer into a store that already holds a deferral with the same id completes, assigning new deferral ids and rewriting every stored reference to them in the same transaction: deferral_id in events.detail and the 'Promoted from deferral #N' text in promoted items' descriptions",
     "A test with colliding deferral ids proves that no transferred audit row points at a different deferral than before, and that a failure rolls back the whole transfer"
   ],
-  "context": "Imported on 2026-10-28 from the BenchBox tracker item(s): bulk-transfer-deferral-id-reference-remap. Those items stay open in BenchBox to track the dependency.",
+  "context": "Imported on 2026-10-28 from the BenchBox tracker item(s): bulk-transfer-deferral-id-reference-remap. Those items stay open in BenchBox to track the dependency.\n\nREVIEW 2026-10-28 against todo-db 0.10.1 (main d85cdf3), per the todo review checklist and review-protocol L2/L3. VERDICT: OBSOLETE, not required. bulk_transfer, the SQLite events table (events.detail) and cross-database deferrals.id collisions belong to the pre-0.7 SQLite/Turso runtime (README 'Migration from 0.6.x'; CHANGELOG 0.7.0 replaced that runtime). In 0.10.1 deferrals live inside each item's detail with a per-item id from store._next_deferral_id, there is no transfer verb, and a grep of src, tests and docs finds no bulk transfer code. Nothing to implement. Closing it is a drop, which the todo skill reserves for a human; marked blocked until the owner decides, so it stays out of the ready queue.",
   "description": "PR #1544 excluded deferrals from the reassignable-PK allowlist because deferrals.id is referenced by value from places SQLite does not police: defer_work, promote_deferral and dismiss_deferral write it into events.detail as deferral_id, and promote_deferral embeds it in the promoted item's description as 'Promoted from deferral #N'. Reassigning it would not raise, it would silently re-point transferred audit rows at whatever deferral already held that id. Excluding it restores the loud abort, which is safe but leaves the original collision hazard open for deferrals specifically. Closing it needs a consistent remap: rewrite events.detail JSON and the interpolated description text alongside the new ids, in the same transaction.",
   "sessions": [
     {
@@ -21,6 +21,14 @@
       "op": "update",
       "op_id": "aac538bccfed4984abd6d16f9b9f9ebf",
       "session_id": "e8e023a71a7c4fa28bf1a3ede4ce056b"
+    },
+    {
+      "actor": "review-batch",
+      "at": "2026-10-28T20:14:53Z",
+      "client": "mcp",
+      "op": "update",
+      "op_id": "e5d544d080f740ee9515bb94dc864be3",
+      "session_id": "77ee5afa5de545319db38006dfa2f591"
     }
   ]
 }
