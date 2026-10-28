@@ -89,6 +89,20 @@ def err(code: str, message: str, recovery: list[str] | None = None, kind: str | 
     }
 
 
+def _multiple_claims(worker: str, held: str) -> TodoError:
+    """The refusal for a worker that already holds a live claim on another task."""
+    return TodoError(
+        f"worker {worker!r} already holds a live claim on {held!r}; release or finish it first",
+        code=E_MULTIPLE_CLAIMS,
+        recovery=[
+            f"finish or release {held!r} with the generation its take returned",
+            "every agent on one todo-db-mcp server shares this worker identity, so a claim held by a "
+            "sibling agent blocks this one",
+            "to claim concurrently, run each agent on its own todo-db-mcp server with a distinct --actor",
+        ],
+    )
+
+
 def _fits(envelope: dict[str, Any]) -> bool:
     return len(_wire(envelope).encode("utf-8")) <= MAX_BYTES
 
@@ -624,7 +638,7 @@ class TrackerService:
                 session=self.session_id, cache_dir=self.cache_dir,
             )
         except TodoError as exc:
-            return err(exc.code or E_STATE, str(exc))
+            return err(exc.code or E_STATE, str(exc), recovery=exc.recovery)
         if result.ok:
             ack = {"id": result.ack.get("id"), "rev": result.sha, **{k: v for k, v in result.ack.items() if k != "id"}}
             # Section continuations minted pre-commit learn their revision
@@ -652,7 +666,7 @@ class TrackerService:
             )
         if result.outcome == "offline":
             return err(E_OFFLINE, result.error or "remote unreachable", recovery=["retry when the remote is reachable"])
-        return err(result.code or E_STATE, result.error or "mutation failed")
+        return err(result.code or E_STATE, result.error or "mutation failed", recovery=result.recovery or None)
 
     def _held_claim(self, snap: S.Snapshot, now: datetime) -> str | None:
         for item_id, entry in snap.index["items"].items():
@@ -937,10 +951,7 @@ class TrackerService:
             now = datetime.now(timezone.utc)
             held = self._held_claim(snap, now)
             if held is not None and held != item_id:
-                raise TodoError(
-                    f"worker {worker!r} already holds a live claim on {held!r}; release or finish it first",
-                    code=E_MULTIPLE_CLAIMS,
-                )
+                raise _multiple_claims(worker, held)
             self._check_take_readiness(snap, item_id, now)
             took = S.op_take(snap, item_id, worker, ttl_hours=self.ttl_hours)
             self._record_session(
@@ -1040,10 +1051,7 @@ class TrackerService:
             now = datetime.now(timezone.utc)
             held = self._held_claim(snap, now)
             if held is not None and held != item_id:
-                raise TodoError(
-                    f"worker {worker!r} already holds a live claim on {held!r}; release or finish it first",
-                    code=E_MULTIPLE_CLAIMS,
-                )
+                raise _multiple_claims(worker, held)
             if item_id not in snap.index["items"]:
                 raise TodoError(f"unknown task {item_id!r}", code=E_STATE)
             current = snap.index["items"][item_id].get("claim")

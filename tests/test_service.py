@@ -258,6 +258,7 @@ def test_takeover_refuses_without_session_bad_holder_and_owned_claims(tmp_path: 
     assert mine["ok"], mine
     busy = taker.takeover("x1", "victim", "dead session")
     assert not busy["ok"] and busy["code"] == "E_MULTIPLE_CLAIMS"
+    assert any("'mine'" in step for step in busy["recovery"])
     assert taker.release("mine", mine["data"]["claim"]["generation"])["ok"]
     assert taker.takeover("x1", "victim", "dead session")["ok"]
 
@@ -524,3 +525,23 @@ def test_empty_page_with_remaining_items_is_unacceptable(tmp_path: Path) -> None
             break
     assert len(seen) == 10
     assert offset == 0
+
+
+def test_multiple_claims_refusal_tells_a_sibling_agent_what_to_do(tmp_path: Path) -> None:
+    svc = _svc(tmp_path)
+    assert svc.create_item("held", "Held")["ok"]
+    assert svc.create_item("other", "Other")["ok"]
+    held = svc.take("held")
+    assert held["ok"], held
+
+    refused = svc.take("other")
+
+    assert not refused["ok"]
+    assert refused["code"] == "E_MULTIPLE_CLAIMS"
+    assert refused["kind"] == "gate"
+    assert "'held'" in refused["error"]
+    steps = " ".join(refused["recovery"])
+    assert "'held'" in steps
+    assert "--actor" in steps
+    assert svc.release("held", held["data"]["claim"]["generation"])["ok"]
+    assert svc.take("other")["ok"]

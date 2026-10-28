@@ -4,9 +4,10 @@
 class TodoDBError(Exception):
     """Base class for expected tracker errors."""
 
-    def __init__(self, message: str, *, code: str | None = None) -> None:
+    def __init__(self, message: str, *, code: str | None = None, recovery: list[str] | None = None) -> None:
         super().__init__(message)
         self.code = code
+        self.recovery = list(recovery or [])
 
 
 class TodoError(TodoDBError):
