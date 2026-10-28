@@ -646,7 +646,7 @@
       "claim": null,
       "needs": [],
       "priority": "low",
-      "status": "open",
+      "status": "dropped",
       "title": "Find why TPC-Havoc 1_v7 hangs on a Presto C++ worker at SF1 once the REDUCE cap is raised"
     },
     "provider-capability-provenance": {
