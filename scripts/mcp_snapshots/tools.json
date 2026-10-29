@@ -175,7 +175,7 @@
   },
   {
     "name": "defer",
-    "description": "Record deferred work on a task without changing its lifecycle.",
+    "description": "Record deferred work on a task without changing its lifecycle. summary is one line, 200 characters at most; done or dropped tasks refuse deferrals.",
     "inputSchema": {
       "properties": {
         "id": {
@@ -884,7 +884,7 @@
   },
   {
     "name": "update_item",
-    "description": "Edit task fields or move between open and blocked.",
+    "description": "Edit task fields or move between open and blocked. Text and list fields are replaced wholesale; an empty value clears one, and not_before=\"\" clears a hold. context_append adds a note to the end of the current context and keeps concurrent notes; not with context.",
     "inputSchema": {
       "properties": {
         "id": {
@@ -983,6 +983,18 @@
           ],
           "default": null,
           "title": "Context"
+        },
+        "context_append": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Context Append"
         },
         "batch": {
           "anyOf": [

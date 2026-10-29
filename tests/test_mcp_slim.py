@@ -401,7 +401,10 @@ def test_startup_schema_cost_is_small(tmp_path: Path) -> None:
             # takeover tool (3-parameter schema plus one guidance line),
             # then for the four deferral verbs (list/defer/promote/dismiss
             # plus the finish-gate guidance): deliberate, reviewed surface,
-            # still far below the old count.
-            assert tokens <= 4600, tokens
+            # still far below the old count. Bumped to 4,700 for the
+            # expect_store check on get_instructions, the E_MULTIPLE_CLAIMS
+            # guidance, and update_item's context_append with the field
+            # semantics its description now states (4,440 before, 4,670 now).
+            assert tokens <= 4700, tokens
 
     anyio.run(go)

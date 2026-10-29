@@ -50,7 +50,9 @@ acknowledgement; lists return brief rows (id/title/priority/status).
 (open/blocked moves only; closing goes through finish/drop). Batch metadata
 is explicit, immutable after assignment, and never inferred from an ordinary
 dependency. A prepared member cannot be dropped while its batch is active;
-complete or abort the batch instead.
+complete or abort the batch instead. Text fields are replaced wholesale: add a
+note with `context_append`, clear a field with an empty value. `defer`
+summaries are one line, 200 characters at most; terminal tasks refuse them.
 
 `defer` records deferred work on a task without changing its status;
 `list_deferrals` reads the queue (open by default, `all` for every

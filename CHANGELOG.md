@@ -16,6 +16,11 @@ adheres to [Semantic Versioning](https://semver.org/).
   `expect_store`; a store that does not contain it, ignoring case, is refused
   with a `gate`-kind `E_STATE` error, so a server started in the wrong
   directory is caught before the first write.
+- `update_item` accepts `context_append`. The text is added to the end of the
+  current context at the moment the write lands, separated by a blank line,
+  so a progress note no longer needs the existing text resent and a
+  concurrent note is not lost. It cannot be combined with `context` or be
+  empty.
 
 ### Changed
 
@@ -25,6 +30,11 @@ adheres to [Semantic Versioning](https://semver.org/).
   agent on its own server with a distinct `--actor`. `TodoError` and
   `MutationOutcome` carry an optional `recovery` list so other gates can name
   next steps the same way.
+- The `update_item` and `defer` tool descriptions state what the tools do
+  with their fields: text and list fields are replaced wholesale, an empty
+  string or list clears one, `not_before=""` clears a hold, a `defer`
+  summary is one line of at most 200 characters, and done or dropped tasks
+  refuse deferrals.
 
 ### Security
 
