@@ -88,6 +88,8 @@ revision.
 - `E_OPEN_DEFERRALS` -- open deferrals block finish. Promote or dismiss
   the named ids, then retry.
 - `E_MULTIPLE_CLAIMS` -- you already hold a claim. Finish or release it.
+  Every agent on one server shares that one claim slot; for concurrent
+  agents run one server per agent with a distinct --actor.
 - `E_CLAIM_STALE` -- wrong generation or another holder. Show and retry.
 - `E_CONFLICT` -- someone changed the task first. Re-read, re-evaluate.
 - `E_CURSOR_STALE` -- state moved under your pages. Restart listing.

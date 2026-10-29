@@ -281,6 +281,7 @@ def test_restart_with_same_session_re_adopts_and_stales_old_generation(tmp_path:
             assert new_generation != old_generation
             second_claim = _payload(await s2.call_tool("take", {"id": "other"}))
             assert not second_claim["ok"] and second_claim["code"] == "E_MULTIPLE_CLAIMS"
+            assert any("--actor" in step for step in second_claim["recovery"])
 
         async with connect(server1, client_info=same_client) as s1:
             stale = _payload(await s1.call_tool("renew", {"id": "resume", "generation": old_generation}))

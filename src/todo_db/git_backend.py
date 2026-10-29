@@ -198,6 +198,7 @@ class MutationOutcome:
     ack: dict[str, Any] = field(default_factory=dict)
     code: str | None = None
     error: str | None = None
+    recovery: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -546,7 +547,9 @@ def _mutate_once(
             # retryable transport error. Never overwrite the newer state.
             code = exc.code or E_STATE
             outcome = "conflict" if code in (E_CONFLICT, "E_CLAIM_STALE") else "error"
-            return MutationOutcome(ok=False, outcome=outcome, op_id=op_id, code=code, error=str(exc))
+            return MutationOutcome(
+                ok=False, outcome=outcome, op_id=op_id, code=code, error=str(exc), recovery=list(exc.recovery),
+            )
         try:
             validate_snapshot(snapshot.index, snapshot.details)
         except TodoError as exc:

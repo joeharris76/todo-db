@@ -17,6 +17,15 @@ adheres to [Semantic Versioning](https://semver.org/).
   with a `gate`-kind `E_STATE` error, so a server started in the wrong
   directory is caught before the first write.
 
+### Changed
+
+- An `E_MULTIPLE_CLAIMS` refusal now carries `recovery` steps: finish or
+  release the claim it names, and, because every agent on one
+  `todo-db-mcp` server shares one worker identity, run each concurrent
+  agent on its own server with a distinct `--actor`. `TodoError` and
+  `MutationOutcome` carry an optional `recovery` list so other gates can name
+  next steps the same way.
+
 ### Security
 
 - A state remote URL that embeds a user or token is shown without them in the
