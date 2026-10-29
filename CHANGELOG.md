@@ -36,6 +36,16 @@ adheres to [Semantic Versioning](https://semver.org/).
   summary is one line of at most 200 characters, and done or dropped tasks
   refuse deferrals.
 
+### Fixed
+
+- A local git command that times out no longer escapes as a raw
+  `subprocess.TimeoutExpired`. Reads and writes return an `E_STATE` error
+  that names the command and says nothing was changed; a write that times out
+  after its push started returns `E_UNKNOWN` with the operation ID to
+  reconcile, and the write stands if the push landed. A timeout does not
+  rebuild the local object store. Fetch, push and `ls-remote` timeouts keep
+  their existing `E_OFFLINE` and `E_UNKNOWN` handling.
+
 ### Security
 
 - A state remote URL that embeds a user or token is shown without them in the
