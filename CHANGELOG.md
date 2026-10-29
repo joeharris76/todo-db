@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-28
+
 ### Added
 
 - The MCP server reports the tracker it is bound to. The `initialize`
@@ -13,9 +15,10 @@ adheres to [Semantic Versioning](https://semver.org/).
   the `todo/workflow` prompt start with a "Bound store" section naming the
   state remote without credentials, the branch, how the target was resolved
   and the worker identity. `get_instructions` takes an optional
-  `expect_store`; a store that does not contain it, ignoring case, is refused
-  with a `gate`-kind `E_STATE` error, so a server started in the wrong
-  directory is caught before the first write.
+  `expect_store`; a store whose remote does not contain it, ignoring case, is
+  refused with a `gate`-kind `E_STATE` error, so a server started in the wrong
+  directory is caught before the first write. The branch name is not
+  searched, since every store's default branch is `todo-state`.
 - `update_item` accepts `context_append`. The text is added to the end of the
   current context at the moment the write lands, separated by a blank line,
   so a progress note no longer needs the existing text resent and a

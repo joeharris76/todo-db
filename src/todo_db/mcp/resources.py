@@ -41,12 +41,16 @@ def _client_info(ctx: Context | None):
 
 
 def _check_expected_store(target: ResolvedTarget, expected: str) -> dict[str, Any] | None:
-    """None when *expected* occurs, ignoring case, in the redacted remote#branch."""
+    """None when *expected* occurs, ignoring case, in the redacted remote.
+
+    The branch is not searched: every store's default branch is ``todo-state``,
+    so a fragment such as ``todo`` would otherwise match a tracker for any project.
+    """
     needle = expected.strip().lower()
     if not needle:
         return err(E_STATE, "expect_store must not be empty")
     actual = target.state_ref.display
-    if needle in actual.lower():
+    if needle in target.state_ref.display_remote.lower():
         return None
     return err(
         E_STATE,
