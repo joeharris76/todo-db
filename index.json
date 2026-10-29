@@ -177,7 +177,7 @@
       "claim": null,
       "needs": [],
       "priority": "low",
-      "status": "blocked",
+      "status": "dropped",
       "title": "Additive bulk_transfer aborts on colliding deferrals.id because the references in event payloads are not remapped"
     },
     "cache-namespace-url-normalization": {

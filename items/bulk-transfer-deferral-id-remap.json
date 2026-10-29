@@ -29,6 +29,14 @@
       "op": "update",
       "op_id": "e5d544d080f740ee9515bb94dc864be3",
       "session_id": "77ee5afa5de545319db38006dfa2f591"
+    },
+    {
+      "actor": "mcp:omp-coding-agent:joe@joe-mac-mini.local:2bcf0bcbcdfd58f6eedb7eb4",
+      "at": "2026-10-29T01:59:59Z",
+      "client": "omp-coding-agent",
+      "op": "drop",
+      "op_id": "760796fcd36e4f00acec56562adc4323",
+      "session_id": "e8e023a71a7c4fa28bf1a3ede4ce056b"
     }
   ]
 }
