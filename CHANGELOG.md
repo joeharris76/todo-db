@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-28
+
 ### Added
 
 - The MCP server reports the tracker it is bound to. The `initialize`
