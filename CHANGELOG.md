@@ -6,6 +6,23 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- The MCP server reports the tracker it is bound to. The `initialize`
+  instructions, `get_instructions`, the `todo://instructions` resource and
+  the `todo/workflow` prompt start with a "Bound store" section naming the
+  state remote without credentials, the branch, how the target was resolved
+  and the worker identity. `get_instructions` takes an optional
+  `expect_store`; a store that does not contain it, ignoring case, is refused
+  with a `gate`-kind `E_STATE` error, so a server started in the wrong
+  directory is caught before the first write.
+
+### Security
+
+- A state remote URL that embeds a user or token is shown without them in the
+  server's startup log, in unreachable-remote and missing-branch errors, and in
+  `todo-db bootstrap` output.
+
 ## [0.10.1] - 2026-10-18
 
 ### Fixed

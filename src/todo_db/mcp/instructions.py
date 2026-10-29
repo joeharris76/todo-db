@@ -6,6 +6,8 @@ codes; it does not inject guides, task bodies, or the index.
 
 from __future__ import annotations
 
+from .target import ResolvedTarget
+
 INSTRUCTIONS = """\
 # todo-db agent workflow
 
@@ -100,3 +102,30 @@ server, even for clients with the same name. Use a stable, unique --actor for
 restart continuity and do not run that actor concurrently. Claims are
 cooperative, not access control.
 """
+
+_STORE_ANCHOR = "\n## The loop\n"
+
+
+def render_instructions(target: ResolvedTarget | None, worker: str | None = None) -> str:
+    """The workflow text with a 'Bound store' section naming the tracker in use.
+
+    The state remote is shown without credentials. *worker* is the principal
+    when it is already known; before the first tool call it is still pending.
+    """
+    if target is None:
+        return INSTRUCTIONS
+    section = (
+        "## Bound store\n\n"
+        f"Remote: {target.state_ref.display_remote}\n"
+        f"Branch: {target.state_ref.branch}\n"
+        f"Resolved from: {target.source_text()}\n"
+        f"Worker: {worker or 'pending (set on the first tool call)'}\n\n"
+        "Every write goes to this store. Before the first write, confirm it is the tracker for\n"
+        "the project you are working on: pass that project's repository name as `expect_store`\n"
+        "to `get_instructions`. A mismatch is refused; stop, then restart the server with the\n"
+        "project's `--config` or from the project directory.\n"
+    )
+    head, found, tail = INSTRUCTIONS.partition(_STORE_ANCHOR)
+    if not found:
+        return f"{INSTRUCTIONS}\n{section}"
+    return f"{head}\n{section}{found}{tail}"

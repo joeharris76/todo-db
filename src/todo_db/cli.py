@@ -114,7 +114,7 @@ def cmd_bootstrap(args: argparse.Namespace) -> int:
             json.dumps({"state_remote": ref.remote, "state_branch": ref.branch}, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
-    _emit({"rev": sha, "remote": ref.remote, "branch": ref.branch})
+    _emit({"rev": sha, "remote": ref.display_remote, "branch": ref.branch})
     return EXIT_OK
 
 

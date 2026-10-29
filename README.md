@@ -168,6 +168,17 @@ hard error. The state branch shares its repository's access and
 visibility — never publish credentials to it and never assume a separate
 branch is private.
 
+The MCP server resolves its store once, at launch, from the working directory
+it was started in unless flags or environment variables decide it, so a
+server started in the wrong directory writes to the wrong tracker. Its
+instructions (the `initialize` handshake, `get_instructions`, the
+`todo://instructions` resource and the `todo/workflow` prompt) therefore
+begin with a "Bound store" section: the state remote without credentials,
+the branch, how the target was resolved, and the worker identity. Pass the
+project's repository name as `expect_store` to `get_instructions` on the
+first call; a store that does not contain it is refused with a `gate`-kind
+`E_STATE` error and nothing is written.
+
 ## Data safety
 
 - The remote state branch is authoritative. Mutations fetch the accepted
