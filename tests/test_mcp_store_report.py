@@ -140,7 +140,7 @@ def test_get_instructions_resource_and_prompt_report_the_store(tmp_path: Path) -
 
 def test_expect_store_accepts_a_fragment_ignoring_case(tmp_path: Path) -> None:
     async def scenario(server, session) -> None:
-        for fragment in ("benchbox-state", "BENCHBOX-STATE.git#todo-state", "  BenchBox  "):
+        for fragment in ("benchbox-state", "BENCHBOX-STATE.git", "  BenchBox  "):
             outcome = _result(await session.call_tool("get_instructions", {"expect_store": fragment}))
             assert isinstance(outcome, str), outcome
             assert "## Bound store" in outcome
@@ -159,6 +159,16 @@ def test_expect_store_refuses_another_project_with_a_gate_error(tmp_path: Path) 
         assert "BenchBox-state.git" in outcome["error"]
         assert "'todo-db'" in outcome["error"]
         assert outcome["recovery"]
+
+    _run(tmp_path, scenario)
+
+
+def test_expect_store_does_not_match_the_branch_name(tmp_path: Path) -> None:
+    async def scenario(server, session) -> None:
+        for fragment in ("todo", "todo-state", "git#todo-state"):
+            outcome = _result(await session.call_tool("get_instructions", {"expect_store": fragment}))
+            assert isinstance(outcome, dict), fragment
+            assert outcome["kind"] == "gate", outcome
 
     _run(tmp_path, scenario)
 
