@@ -21,6 +21,8 @@ from .target import ResolvedTarget, resolve_target
 
 LOG = logging.getLogger("todo_db.mcp")
 
+STARTUP_PROBE_TIMEOUT_S = 10
+
 _INSTALL_HINT = "the mcp extra is required: install todo-db with the [mcp] extra"
 _LOG_LEVELS = ("debug", "info", "warning", "error")
 
@@ -77,18 +79,30 @@ def resolve_launch_config(args: argparse.Namespace) -> LaunchConfig:
 
 
 def startup_check(target: ResolvedTarget) -> None:
-    """Verify the state remote is reachable and the branch exists.
+    """Verify the state branch exists, tolerating an unreachable remote.
 
     Read-only: resolves the accepted tip and never bootstraps, migrates,
     or writes. A missing branch is a bootstrap step a human runs from the
-    CLI, not something the server improvises.
+    CLI, not something the server improvises. With a cached revision for
+    this state branch an unreachable remote only logs a warning (probed
+    with a short timeout) and reads are served stale; without one the
+    server fails with the full timeout.
     """
 
-    from ..git_backend import ls_remote_tip
+    from ..git_backend import GIT_TIMEOUT_S, cached_revision, ls_remote_tip
 
+    cached = cached_revision(target.state_ref, target.cache_dir)
+    timeout = STARTUP_PROBE_TIMEOUT_S if cached is not None else GIT_TIMEOUT_S
     try:
-        tip = ls_remote_tip(target.state_ref)
+        tip = ls_remote_tip(target.state_ref, timeout=timeout)
     except TodoDBError as exc:
+        if cached is not None and getattr(exc, "code", None) == "E_OFFLINE":
+            LOG.warning(
+                "state remote unreachable (%s); starting offline from cached revision %s, "
+                "reads are stale and mutations fail until the remote is reachable",
+                exc, cached,
+            )
+            return
         raise TodoError(f"state remote unreachable: {exc}", code="E_OFFLINE") from exc
     if tip is None:
         raise TodoError(

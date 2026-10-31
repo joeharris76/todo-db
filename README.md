@@ -192,6 +192,11 @@ first call; a store that does not contain it is refused with a `gate`-kind
   the change; an undetermined outcome is reported as unknown/retryable.
 - Offline reads may serve a cached revision marked stale. Offline
   mutations fail rather than succeeding locally.
+- `todo-db-mcp` starts offline from a cached revision when the state remote
+  is unreachable (probing it for at most 10 seconds) and logs a warning;
+  `show_item`, `list_items` and `list_deferrals` then report `stale` with
+  `cached_rev`. With no cached revision for the state branch it fails at
+  startup with the unreachable error.
 - The local cache is a Git object store per state branch, fetched
   incrementally and repacked in the background, so it grows by about the
   packed size of each commit rather than a full snapshot per revision

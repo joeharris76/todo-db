@@ -256,13 +256,13 @@ def _classify_remote_failure(stderr: str) -> str:
     return "rejected"
 
 
-def ls_remote_tip(ref: StateRef) -> str | None:
+def ls_remote_tip(ref: StateRef, timeout: int = GIT_TIMEOUT_S) -> str | None:
     """Return the accepted tip SHA, or None when the branch does not exist."""
     try:
-        proc = _git(["ls-remote", ref.remote, ref.branch])
+        proc = _git(["ls-remote", ref.remote, ref.branch], timeout=timeout)
     except subprocess.TimeoutExpired as exc:
         raise TodoError(
-            f"remote {ref.display_remote!r} did not answer within {GIT_TIMEOUT_S}s", code=E_OFFLINE,
+            f"remote {ref.display_remote!r} did not answer within {timeout}s", code=E_OFFLINE,
         ) from exc
     if proc.returncode != 0:
         raise TodoError(
@@ -734,6 +734,14 @@ def _offline_cached(store: Store, ref: StateRef, cache_dir: str | Path) -> ReadO
         "for this state branch is available",
         code=E_OFFLINE,
     )
+
+
+def cached_revision(ref: StateRef, cache_dir: str | Path) -> str | None:
+    """The revision an offline read of *ref* would serve, or None without a cache."""
+    try:
+        return _offline_cached(_store(ref, cache_dir), ref, cache_dir).rev
+    except TodoError:
+        return None
 
 
 def read(ref: StateRef, cache_dir: str | Path) -> ReadOutcome:
