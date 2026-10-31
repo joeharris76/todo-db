@@ -93,6 +93,7 @@ dependencies remain done-only.
 | **Status** | `open`, `active`, `blocked`, `done`, or `dropped`. Only `active` holds a live claim; `done`/`dropped` carry none. |
 | **Claim** | A cooperative hold: worker identity, expiry, and a unique generation. Ownership plus generation checks protect renew, release, and finish from stale writers. |
 | **Generation** | The token proving you hold the claim; returned by `take`, required by `renew`/`finish`/`release`. |
+| **Drop reason** | `drop` requires a `reason` (non-empty, at most 2000 characters, newlines and tabs allowed). It is stored as `drop_reason` in the item's detail file in the same commit that sets `dropped`, and `show_item` returns it. Items dropped before 0.12.0 have none. |
 | **Deferral** | Deferred work recorded on a task (`defer`); resolved by promoting it into a linked item (`promote_deferral`) or dropping it with a reason (`dismiss_deferral`). `finish` refuses while open deferrals exist. |
 | **Prepared receipt** | Detail-owned evidence binding a member to a batch, owner generation, clean exact source worktree/revision, and a passed bounded suite. It can unlock only an explicit same-batch implementation edge; it is not completion. |
 | **State branch** | The authoritative task store (`todo-state` by default). One commit per operation; fast-forward pushes only. |

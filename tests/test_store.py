@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -353,8 +354,9 @@ def test_symlinked_state_files_are_refused(tmp_path) -> None:
 def test_terminal_tasks_carry_no_claim_and_drop_clears() -> None:
     snap = _snap()
     store.op_create(snap, item_id="task", title="Droppable")
-    store.op_drop(snap, "task")
+    store.op_drop(snap, "task", reason="obsolete")
     assert snap.index["items"]["task"]["status"] == "dropped"
+    assert snap.details["task"]["drop_reason"] == "obsolete"
     with pytest.raises(TodoError):
         store.op_take(snap, "task", "w1")
 
@@ -376,16 +378,16 @@ def test_drop_needs_generation_while_claimed() -> None:
     take = store.op_take(snap, "task", "w1")
     gen = take["claim"]["generation"]
     with pytest.raises(TodoError) as excinfo:
-        store.op_drop(snap, "task", "w1", "0" * 32)
+        store.op_drop(snap, "task", "w1", "0" * 32, reason="r")
     assert excinfo.value.code == "E_CLAIM_STALE"
     with pytest.raises(TodoError):
-        store.op_drop(snap, "task")
+        store.op_drop(snap, "task", reason="r")
     # Rotation strands the old generation for drop too.
     store.op_take(snap, "task", "w1")
     with pytest.raises(TodoError):
-        store.op_drop(snap, "task", "w1", gen)
+        store.op_drop(snap, "task", "w1", gen, reason="r")
     fresh = snap.index["items"]["task"]["claim"]["generation"]
-    assert store.op_drop(snap, "task", "w1", fresh)["status"] == "dropped"
+    assert store.op_drop(snap, "task", "w1", fresh, reason="r")["status"] == "dropped"
 
 
 def test_worker_identities_are_single_line() -> None:
@@ -424,3 +426,47 @@ def test_atomic_save_and_load_round_trip(tmp_path) -> None:
     loaded = store.load_snapshot(tmp_path)
     assert loaded.index["items"]["aa"]["title"] == "Persist me"
     assert loaded.details["aa"]["description"] == "hello"
+
+
+def _drop_refusals() -> list[object]:
+    return [None, "", "   \n\t ", "x" * 2001, "bad\x00nul", "bell\x07", "esc\x1b[0m", "cr\rline",
+            "a\u0085b", "a\u2028b", "a\u2029b"]
+
+
+@pytest.mark.parametrize("reason", _drop_refusals())
+def test_drop_refuses_invalid_reason_and_leaves_item_unchanged(reason) -> None:
+    snap = _snap()
+    store.op_create(snap, item_id="task", title="Keep")
+    before = json.dumps([snap.index, snap.details], sort_keys=True)
+    with pytest.raises(TodoError) as exc:
+        store.op_drop(snap, "task", reason=reason)  # type: ignore[arg-type]
+    assert exc.value.code == "E_STATE"
+    assert json.dumps([snap.index, snap.details], sort_keys=True) == before
+    assert snap.index["items"]["task"]["status"] == "open"
+
+
+def test_drop_reason_allows_newlines_tabs_and_limit() -> None:
+    snap = _snap()
+    store.op_create(snap, item_id="task", title="Multi")
+    reason = "line one\n\tline two\n" + "x" * 1950
+    store.op_drop(snap, "task", reason="  " + reason + "  ")
+    assert snap.details["task"]["drop_reason"] == reason
+    snap2 = _snap()
+    store.op_create(snap2, item_id="task", title="Max")
+    store.op_drop(snap2, "task", reason="y" * 2000)
+    assert len(snap2.details["task"]["drop_reason"]) == 2000
+
+
+def test_validate_snapshot_drop_reason() -> None:
+    snap = _snap()
+    store.op_create(snap, item_id="task", title="Legacy")
+    snap.index["items"]["task"]["status"] = "dropped"
+    store.validate_snapshot(snap.index, snap.details)  # dropped without reason stays valid
+    assert store.SCHEMA_VERSION == 3
+    for bad in ("", "  ", 5, None, ["x"]):
+        snap.details["task"]["drop_reason"] = bad
+        with pytest.raises(TodoError) as exc:
+            store.validate_snapshot(snap.index, snap.details)
+        assert exc.value.code == "E_STATE"
+    snap.details["task"]["drop_reason"] = "fine"
+    store.validate_snapshot(snap.index, snap.details)
