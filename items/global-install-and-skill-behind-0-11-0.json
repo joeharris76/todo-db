@@ -1,0 +1,23 @@
+{
+  "acceptance": [
+    "`todo-db --version` on PATH reports 0.11.0 or later, and a new session started in this repository gets a \"Bound store\" section from `get_instructions`.",
+    "The global `todo` skill copies teach `expect_store`: the global pin is at or after skill-sync-skills `c624975` and has been applied.",
+    "The release procedure lists the local rollout after a tag (reinstall the global tool, bump and apply the global skill pin), so the next release does not leave either behind."
+  ],
+  "context": "Found 2026-10-31. The README documents `uv tool install \"./todo_db-$VERSION-py3-none-any.whl[mcp]\"`; installing the v0.11.0 release wheel that way gives a pinned, checksum-verified runtime. Restart running sessions afterwards: a server keeps its version until it restarts.",
+  "description": "0.11.0 fixed silent binding to the wrong tracker: the \"Bound store\" section and `get_instructions(expect_store=...)`. The maintainer's machine still runs the old runtime and the old skill text, so the fix is inactive outside BenchBox.\n\n- Runtime: `todo-db --version` on PATH reports 0.10.1. The uv tool receipt (`~/.local/share/uv/tools/todo-db/uv-receipt.toml`) installed it from `directory = /Users/joe/Developer/todo-db`, which copies the tree at install time, so merges and tags never update it. Clients that launch `todo-db-mcp` from PATH get 0.10.1: this repository's `.mcp.json` (no arguments) and `~/.gemini/settings.json`. Codex runs `uv run --project ~/Developer/todo-db --locked -- todo-db-mcp` and follows the primary clone instead. On 2026-10-31 a server started from this repository answered `get_instructions(expect_store=\"joeharris76/todo-db\")` with no \"Bound store\" section, which is the 0.10.1 behaviour: `expect_store` is ignored.\n- Skill: the global copies (`~/.claude/skills/todo`, `~/.agents/skills/todo`, `~/.codex/skills/todo`) never mention `expect_store`. The global pin `deployment/global/skill-sync.conf` in skill-sync-skills still pins the catalog at `48be048`, before skill-sync-skills#99 (`c624975`). The primary catalog clone has uncommitted owner edits to that file and to README.md, so an agent cannot bump it safely.\n- Process: `docs/operations/release-gates.md` covers the gates before the tag but no rollout step after it.",
+  "links": [
+    "https://github.com/joeharris76/todo-db/releases/tag/v0.11.0",
+    "https://github.com/joeharris76/skill-sync-skills/pull/99"
+  ],
+  "sessions": [
+    {
+      "actor": "joe-defect-filing",
+      "at": "2026-10-31T15:02:17Z",
+      "client": "mcp",
+      "op": "create",
+      "op_id": "bba14654ba1f4dac8caca698b33cfbdf",
+      "session_id": "cfce0963a018426dabd348b9968b8e84"
+    }
+  ]
+}
