@@ -246,10 +246,15 @@
       "title": "Isolate store init from global hooks on Git versions below 2.31"
     },
     "global-install-and-skill-behind-0-11-0": {
-      "claim": null,
+      "claim": {
+        "expires_at": "2026-11-01T15:18:56Z",
+        "generation": "71767b7820054c10b763c4cc7f9f2a25",
+        "renewals": 0,
+        "worker": "joe-batch-global-rollout"
+      },
       "needs": [],
       "priority": "high",
-      "status": "open",
+      "status": "active",
       "title": "Roll out 0.11.0 to the global todo-db install and the global todo skill"
     },
     "guard-env-db-no-identity": {

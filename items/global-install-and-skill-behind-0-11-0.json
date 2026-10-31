@@ -27,6 +27,15 @@
       "op": "update",
       "op_id": "cdeee41f9f7241199aece5bf22eb17b5",
       "session_id": "f00f45dc7ee3476a9241555d2f124c92"
+    },
+    {
+      "actor": "joe-batch-global-rollout",
+      "at": "2026-10-31T15:18:56Z",
+      "client": "mcp",
+      "generation": "71767b7820054c10b763c4cc7f9f2a25",
+      "op": "take",
+      "op_id": "29a21377edd74b069ddfce7961836109",
+      "session_id": "66cef75030aa4a959ae5fc49a54f5cbf"
     }
   ]
 }
