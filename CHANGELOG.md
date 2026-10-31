@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-10-31
+
 ### Changed
 
 - **Breaking tool input:** the `drop` tool and `TrackerService.drop` now
