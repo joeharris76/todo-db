@@ -104,6 +104,20 @@ def test_cached_startup_probe_is_short(tmp_path: Path, monkeypatch: pytest.Monke
     assert mcp_server.STARTUP_PROBE_TIMEOUT_S <= 10 < git_backend.GIT_TIMEOUT_S
 
 
+def test_startup_reads_only_the_cached_pointer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    svc, target, remote = _setup(tmp_path)
+    _populate(svc)
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("startup loaded the cached snapshot")
+
+    monkeypatch.setattr(git_backend.Store, "load", refuse)
+    monkeypatch.setattr(git_backend, "load_snapshot", refuse)
+    mcp_server.startup_check(target)
+    _away(remote)
+    mcp_server.startup_check(target)
+
+
 def test_no_cache_unreachable_fails_with_full_timeout(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _, target, remote = _setup(tmp_path)
     seen = _hanging_probe(monkeypatch)

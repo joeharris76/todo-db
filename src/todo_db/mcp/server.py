@@ -14,7 +14,7 @@ import sys
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
-from ..errors import TodoDBError, TodoError
+from ..errors import E_OFFLINE, TodoDBError, TodoError
 from .identity import Identity, PrincipalHolder, resolve_identity
 from .instructions import render_instructions
 from .target import ResolvedTarget, resolve_target
@@ -96,14 +96,14 @@ def startup_check(target: ResolvedTarget) -> None:
     try:
         tip = ls_remote_tip(target.state_ref, timeout=timeout)
     except TodoDBError as exc:
-        if cached is not None and getattr(exc, "code", None) == "E_OFFLINE":
+        if cached is not None and getattr(exc, "code", None) == E_OFFLINE:
             LOG.warning(
                 "state remote unreachable (%s); starting offline from cached revision %s, "
                 "reads are stale and mutations fail until the remote is reachable",
                 exc, cached,
             )
             return
-        raise TodoError(f"state remote unreachable: {exc}", code="E_OFFLINE") from exc
+        raise TodoError(f"state remote unreachable: {exc}", code=E_OFFLINE) from exc
     if tip is None:
         raise TodoError(
             f"state branch {target.state_ref.branch!r} does not exist on "
