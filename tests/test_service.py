@@ -120,7 +120,7 @@ def test_drop_records_session_entry(tmp_path: Path) -> None:
     assert svc.create_item("d1", "Droppable")["ok"]
     took = svc.take("d1")
     assert took["ok"], took
-    assert svc.drop("d1", took["data"]["claim"]["generation"])["ok"]
+    assert svc.drop("d1", "no longer needed", took["data"]["claim"]["generation"])["ok"]
     log = _sessions_of(ref, tmp_path / "cache")["d1"]["sessions"]
     assert [entry["op"] for entry in log] == ["create", "take", "drop"]
 
@@ -545,3 +545,86 @@ def test_multiple_claims_refusal_tells_a_sibling_agent_what_to_do(tmp_path: Path
     assert "--actor" in steps
     assert svc.release("held", held["data"]["claim"]["generation"])["ok"]
     assert svc.take("other")["ok"]
+
+
+def _branch_commits(ref, tmp_path: Path) -> int:
+    out = subprocess.run(
+        ["git", "--git-dir", ref.remote, "rev-list", "--count", ref.branch],
+        check=True, capture_output=True, text=True,
+    )
+    return int(out.stdout.strip())
+
+
+def test_drop_requires_reason_and_leaves_state_untouched(tmp_path: Path) -> None:
+    svc, ref = _session_svc(tmp_path)
+    assert svc.create_item("d1", "Droppable")["ok"]
+    commits = _branch_commits(ref, tmp_path)
+    for bad in ("", "   ", "x" * 2001, "bad\x00", "a\u0085b", "a\u2028b", "a\u2029b"):
+        out = svc.drop("d1", bad)
+        assert not out["ok"] and out["code"] == "E_STATE", (bad, out)
+    assert _branch_commits(ref, tmp_path) == commits
+    shown = svc.show_item("d1")
+    assert shown["data"]["status"] == "open" and "drop_reason" not in shown["data"]
+
+
+def test_drop_with_reason_is_one_state_commit(tmp_path: Path) -> None:
+    svc, ref = _session_svc(tmp_path)
+    assert svc.create_item("d1", "Droppable")["ok"]
+    before = _branch_commits(ref, tmp_path)
+    reason = "Superseded by d2.\n\tSee the follow-up."
+    out = svc.drop("d1", "  " + reason + "\n")
+    assert out["ok"] and out["data"]["status"] == "dropped", out
+    assert _branch_commits(ref, tmp_path) == before + 1
+    snap = git_backend.read(ref, tmp_path / "cache").snapshot
+    assert snap.index["items"]["d1"]["status"] == "dropped"
+    assert snap.details["d1"]["drop_reason"] == reason
+    listed = svc.list_items(status="dropped")
+    assert "drop_reason" not in json.dumps(listed)
+
+
+def test_drop_retry_after_competing_push_stores_reason_once(tmp_path: Path, monkeypatch) -> None:
+    svc, ref = _session_svc(tmp_path)
+    rival = TrackerService(ref=ref, cache_dir=tmp_path / "rival-cache", worker="rival", session_id="session-b")
+    assert svc.create_item("d1", "Droppable")["ok"]
+    before = _branch_commits(ref, tmp_path)
+    real_mutate = git_backend.mutate
+    attempts: list[int] = []
+
+    def racing_mutate(ref, *, apply, **kwargs):
+        if kwargs.get("op") != "drop":
+            return real_mutate(ref, apply=apply, **kwargs)
+
+        def wrapped(snapshot):
+            attempts.append(1)
+            if len(attempts) == 1:
+                # A competing writer lands between our read and our push.
+                assert rival.create_item("other", "Other")["ok"]
+            return apply(snapshot)
+
+        return real_mutate(ref, apply=wrapped, **kwargs)
+
+    monkeypatch.setattr(git_backend, "mutate", racing_mutate)
+    out = svc.drop("d1", "obsolete")
+    assert out["ok"], out
+    assert len(attempts) == 2
+    assert _branch_commits(ref, tmp_path) == before + 2  # the rival's commit and one drop commit
+    snap = git_backend.read(ref, tmp_path / "cache").snapshot
+    assert snap.details["d1"]["drop_reason"] == "obsolete"
+    assert [entry["op"] for entry in snap.details["d1"]["sessions"]].count("drop") == 1
+
+
+def test_show_item_returns_drop_reason_including_slim_fallback(tmp_path: Path, monkeypatch) -> None:
+    import todo_db.service as svcmod
+
+    svc = _svc(tmp_path)
+    assert svc.create_item("d1", "Droppable", description="D" * 5000)["ok"]
+    assert svc.create_item("live", "Live")["ok"]
+    reason = "Because.\nMultiple lines."
+    assert svc.drop("d1", reason)["ok"]
+    shown = svc.show_item("d1")
+    assert shown["ok"] and shown["data"]["drop_reason"] == reason
+    assert "drop_reason" not in svc.show_item("live")["data"]
+    monkeypatch.setattr(svcmod, "MAX_BYTES", 3000)
+    slim = svc.show_item("d1")
+    assert slim["ok"] and "continuation" in slim["data"], slim
+    assert slim["data"]["drop_reason"] == reason

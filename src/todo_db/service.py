@@ -340,6 +340,8 @@ class TrackerService:
                     data[f"{key}_continuation"] = {
                         "field": key, "offset": 0, "budget": SECTION_BUDGET, "rev": outcome.rev,
                     }
+            if entry["status"] == "dropped" and detail.get("drop_reason") is not None:
+                data["drop_reason"] = detail["drop_reason"]
             if detail.get("batch") is not None:
                 data["batch"] = detail["batch"]
             if detail.get("prepared") is not None:
@@ -382,6 +384,8 @@ class TrackerService:
                 "sections": sections,
                 "continuation": "response exceeded the byte cap; read sections with show_item field/offset",
             }
+            if entry["status"] == "dropped" and detail.get("drop_reason") is not None:
+                slim["drop_reason"] = detail["drop_reason"]
             if _fits(ok(slim)):
                 return ok(slim)
             return err(
@@ -1254,11 +1258,11 @@ class TrackerService:
 
         return self._mutate("renew", f"{worker} renews {item_id}", apply)
 
-    def drop(self, item_id: str, generation: str | None = None) -> dict[str, Any]:
+    def drop(self, item_id: str, reason: str, generation: str | None = None) -> dict[str, Any]:
         worker = self.worker
 
         def apply(snap: S.Snapshot, op_id: str) -> dict[str, Any]:
-            out = S.op_drop(snap, item_id, worker, generation)
+            out = S.op_drop(snap, item_id, worker, generation, reason=reason)
             self._record_session(snap, item_id, "drop", op_id, generation=generation)
             return out
 

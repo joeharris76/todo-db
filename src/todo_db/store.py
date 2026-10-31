@@ -455,22 +455,34 @@ def validate_deferral_summary(summary: str) -> str:
     return cleaned
 
 
+def _validate_reason_text(reason: str, label: str) -> str:
+    """Shared rules for multi-line reasons: bounded, never empty, no control
+    characters other than newline/tab, no Unicode line separators."""
+    if not isinstance(reason, str) or not reason.strip():
+        raise TodoError(f"{label} must be a non-empty string", code=E_STATE)
+    cleaned = reason.strip()
+    if len(cleaned) > MAX_DEFERRAL_REASON_LEN:
+        raise TodoError(f"{label} exceeds {MAX_DEFERRAL_REASON_LEN} chars", code=E_STATE)
+    if any(char in FORBIDDEN_BREAKS for char in cleaned):
+        raise TodoError(f"{label} must not contain Unicode line separators", code=E_STATE)
+    if any(ord(char) < 32 and char not in ("\n", "\t") for char in cleaned):
+        raise TodoError(f"{label} must not contain control characters", code=E_STATE)
+    return cleaned
+
+
 def validate_deferral_reason(reason: str) -> str:
     """Validate a deferral reason: bounded, never empty, multi-line allowed.
 
     Reasons justify deferral and dismissal in detail views, so bodies may
     span lines; control characters other than newline/tab are rejected.
     """
-    if not isinstance(reason, str) or not reason.strip():
-        raise TodoError("deferral reason must be a non-empty string", code=E_STATE)
-    cleaned = reason.strip()
-    if len(cleaned) > MAX_DEFERRAL_REASON_LEN:
-        raise TodoError(f"deferral reason exceeds {MAX_DEFERRAL_REASON_LEN} chars", code=E_STATE)
-    if any(char in FORBIDDEN_BREAKS for char in cleaned):
-        raise TodoError("deferral reason must not contain Unicode line separators", code=E_STATE)
-    if any(ord(char) < 32 and char not in ("\n", "\t") for char in cleaned):
-        raise TodoError("deferral reason must not contain control characters", code=E_STATE)
-    return cleaned
+    return _validate_reason_text(reason, "deferral reason")
+
+
+def validate_drop_reason(reason: str) -> str:
+    """Validate the reason recorded when a task is dropped; same rules as a
+    deferral reason."""
+    return _validate_reason_text(reason, "drop reason")
 
 
 def empty_index() -> dict[str, Any]:
@@ -927,6 +939,12 @@ def validate_snapshot(index: Any, details: dict[str, Any]) -> dict[str, Any]:
             if not isinstance(value, str) or not NOT_BEFORE_RE.fullmatch(value):
                 raise TodoError(f"detail for {item_id!r}: 'not_before' must be UTC ISO Z", code=E_STATE)
             parse_ts(value)
+        if "drop_reason" in detail:
+            # Additive like sessions: absence stays valid for items dropped
+            # before reasons were recorded; older readers keep the key.
+            value = detail["drop_reason"]
+            if not isinstance(value, str) or not value.strip():
+                raise TodoError(f"detail for {item_id!r}: 'drop_reason' must be a non-empty string", code=E_STATE)
         if "sessions" in detail:
             # Additive session history: absence stays valid for
             # pre-history items, presence must validate.
@@ -2125,10 +2143,16 @@ def op_drop(
     item_id: str,
     worker: str | None = None,
     generation: str | None = None,
+    *,
+    reason: str,
 ) -> dict[str, Any]:
-    """Abandon a task. A live claim needs its holder's generation, exactly
-    like release/finish: a stale process image must not terminally drop work
-    another process re-adopted. Unclaimed tasks drop without credentials."""
+    """Abandon a task and record why. A live claim needs its holder's
+    generation, exactly like release/finish: a stale process image must not
+    terminally drop work another process re-adopted. Unclaimed tasks drop
+    without credentials. The reason lands in the detail as ``drop_reason``
+    in the same write as the status change; it is validated before any
+    mutation."""
+    reason = validate_drop_reason(reason)
     entry = _require_entry(snapshot, item_id)
     if entry["status"] in TERMINAL_STATUSES:
         raise TodoError(f"task {item_id!r} is already {entry['status']}", code=E_STATE)
@@ -2155,6 +2179,7 @@ def op_drop(
             )
     entry["claim"] = None
     entry["status"] = "dropped"
+    detail["drop_reason"] = reason
     validate_snapshot(snapshot.index, snapshot.details)
     return {"id": item_id, "status": "dropped"}
 

@@ -443,7 +443,7 @@ def test_abort_preserves_dropped_member_state() -> None:
         snap, item_id="a", title="A",
         batch={"batch_id": "batch-1", "member_id": "a", "implementation_dependencies": []},
     )
-    store.op_drop(snap, "a")
+    store.op_drop(snap, "a", reason="no longer needed")
     store.op_abort_batch(snap, "batch-1", "worker", "1" * 32)
     assert snap.index["items"]["a"]["status"] == "dropped"
     assert "batch" not in snap.details["a"]
@@ -465,7 +465,7 @@ def test_prepared_member_cannot_be_dropped_while_batch_is_active() -> None:
         scope_hash=snap.index["batches"]["batch-1"]["scope_hash"], verification=_verification(revision),
     )
     with pytest.raises(TodoError) as exc:
-        store.op_drop(snap, "a")
+        store.op_drop(snap, "a", reason="no longer needed")
     assert exc.value.code == "E_STATE"
     assert snap.index["items"]["a"]["status"] == "open"
     assert "prepared" in snap.details["a"]

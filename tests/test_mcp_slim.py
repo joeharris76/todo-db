@@ -82,7 +82,7 @@ def test_lifecycle_over_tools(tmp_path: Path) -> None:
             assert finished["ok"] and finished["data"]["status"] == "done"
             dropped = _payload(await session.call_tool("create_item", {"id": "t2", "title": "Drop me"}))
             assert dropped["ok"]
-            gone = _payload(await session.call_tool("drop", {"id": "t2"}))
+            gone = _payload(await session.call_tool("drop", {"id": "t2", "reason": "not needed"}))
             assert gone["ok"] and gone["data"]["status"] == "dropped"
 
     anyio.run(go)
@@ -255,7 +255,7 @@ def test_independent_same_name_clients_have_separate_claim_ownership(tmp_path: P
             conflict = _payload(await s2.call_tool("take", {"id": "a"}))
             assert not conflict["ok"] and conflict["code"] == "E_CONFLICT"
             for tool in ("renew", "finish", "release", "drop"):
-                stale = _payload(await s2.call_tool(tool, {"id": "a", "generation": first_generation}))
+                stale = _payload(await s2.call_tool(tool, {"id": "a", "generation": first_generation, **({"reason": "r"} if tool == "drop" else {})}))
                 assert not stale["ok"] and stale["code"] == "E_CLAIM_STALE", (tool, stale)
             second = _payload(await s2.call_tool("take", {"id": "b"}))
             assert second["ok"], second
@@ -405,6 +405,9 @@ def test_startup_schema_cost_is_small(tmp_path: Path) -> None:
             # expect_store check on get_instructions, the E_MULTIPLE_CLAIMS
             # guidance, and update_item's context_append with the field
             # semantics its description now states (4,440 before, 4,670 now).
-            assert tokens <= 4700, tokens
+            # The required `reason` parameter on drop and its description
+            # and guidance line raised the measured total from 4,670 to
+            # 4,744; the ceiling rises by that 74.
+            assert tokens <= 4774, tokens
 
     anyio.run(go)
