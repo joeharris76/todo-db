@@ -41,6 +41,15 @@
       "op": "update",
       "op_id": "7eb69c1c7221439cb838ba2cf2ecb3f3",
       "session_id": "5eb4a47c09e449a281426a924ec70a9e"
+    },
+    {
+      "actor": "joe-batch-offline-startup",
+      "at": "2026-10-31T20:18:45Z",
+      "client": "mcp",
+      "generation": "03126b938c964dd69ede9c843c8330a2",
+      "op": "finish",
+      "op_id": "b585f5c9447f49cd89de5f5fb6f13f93",
+      "session_id": "5eb4a47c09e449a281426a924ec70a9e"
     }
   ]
 }
