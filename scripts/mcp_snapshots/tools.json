@@ -239,11 +239,15 @@
   },
   {
     "name": "drop",
-    "description": "Abandon a task as dropped. Unclaimed tasks drop freely; a live claim needs its generation.",
+    "description": "Abandon a task as dropped, recording why. reason is required (non-empty, 2000 characters at most, newlines allowed) and is stored with the status change in one commit. Unclaimed tasks drop freely; a live claim needs its generation.",
     "inputSchema": {
       "properties": {
         "id": {
           "title": "Id",
+          "type": "string"
+        },
+        "reason": {
+          "title": "Reason",
           "type": "string"
         },
         "generation": {
@@ -260,7 +264,8 @@
         }
       },
       "required": [
-        "id"
+        "id",
+        "reason"
       ],
       "title": "drop_toolArguments",
       "type": "object"

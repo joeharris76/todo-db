@@ -375,10 +375,15 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
 
     @server.tool(
         name="drop",
-        description="Abandon a task as dropped. Unclaimed tasks drop freely; a live claim needs its generation.",
+        description=(
+            "Abandon a task as dropped, recording why. reason is required (non-empty, 2000 characters at "
+            "most, newlines allowed) and is stored with the status change in one commit. "
+            "Unclaimed tasks drop freely; a live claim needs its generation."
+        ),
     )
     async def drop_tool(
         id: str,
+        reason: str,
         generation: str | None = None,
         ctx: Context = None,  # type: ignore[assignment]
     ) -> dict[str, Any]:
@@ -386,7 +391,7 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
         if not isinstance(worker, str):
             return worker
         svc = _service(target, worker, holder, ctx)
-        return await asyncio.to_thread(svc.drop, id, generation)
+        return await asyncio.to_thread(svc.drop, id, reason=reason, generation=generation)
 
     @server.tool(
         name="list_deferrals",

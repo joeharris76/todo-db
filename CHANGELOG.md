@@ -18,6 +18,23 @@ adheres to [Semantic Versioning](https://semver.org/).
   `cached_rev` instead of `rev` when served from the cache, as `list_items`
   already did.
 
+## [0.12.0] - 2026-10-31
+
+### Changed
+
+- **Breaking tool input:** the `drop` tool and `TrackerService.drop` now
+  require a `reason`. It must be non-empty after stripping, at most 2000
+  characters, and may contain newlines and tabs; other control characters and
+  U+0085/U+2028/U+2029 are refused with `E_STATE`, and a refused drop leaves
+  the item unchanged. The reason is stored as `drop_reason` in the item detail
+  in the same state commit that sets the status to `dropped`, so a drop no
+  longer needs a separate `update_item` note. `show_item` (and
+  `todo-db show`) return `drop_reason` for dropped items, including in the
+  slim response used when the byte cap is exceeded; `list_items` rows are
+  unchanged. The index schema version stays 3: items dropped earlier stay
+  valid without a reason, older clients load and keep the key, and
+  `validate_snapshot` rejects a `drop_reason` that is not a non-empty string.
+
 ## [0.11.0] - 2026-10-28
 
 ### Added

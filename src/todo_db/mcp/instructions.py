@@ -42,7 +42,8 @@ acknowledgement; lists return brief rows (id/title/priority/status).
 10. `finish` -- close the task (needs the generation from take). Prepared
    tasks additionally require current combined-tree evidence covering every
    prepared member and the registered final PR.
-   `drop` abandons a task; a live claim needs its generation.
+   `drop` abandons a task and requires a `reason` (stored as `drop_reason` in
+   the same commit; no separate note needed); a live claim needs its generation.
 11. `renew` -- extend a long-running claim (same generation, no
    progress milestones required).
 
