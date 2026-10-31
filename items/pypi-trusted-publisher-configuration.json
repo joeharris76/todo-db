@@ -3,7 +3,7 @@
     "The pypi-publish job in publish.yml succeeds on tagged releases without exchange failures.",
     "Tagged releases publish wheels and sdists to PyPI automatically."
   ],
-  "context": "Observed during v0.10.0 and v0.10.1 releases: github-release succeeded, but pypi-publish failed with 'Trusted publishing exchange failure'. Past releases (v0.7.2, v0.8.0, v0.9.1) showed the same failure.",
+  "context": "Observed during v0.10.0 and v0.10.1 releases: github-release succeeded, but pypi-publish failed with 'Trusted publishing exchange failure'. Past releases (v0.7.2, v0.8.0, v0.9.1) showed the same failure.\n\n2026-10-31: still failing on v0.11.0 (Publish run https://github.com/joeharris76/todo-db/actions/runs/40806736446): build and github-release succeeded; pypi-publish failed with `invalid-publisher` (\"valid token, but no corresponding publisher\"). https://pypi.org/pypi/todo-db/json returns 404, so no todo-db project exists on PyPI yet. The fix is a pending trusted publisher on PyPI for owner joeharris76, repository todo-db, workflow publish.yml, environment `pypi` (publish.yml line 54). The done item publish-todo-db-to-pypi does not reflect this: no release has reached PyPI.",
   "description": "In .github/workflows/publish.yml, the pypi-publish job has failed on every release since v0.7.2 (including v0.10.0 and v0.10.1) with 'Trusted publishing exchange failure'. The PyPI project 'todo-db' needs the GitHub repository environment / trusted publisher configuration configured on PyPI so tagged releases automatically publish to PyPI alongside GitHub Releases.",
   "sessions": [
     {
@@ -13,6 +13,14 @@
       "op": "create",
       "op_id": "41bdcbd3d8b34205930b0b2b3edd0415",
       "session_id": "914e0ebae53049d49a7cb89a52d463c6"
+    },
+    {
+      "actor": "joe-defect-filing",
+      "at": "2026-10-31T15:02:21Z",
+      "client": "mcp",
+      "op": "update",
+      "op_id": "cc7628168fdc4861b963f36a8d980258",
+      "session_id": "cfce0963a018426dabd348b9968b8e84"
     }
   ]
 }
