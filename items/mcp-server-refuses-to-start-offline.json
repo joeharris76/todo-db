@@ -1,11 +1,13 @@
 {
   "acceptance": [
-    "With the remote unreachable and a cached revision present, `todo-db-mcp` starts, and read tools serve the cached revision marked stale, as ADR 0007 and the README describe.",
-    "With the remote unreachable, mutations return `E_OFFLINE` with a retry step instead of the server failing to start.",
+    "With the remote unreachable and a cached revision present, `todo-db-mcp` starts, and `list_items`, `show_item` (including section reads) and `list_deferrals` serve the cached revision marked `stale` with `cached_rev`.",
+    "With a cached revision present, startup waits at most a short probe (10 seconds or less) for an unresponsive remote, not `GIT_TIMEOUT_S`.",
+    "A server started offline returns `E_OFFLINE` with a retry step for mutations, and reads return fresh state once the remote answers again, without a restart.",
     "A reachable remote without the state branch still stops startup with the `todo-db bootstrap` hint.",
-    "The behaviour with the remote unreachable and no cache is decided and documented: fail at startup, or start and answer every call with `E_OFFLINE`."
+    "With the remote unreachable and no cache, startup still fails with the unreachable error, and the README states this next to the offline-read contract."
   ],
-  "description": "ADR 0007 and the README say offline reads may serve a cached revision marked stale. The MCP server never gets that far: `main()` in `src/todo_db/mcp/server.py` runs `startup_check`, which calls `ls_remote_tip` and exits with status 2 (\"error: state remote unreachable: ...\") when the remote does not answer. The client sees only \"Connection closed\", so an agent loses every tracker read during an outage or on a slow network, including reads the cache could serve.\n\nReproduced on 0.11.0 (2026-10-31): bootstrap a bare remote, create an item through the server so the cache holds that revision, move the remote away, and start the server again. It exits within a second with that error, and the cached item cannot be read. The same failure happened against GitHub on 2026-10-28, when `ls-remote` timed out (`Recv failure: Operation timed out`) and the client closed after about 48 seconds.",
+  "context": "REVIEW 2026-10-31: VALID, scope extended. Added the missing stale marker on show_item (verified in service.py), a bounded startup probe (the observed outage was a ~48 s hang against a 60 s timeout; client startup timeouts are [INFERENCE]), and decided the no-cache case (keep failing at startup) instead of leaving it open in acceptance. Runtime mutations already return E_OFFLINE with 'retry when the remote is reachable' (service.py); the criterion stays to pin it in the started-offline scenario.",
+  "description": "ADR 0007 and the README say offline reads may serve a cached revision marked stale. The MCP server never gets that far: `main()` in `src/todo_db/mcp/server.py` runs `startup_check`, which calls `ls_remote_tip` and exits with status 2 (\"error: state remote unreachable: ...\") when the remote does not answer. The client sees only \"Connection closed\", so an agent loses every tracker read during an outage or on a slow network, including reads the cache could serve.\n\nReproduced on 0.11.0 (2026-10-31): bootstrap a bare remote, create an item through the server so the cache holds that revision, move the remote away, and start the server again. It exits within a second with that error, and the cached item cannot be read. The same failure happened against GitHub on 2026-10-28, when `ls-remote` timed out (`Recv failure: Operation timed out`) and the client closed after about 48 seconds.\n\nTwo related gaps make the cached-read contract incomplete even after the server starts:\n- `show_item` (including section reads) served from the cache reports `rev` with no `stale` marker (`service.py` `show_item`); only `list_items` and `list_deferrals` report `stale` and `cached_rev`.\n- The startup probe uses `GIT_TIMEOUT_S` (60 s). On 2026-10-28 the network hung for about 48 s, so a server that waited the full timeout before falling back would still lose a client whose MCP startup timeout is shorter.\n\nDecision for the no-cache case: keep failing at startup. With no cached revision there is nothing to serve, and a startup error shows a misconfigured remote at launch. Document it.",
   "sessions": [
     {
       "actor": "joe-defect-filing",
@@ -14,6 +16,14 @@
       "op": "create",
       "op_id": "b09e06d256e04aa28b73bd611170aec1",
       "session_id": "cfce0963a018426dabd348b9968b8e84"
+    },
+    {
+      "actor": "joe-batch-controller",
+      "at": "2026-10-31T15:17:06Z",
+      "client": "mcp",
+      "op": "update",
+      "op_id": "9a9c604d8cca45a0b94a0531a585c6ce",
+      "session_id": "f00f45dc7ee3476a9241555d2f124c92"
     }
   ]
 }
