@@ -1,0 +1,20 @@
+{
+  "acceptance": [
+    "The three global skill directories are real directories that one skill-sync config manages, and `skill-sync apply` then `skill-sync verify` against that config pass.",
+    "Content the loaders own inside those directories (such as Codex `.system/`) survives an apply.",
+    "The skill-sync-skills README and deployment template, its template gate, and todo-db's release-gates step 3 describe the new update path, and the release-snapshot activation steps are removed.",
+    "A tested rollback restores the previous state without leaving any loader directory empty or broken."
+  ],
+  "context": "Created 2026-10-31 when the owner chose to activate global release c6249751 by repointing the links, and to track moving to skill-sync-managed directories as a separate change.",
+  "description": "`~/.claude/skills`, `~/.codex/skills` and `~/.agents/skills` are symlinks to `~/.skill-sync-deployment/releases/<sha>/store/skills`. skill-sync builds and verifies the store, but it refuses by design to write through symlinks and has no activation command, so every global update ends with a manual snapshot (`cp -a`) and three `ln -sfn` commands that need owner approval. skill-sync's MIGRATION.md (\"Global agent directories\") describes the alternative: treat the home directory as an ordinary skill-sync project with its own `skill-sync.conf` and real directories, so an update is \"bump rev, apply, verify\". It asks for that as its own deliberate change, because a broken loader directory disables skills for every agent at once.\n\nOwning repositories: skill-sync-skills (deployment template, README activation section, template gate in `tests/test_skill_sync_conf.py`, which today rejects home targets) and skill-sync (MIGRATION.md). Tracked here because neither has a tracker; todo-db's `docs/operations/release-gates.md` step 3 refers to the activation step.",
+  "sessions": [
+    {
+      "actor": "joe-batch-controller",
+      "at": "2026-10-31T20:19:08Z",
+      "client": "mcp",
+      "op": "create",
+      "op_id": "f5eafecc3fdf47b7b1facd0fc9887a84",
+      "session_id": "fa940fa556914498a74cb8091659e1f2"
+    }
+  ]
+}
