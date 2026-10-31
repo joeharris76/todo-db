@@ -465,6 +465,13 @@
       "status": "done",
       "title": "MCP server package, entry point, lifespan, identity, and worker thread"
     },
+    "mcp-server-refuses-to-start-offline": {
+      "claim": null,
+      "needs": [],
+      "priority": "medium",
+      "status": "open",
+      "title": "todo-db-mcp refuses to start when the state remote is unreachable, even with a cached revision"
+    },
     "mcp-shared-worker-claim-slot": {
       "claim": null,
       "needs": [],

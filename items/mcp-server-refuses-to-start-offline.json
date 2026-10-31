@@ -1,0 +1,19 @@
+{
+  "acceptance": [
+    "With the remote unreachable and a cached revision present, `todo-db-mcp` starts, and read tools serve the cached revision marked stale, as ADR 0007 and the README describe.",
+    "With the remote unreachable, mutations return `E_OFFLINE` with a retry step instead of the server failing to start.",
+    "A reachable remote without the state branch still stops startup with the `todo-db bootstrap` hint.",
+    "The behaviour with the remote unreachable and no cache is decided and documented: fail at startup, or start and answer every call with `E_OFFLINE`."
+  ],
+  "description": "ADR 0007 and the README say offline reads may serve a cached revision marked stale. The MCP server never gets that far: `main()` in `src/todo_db/mcp/server.py` runs `startup_check`, which calls `ls_remote_tip` and exits with status 2 (\"error: state remote unreachable: ...\") when the remote does not answer. The client sees only \"Connection closed\", so an agent loses every tracker read during an outage or on a slow network, including reads the cache could serve.\n\nReproduced on 0.11.0 (2026-10-31): bootstrap a bare remote, create an item through the server so the cache holds that revision, move the remote away, and start the server again. It exits within a second with that error, and the cached item cannot be read. The same failure happened against GitHub on 2026-10-28, when `ls-remote` timed out (`Recv failure: Operation timed out`) and the client closed after about 48 seconds.",
+  "sessions": [
+    {
+      "actor": "joe-defect-filing",
+      "at": "2026-10-31T15:02:19Z",
+      "client": "mcp",
+      "op": "create",
+      "op_id": "b09e06d256e04aa28b73bd611170aec1",
+      "session_id": "cfce0963a018426dabd348b9968b8e84"
+    }
+  ]
+}
