@@ -6,7 +6,7 @@
     "A reachable remote without the state branch still stops startup with the `todo-db bootstrap` hint.",
     "With the remote unreachable and no cache, startup still fails with the unreachable error, and the README states this next to the offline-read contract."
   ],
-  "context": "REVIEW 2026-10-31: VALID, scope extended. Added the missing stale marker on show_item (verified in service.py), a bounded startup probe (the observed outage was a ~48 s hang against a 60 s timeout; client startup timeouts are [INFERENCE]), and decided the no-cache case (keep failing at startup) instead of leaving it open in acceptance. Runtime mutations already return E_OFFLINE with 'retry when the remote is reachable' (service.py); the criterion stays to pin it in the started-offline scenario.",
+  "context": "REVIEW 2026-10-31: VALID, scope extended. Added the missing stale marker on show_item (verified in service.py), a bounded startup probe (the observed outage was a ~48 s hang against a 60 s timeout; client startup timeouts are [INFERENCE]), and decided the no-cache case (keep failing at startup) instead of leaving it open in acceptance. Runtime mutations already return E_OFFLINE with 'retry when the remote is reachable' (service.py); the criterion stays to pin it in the started-offline scenario.\n\nDONE 2026-10-31: todo-db#58 merged (merge commit a6cf1f3). The startup check reads the cached tip pointer only (0 ms on BenchBox's 3,900-item cache; the first draft loaded the snapshot, 1.5 s). With a cache, a 10 s probe; on E_OFFLINE it logs the cached revision and starts. With no cache, it still fails with the full timeout; a missing branch still gives the bootstrap hint. show_item and its section reads report stale and cached_rev from the cache. tests/test_mcp_offline_startup.py (9 tests; new tests fail on the old code); full suite 319 passed after merging main (0.12.0); CI 3.10 and 3.13 green. Stdio smoke: started offline, list_items/show_item stale, create_item E_OFFLINE, fresh read after the remote returned without a restart. Not released: the next release carries it.",
   "description": "ADR 0007 and the README say offline reads may serve a cached revision marked stale. The MCP server never gets that far: `main()` in `src/todo_db/mcp/server.py` runs `startup_check`, which calls `ls_remote_tip` and exits with status 2 (\"error: state remote unreachable: ...\") when the remote does not answer. The client sees only \"Connection closed\", so an agent loses every tracker read during an outage or on a slow network, including reads the cache could serve.\n\nReproduced on 0.11.0 (2026-10-31): bootstrap a bare remote, create an item through the server so the cache holds that revision, move the remote away, and start the server again. It exits within a second with that error, and the cached item cannot be read. The same failure happened against GitHub on 2026-10-28, when `ls-remote` timed out (`Recv failure: Operation timed out`) and the client closed after about 48 seconds.\n\nTwo related gaps make the cached-read contract incomplete even after the server starts:\n- `show_item` (including section reads) served from the cache reports `rev` with no `stale` marker (`service.py` `show_item`); only `list_items` and `list_deferrals` report `stale` and `cached_rev`.\n- The startup probe uses `GIT_TIMEOUT_S` (60 s). On 2026-10-28 the network hung for about 48 s, so a server that waited the full timeout before falling back would still lose a client whose MCP startup timeout is shorter.\n\nDecision for the no-cache case: keep failing at startup. With no cached revision there is nothing to serve, and a startup error shows a misconfigured remote at launch. Document it.",
   "sessions": [
     {
@@ -33,6 +33,14 @@
       "op": "take",
       "op_id": "b361428b6e2f43e696e1147b487d68ba",
       "session_id": "315909e42a254989b52ec414af669f47"
+    },
+    {
+      "actor": "joe-batch-offline-startup",
+      "at": "2026-10-31T20:18:43Z",
+      "client": "mcp",
+      "op": "update",
+      "op_id": "7eb69c1c7221439cb838ba2cf2ecb3f3",
+      "session_id": "5eb4a47c09e449a281426a924ec70a9e"
     }
   ]
 }
