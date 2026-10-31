@@ -256,13 +256,13 @@ def _classify_remote_failure(stderr: str) -> str:
     return "rejected"
 
 
-def ls_remote_tip(ref: StateRef) -> str | None:
+def ls_remote_tip(ref: StateRef, timeout: int = GIT_TIMEOUT_S) -> str | None:
     """Return the accepted tip SHA, or None when the branch does not exist."""
     try:
-        proc = _git(["ls-remote", ref.remote, ref.branch])
+        proc = _git(["ls-remote", ref.remote, ref.branch], timeout=timeout)
     except subprocess.TimeoutExpired as exc:
         raise TodoError(
-            f"remote {ref.display_remote!r} did not answer within {GIT_TIMEOUT_S}s", code=E_OFFLINE,
+            f"remote {ref.display_remote!r} did not answer within {timeout}s", code=E_OFFLINE,
         ) from exc
     if proc.returncode != 0:
         raise TodoError(
@@ -721,8 +721,8 @@ def _offline_cached(store: Store, ref: StateRef, cache_dir: str | Path) -> ReadO
     # tip, re-reading the pointer once in case it moved mid-read.
     legacy = _ns_dir(cache_dir, ref)
     for attempt in (1, 2):
-        rev = _last_rev(legacy)
-        if rev is None or not (legacy / "revs" / rev / INDEX_NAME).is_file():
+        rev = _legacy_cached_rev(legacy)
+        if rev is None:
             break
         try:
             return ReadOutcome(snapshot=load_snapshot(legacy / "revs" / rev), rev=rev, stale=True)
@@ -734,6 +734,29 @@ def _offline_cached(store: Store, ref: StateRef, cache_dir: str | Path) -> ReadO
         "for this state branch is available",
         code=E_OFFLINE,
     )
+
+
+def _legacy_cached_rev(legacy: Path) -> str | None:
+    rev = _last_rev(legacy)
+    return rev if rev is not None and (legacy / "revs" / rev / INDEX_NAME).is_file() else None
+
+
+def cached_revision(ref: StateRef, cache_dir: str | Path) -> str | None:
+    """The revision an offline read of *ref* would serve, or None without a cache.
+
+    Reads only the cached tip pointers, never the snapshot, so the startup
+    check stays cheap on large trackers.
+    """
+    store = _store(ref, cache_dir)
+    try:
+        if store.exists():
+            with store.using():
+                rev = store.tip()
+            if rev is not None:
+                return rev
+    except StoreError:
+        pass
+    return _legacy_cached_rev(_ns_dir(cache_dir, ref))
 
 
 def read(ref: StateRef, cache_dir: str | Path) -> ReadOutcome:

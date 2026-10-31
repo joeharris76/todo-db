@@ -6,6 +6,18 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `todo-db-mcp` no longer refuses to start when the state remote is
+  unreachable and a cached revision exists for the state branch. It probes
+  the remote for at most 10 seconds, logs a warning naming the cached
+  revision, and serves reads from it; mutations still fail with `E_OFFLINE`
+  until the remote is back. With no cache it still fails at startup, and a
+  reachable remote that lacks the state branch still reports the bootstrap
+  hint. `show_item`, including section reads, now reports `stale` and
+  `cached_rev` instead of `rev` when served from the cache, as `list_items`
+  already did.
+
 ## [0.12.0] - 2026-10-31
 
 ### Changed

@@ -75,6 +75,13 @@ def _trim(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[:limit] + "…"
 
 
+def _stamp_rev(data: dict[str, Any], rev: str, stale: bool) -> None:
+    if stale:
+        data.pop("rev", None)
+        data["cached_rev"] = rev
+        data["stale"] = True
+
+
 def err(code: str, message: str, recovery: list[str] | None = None, kind: str | None = None) -> dict[str, Any]:
     # Error envelopes are bounded too: echoed inputs and remote chatter are
     # trimmed before they can blow the cap the success path honors.
@@ -280,7 +287,9 @@ class TrackerService:
             entry = snap.index["items"][item_id]
             detail = snap.details[item_id]
             if field is not None:
-                return self._show_section(item_id, snap, outcome.rev, field, offset, budget, rev)
+                return self._show_section(
+                    item_id, snap, outcome.rev, field, offset, budget, rev, stale=outcome.stale,
+                )
             needs = list(entry.get("needs", []))
             unmet = [dep for dep in needs if snap.index["items"][dep]["status"] != "done"]
             data: dict[str, Any] = {
@@ -372,6 +381,7 @@ class TrackerService:
                     "suite": final["suite"],
                     "clean": final["clean"],
                 }
+            _stamp_rev(data, outcome.rev, outcome.stale)
             env = ok(data)
             if _fits(env):
                 return env
@@ -384,6 +394,7 @@ class TrackerService:
                 "sections": sections,
                 "continuation": "response exceeded the byte cap; read sections with show_item field/offset",
             }
+            _stamp_rev(slim, outcome.rev, outcome.stale)
             if entry["status"] == "dropped" and detail.get("drop_reason") is not None:
                 slim["drop_reason"] = detail["drop_reason"]
             if _fits(ok(slim)):
@@ -411,6 +422,8 @@ class TrackerService:
         offset: int,
         budget: int,
         want_rev: str | None,
+        *,
+        stale: bool = False,
     ) -> dict[str, Any]:
         # Section continuations bind the revision they were issued for: state
         # may have moved since, and splicing versions must be explicit.
@@ -443,6 +456,7 @@ class TrackerService:
                 "id": item_id, "field": field, "offset": offset,
                 "total": len(values), "window": window, "rev": current_rev,
             }
+            _stamp_rev(data, current_rev, stale)
             if offset + NEEDS_INLINE < len(values):
                 data["continuation"] = {
                     "field": field, "offset": offset + NEEDS_INLINE,
@@ -471,6 +485,7 @@ class TrackerService:
                 "id": item_id, "field": field, "offset": offset,
                 "total": len(log), "window": window, "rev": current_rev,
             }
+            _stamp_rev(data, current_rev, stale)
             if offset + len(window) < len(log):
                 data["continuation"] = {
                     "field": field, "offset": offset + len(window),
@@ -504,6 +519,7 @@ class TrackerService:
             "id": item_id, "field": field, "offset": offset,
             "total": total, "window": window, "rev": current_rev,
         }
+        _stamp_rev(data, current_rev, stale)
         if offset + budget < total:
             data["continuation"] = {
                 "field": field, "offset": offset + budget, "budget": budget, "rev": current_rev,
