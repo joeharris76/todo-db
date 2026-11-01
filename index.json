@@ -224,6 +224,13 @@
       "status": "done",
       "title": "Cutover + rollback rehearsal against post-findings production shape"
     },
+    "drop-reason-text-cap-and-secret-scan": {
+      "claim": null,
+      "needs": [],
+      "priority": "low",
+      "status": "open",
+      "title": "Bring drop_reason under the agent-text cap and secret scan proposed in PR #47"
+    },
     "finding-sync-robustness": {
       "claim": null,
       "needs": [],
