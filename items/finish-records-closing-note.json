@@ -1,0 +1,25 @@
+{
+  "acceptance": [
+    "finish accepts an optional closing note stored on the item detail in the same state commit as status done, with a size limit of at least 4,000 characters and the same control-character rules as drop_reason; a test asserts one commit",
+    "A publication retry after a competing push stores the note once",
+    "show_item and todo-db show return the note; list_items rows are unchanged",
+    "The tool schema snapshot, instructions, README and CHANGELOG are updated; the catalog todo skill tells agents to pass the note to finish instead of a separate context_append once a release carries it"
+  ],
+  "context": "Found 2026-10-31 by the review of the BenchBox drop-reason item and again while closing items on 2026-11-01.",
+  "description": "finish(id, generation, final_evidence) accepts only prepared-batch final evidence, so agents record what closed an item with a separate update_item context_append and then finish: two state commits per close. Every close in the BenchBox and benchbox-site trackers on 2026-10-31 and 2026-11-01 followed that pattern (about 15 items), and the site-split-99-closeout close did too (af92ea1bea then b236b81d18 in the BenchBox tracker). The failure modes match the ones drop had before 0.12.0: if the finish fails after the note, the item stays open with a note saying it closed; a re-run duplicates the note; nothing ties the note to the close. Closing notes in practice run 500-1,500 characters across lines.",
+  "links": [
+    "src/todo_db/mcp/tools.py",
+    "src/todo_db/service.py",
+    "src/todo_db/store.py"
+  ],
+  "sessions": [
+    {
+      "actor": "mcp:omp-coding-agent:joe@joe-mac-mini.local:fbecb18472a666af571711c0",
+      "at": "2026-11-01T13:45:42Z",
+      "client": "omp-coding-agent",
+      "op": "create",
+      "op_id": "8654e483668d4122b3547c98eb319c78",
+      "session_id": "7b18fc3936e746599ee38b7ea424a960"
+    }
+  ]
+}

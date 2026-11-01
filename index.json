@@ -231,6 +231,13 @@
       "status": "done",
       "title": "Per-draft error isolation in finding sync; template passes its own validator"
     },
+    "finish-records-closing-note": {
+      "claim": null,
+      "needs": [],
+      "priority": "low",
+      "status": "open",
+      "title": "Let finish record a closing note in the same commit as the status change"
+    },
     "fix-cli-parser-wrapper-constant": {
       "claim": null,
       "needs": [],
