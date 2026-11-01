@@ -235,7 +235,7 @@ is neither the batch start head nor a recorded integration head". This replaces
 the 0.12.0 split (root members at the start head, dependent members at the
 current head), including the service-layer re-check at the same lines.
 
-**Changed files** are measured `git diff --name-only -z source_base..accepted_head`
+**Changed files** are measured `git diff --no-renames --name-only -z source_base..accepted_head`
 in the member's own checkout. A member that merged the current integration head
 into its branch and was dispatched from that head lists only its own files. The
 per-member frozen scope check is unchanged: any changed path outside the member's
@@ -254,7 +254,7 @@ retry; the Git ones run in the service):
   `accepted_head` and every earlier accepted member (`E_BATCH_HEAD`), except in
   re-prepare (§2.3a).
 - **No unrecorded commits.** Every path in
-  `git diff --name-only <registered integration head>..integration_head` must be in
+  `git diff --no-renames --name-only <registered integration head>..integration_head` must be in
   this member's `changed_files`. A leader fix commit made before landing must
   first be recorded with `advance_batch_head`; otherwise it would escape overlap
   and acceptance accounting (`E_BATCH_HEAD`, recovery: advance first). The check
@@ -277,6 +277,12 @@ that loop is removed. Readiness of a dependent compares the dependency's
 
 ### 2.3a Re-prepare after invalidation
 
+Any `prepare` of a member that has no receipt but an existing `integrated_members`
+entry replaces that member's own `accepted_members`/`integrated_members` entries:
+log `kind: "reprepare"` when `integration_head` equals the registered head (no
+new commit), `kind: "prepare"` (normal strict descent) otherwise. The text below
+specifies the no-new-commit case.
+
 An invalidating edit (§2.7) deletes a receipt whose content is already in the
 integration head. A member with no receipt but an existing `integrated_members`
 entry may be prepared again with `integration_head == registered integration_head`
@@ -296,14 +302,13 @@ edit).
 ### 2.4 Owner-only integration-head advance
 
 `advance_batch_head(batch_id, owner_generation, expected_head, head, reason,
-changed_files, develop_ref=None)`.
+changed_files)`.
 
 | Argument | Meaning |
 |---|---|
 | `expected_head` | the integration head the owner believes is current (full SHA); compare-and-swap |
 | `head` | the new head (full SHA) the owner committed in the integration worktree |
 | `reason` | `fix` or `develop-merge` |
-| `develop_ref` | required for `develop-merge`, refused for `fix`: the remote-tracking ref of the branch being merged (for example `refs/remotes/origin/develop`) |
 | `changed_files` | sorted, de-duplicated paths changed by the advance |
 
 Checks, in order (all state-free on failure):
@@ -316,7 +321,7 @@ Checks, in order (all state-free on failure):
 4. Descent: `expected_head` is a strict ancestor of `head` in the integration
    worktree: `E_BATCH_HEAD`. The worktree must be clean at `head` on the
    registered branch/repository (`E_STATE`, as `register_batch`).
-5. `changed_files` equals `git diff --name-only -z expected_head..head` exactly
+5. `changed_files` equals `git diff --no-renames --name-only -z expected_head..head` exactly
    (`E_STATE`; the service recomputes, the caller's list is a claim).
 6. `reason == "fix"`: every changed file matches the batch's union of member
    scopes, otherwise `E_BATCH_HEAD` (a fix cannot widen scope).
@@ -324,14 +329,16 @@ Checks, in order (all state-free on failure):
    `expected_head` (a real `--no-ff` merge; a fast-forward is refused as
    `E_BATCH_HEAD`), and the second parent is recorded as `merged_parent`. Two
    further checks keep a mislabelled merge from hiding member changes: (a)
-   `merged_parent` must be an ancestor of `develop_ref` in the integration
-   worktree (`E_BATCH_HEAD`); (b) every path in `changed_files` must also differ
+   `merged_parent` must be an ancestor of the batch's registered `develop_ref`
+   (§2.8) in the integration worktree; a batch registered without one refuses
+   every `develop-merge` (`E_BATCH_HEAD`); (b) every path in `changed_files` must also differ
    between `merge-base(expected_head, merged_parent)` and `merged_parent`,
    otherwise `E_BATCH_HEAD` ("merge introduces non-develop content"). The paths
    are then exempt from the scope check, because they come from the integration
-   base, not from members. `develop_ref` is an explicit argument because the
+   base, not from members. `develop_ref` is fixed once at `register_batch` (an immutable batch field under
+   `refs/remotes/`, for example `refs/remotes/origin/develop`) because the
    registered `delivery_boundary` is a free-form token (`final-pr` in practice),
-   not a branch name.
+   not a branch name; the owner cannot pick a convenient ref per call.
 
 **Effects.** One `integration_log` entry is appended with `kind` = the reason,
 `previous_head`, `head`, `changed_files`, `op_id`. The registered
@@ -341,9 +348,9 @@ receipt `changed_files` intersects the advance's files at the time of the advanc
 (fix touching earlier member files, §2.5). For `develop-merge`,
 `requires_acceptance` is empty and the files join the **excluded set** (§2.5).
 
-**Idempotent retry.** If the registered head already equals `head` and the last
-log entry has `previous_head == expected_head`, `reason` and `changed_files`
-equal to the request, the call returns the same result with `idempotent: true` and
+**Idempotent retry.** If the log contains an entry whose `head` equals `head`,
+with `previous_head == expected_head`, `reason` and `changed_files` equal to the
+request (not necessarily the last entry: a later re-prepare may follow), the call returns the same result with `idempotent: true` and
 writes nothing. Any other mismatch is the stale `E_CONFLICT`.
 
 *Failure mode prevented:* B3; and unaccounted fix content that would bypass
@@ -393,7 +400,7 @@ acceptance, not a weaker one). Missing or mismatched entries are refused with
   heads and ranges bind the receipts (`range.base == receipt.source_base`).
 - Ancestry replaces byte-equality: the final tree contains `start_head`, every
   logged head and every member's `accepted_head` (`E_FINAL_EVIDENCE`).
-- `changed_files` must equal `git diff --name-only start_head..tree_revision`
+- `changed_files` must equal `git diff --no-renames --name-only start_head..tree_revision`
   **minus the excluded set**. The excluded set is the union of `develop-merge`
   entries' files, minus every path in a member receipt's `changed_files` or in a
   `fix` entry's files (a path that a member or fix also touched stays subject to
@@ -485,7 +492,8 @@ dependents, while no content-affecting edit can outlive a stale receipt.
 - Receipt schema: `prepared_work_v2` (`PREPARED_RECEIPT_SCHEMA`). Receipt keys:
   the v1 keys minus `owner_generation`, plus `owner_epoch` (int), `integration_seq`
   (int), `overlaps` (list, §2.5). `integration_head` keeps v1 meaning.
-- Batch record: `batch_schema: 2`, `owner_epoch`, `integration_log`, `recoveries`,
+- Batch record: `develop_ref` (optional, set once at registration, never changed),
+  `batch_schema: 2`, `owner_epoch`, `integration_log`, `recoveries`,
   `final_pr_history`; `final_pr` gains `repository`.
 - Store schema: **`schema_version` 4** (`SCHEMA_VERSION = 4`;
   `SUPPORTED_SCHEMA_VERSIONS = (1, 2, 3, 4)`).
@@ -559,7 +567,7 @@ temporary Git repositories) unless noted. Each asserts behaviour.
 | B3 | `advance_batch_head` records fix and develop-merge heads with reason and files; the new head is a dispatch base. | `test_fix_advance_recorded_and_becomes_dispatch_base`; `test_advance_stale_expected_head_refused`; `test_advance_non_descendant_refused`; `test_advance_non_owner_refused`; `test_advance_exact_retry_idempotent`; `test_unrecorded_commit_before_prepare_refused` |
 | B4 | `bind_batch_pr` moves the bound head with `expected_previous_head`, same PR identity only, exact retry idempotent, evidence for the old head refused. | `test_rebind_moves_head_with_expected_previous_head`; `test_rebind_different_pr_refused`; `test_rebind_retry_idempotent`; `test_evidence_for_previous_pr_head_refused` |
 | B5 | `context` and `context_append` keep receipt and dependents; each of `description`, `acceptance`, `links`, `needs` still invalidates transitively; `scope`/registered `batch` edits are refused leaving the receipt. | `test_context_edit_keeps_receipt`; `test_context_append_keeps_receipt_and_dependents`; one test per other field: `test_description_edit_invalidates_receipt_and_dependents`, `test_acceptance_edit_…`, `test_links_edit_…`, `test_needs_edit_…`, `test_batch_metadata_edit_refused_receipt_kept`, `test_scope_has_no_edit_path_receipt_kept`; `test_mixed_context_and_acceptance_edit_invalidates` |
-| B6 | Same-file evolution is recorded as overlap and requires current-acceptance evidence at final; a dead leader is recovered with no live member claim. | `test_same_file_evolution_records_overlap`; `test_silent_revert_blocked_without_acceptance_rerun`; `test_fix_touching_earlier_member_requires_acceptance`; `test_develop_merge_excluded_from_union`; `test_recover_owner_with_no_member_claim`; `test_recover_wrong_owner_or_generation_refused`; `test_recover_retry_after_lost_reply_idempotent`; `test_recovered_previous_generation_is_stale`; `test_receipts_survive_recovery`; `test_rename_of_earlier_member_file_records_overlap`; `test_develop_merge_with_side_branch_parent_refused`; `test_reprepare_after_invalidating_edit`; `test_invalidating_edit_refused_after_member_done` |
+| B6 | Same-file evolution is recorded as overlap and requires current-acceptance evidence at final; a dead leader is recovered with no live member claim. | `test_same_file_evolution_records_overlap`; `test_silent_revert_blocked_without_acceptance_rerun`; `test_fix_touching_earlier_member_requires_acceptance`; `test_develop_merge_excluded_from_union`; `test_recover_owner_with_no_member_claim`; `test_recover_wrong_owner_or_generation_refused`; `test_recover_retry_after_lost_reply_idempotent`; `test_recovered_previous_generation_is_stale`; `test_receipts_survive_recovery`; `test_rename_of_earlier_member_file_records_overlap`; `test_develop_merge_with_parent_outside_registered_develop_ref_refused`; `test_reprepare_after_invalidating_edit`; `test_reprepare_with_new_code_replaces_entries`; `test_invalidating_edit_refused_after_member_done` |
 
 Remaining tests: `test_show_batch_pages_oversized_section`,
 `test_show_batch_never_serves_owner_generation`,
@@ -586,14 +594,14 @@ SHAs. Success results are the `data` of `{ok:true, data}`; refusals are
 |---|---|---|---|---|
 | `show_batch` | new | `batch_id`; `field=None`, `offset=0`, `budget=6000`, `rev=None` | summary + `sections` map + `capability` + `rev` (§2.2); with `field`: `{field, offset, next_offset?, total_bytes, text}` window | `E_STATE` unknown batch, `E_CURSOR_STALE`, `E_OVERSIZED`, `E_OFFLINE` |
 | `recover_batch_owner` | new | `batch_id`, `expected_owner`, `expected_owner_generation`, `new_owner_generation` (caller-generated, 32 hex), `reason` | `{batch_id, owner, owner_epoch, recovered_members, idempotent}` | `E_CONFLICT` owner changed, `E_CLAIM_STALE` wrong generation, `E_STATE` not active / no session / bad reason, `E_SCHEMA` store below 4 |
-| `advance_batch_head` | new | `batch_id`, `owner_generation`, `expected_head`, `head`, `reason` (`fix`\|`develop-merge`), `changed_files`, `develop_ref=None` (required for `develop-merge`) | `{batch_id, integration_head, seq, reason, changed_files, requires_acceptance, idempotent}` | `E_CLAIM_STALE`, `E_CONFLICT` stale head, `E_BATCH_HEAD` (non-descendant, not a real merge, merge parent not under `develop_ref`, non-develop content, fix outside scope), `E_STATE` (files mismatch, member done, inactive), `E_SCHEMA` |
+| `advance_batch_head` | new | `batch_id`, `owner_generation`, `expected_head`, `head`, `reason` (`fix`\|`develop-merge`), `changed_files` | `{batch_id, integration_head, seq, reason, changed_files, requires_acceptance, idempotent}` | `E_CLAIM_STALE`, `E_CONFLICT` stale head, `E_BATCH_HEAD` (non-descendant, not a real merge, merge parent not under the registered `develop_ref`, no registered `develop_ref`, non-develop content, fix outside scope), `E_STATE` (files mismatch, member done, inactive), `E_SCHEMA` |
 | `take` | changed | `id` | unchanged ack | adds `E_BATCH_OWNER` (active-batch member, caller not owner) |
 | `takeover` | changed | `id`, `expected_holder`, `reason` | ack without `transferred_batches` | adds `E_BATCH_OWNER`; no ownership transfer |
 | `prepare` | changed | unchanged arguments (`id`, `generation`, `batch_id`, `member_id`, `source_worktree`, `source_revision`, `source_base`, `accepted_head`, `integration_head`, `scope_hash`, `verification`, `implementation_dependencies`) | `{id, status:"open", prepared:{batch_id, member_id, source_worktree, source_revision, integration_head, integration_seq, overlaps}}` | adds `E_BATCH_OWNER`, `E_BATCH_HEAD` (base not recorded; head not descendant; unrecorded commits), `E_SCHEMA`; re-prepare (§2.3a) after an invalidating edit; keeps `E_STATE`, `E_CLAIM_STALE` |
 | `bind_batch_pr` | changed | `batch_id`, `owner_generation`, `pr_repository`, `number`, `node_id`, `head`, `expected_previous_head=None` | `{batch_id, final_pr, previous_head?, idempotent}` | `E_CLAIM_STALE`, `E_CONFLICT` (different PR, guard missing, stale previous head, head ≠ integration head), `E_STATE` (member done, inactive), `E_SCHEMA` |
 | `finish` | changed | `id`, `generation`, `final_evidence` adds `current_acceptance` map and `final_pr.repository` | unchanged | adds `E_BATCH_OWNER`; `E_FINAL_EVIDENCE` for each missing/mismatched acceptance entry |
 | `update_item` | changed | unchanged | `{id, changed, invalidated}`; `context`-only edits report no `prepared_receipt` | unchanged codes; registered `batch` edits `E_STATE`; invalidating edits after any member is `done` `E_STATE`; batch metadata below schema 4 `E_SCHEMA` |
-| `register_batch` | changed | unchanged; `confirm_schema3_cutover` now confirms the schema-4 cutover | `{batch_id, members, start_head, schema_version, migrated_from}` | adds `E_ACTIVE_CLAIMS` (foreign live claim), `E_CONFLICT` (member claimed by another), `E_STATE` (no flag, active schema-3 batch); never silently migrated by `create_item`/`update_item` |
+| `register_batch` | changed | existing arguments plus `develop_ref=None` (immutable; must start with `refs/remotes/`, required for any later `develop-merge`); `confirm_schema3_cutover` now confirms the schema-4 cutover | `{batch_id, members, start_head, schema_version, migrated_from}` | adds `E_ACTIVE_CLAIMS` (foreign live claim), `E_CONFLICT` (member claimed by another), `E_STATE` (no flag, active schema-3 batch); never silently migrated by `create_item`/`update_item` |
 | `abort_batch` | unchanged | `batch_id`, `owner_generation` | unchanged | unchanged |
 | `initialize` | changed | — | adds `capabilities.experimental.todo_db_batch` (§2.8) | — |
 
