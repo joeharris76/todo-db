@@ -1,0 +1,23 @@
+{
+  "acceptance": [
+    "`uv tool list` reports todo-db 0.12.0 or later installed from the checksum-verified release wheel, and todo-db-mcp launched from PATH lists drop with reason required",
+    "skill-sync-skills deployment/global/skill-sync.conf pins the main catalog group at e7b7fd9 or later, merged through review, and the global skill directories point to a snapshot built from that pin; the runtime upgrade lands first or in the same step",
+    "benchbox-site AGENTS.md names 0.12.0 as the minimum todo-db version for its tracker, merged by PR"
+  ],
+  "context": "Found 2026-11-01 after the 0.12.0 release and the BenchBox runtime bump (BenchBox PR #3886).",
+  "description": "0.12.0 (released 2026-10-31, GitHub release v0.12.0) makes drop require a reason and store it as drop_reason in the same commit. BenchBox pins 0.12.0 in _project/scripts, but the maintainer's machine still runs 0.11.0: `uv tool list` reports todo-db v0.11.0 (installed by global-install-and-skill-behind-0-11-0), and clients that launch todo-db-mcp from PATH get it, including this repository's .mcp.json and benchbox-site's .mcp.json. Those trackers still accept a drop with no reason. The catalog todo skill at skill-sync-skills e7b7fd9 tells agents to pass the reason on drop and notes it needs 0.12.0+, but the global skill directories (~/.claude/skills/todo) still carry the older text. If the global skills are moved to e7b7fd9 before the runtime, agents will pass reason to a 0.11.0 server [unverified whether 0.11.0 rejects the unknown argument]. benchbox-site AGENTS.md still says 'Use todo-db 0.11.0 or later'. The skill-sync-skills primary checkout has someone else's uncommitted edit to deployment/global/skill-sync.conf; coordinate rather than overwrite it.",
+  "links": [
+    "https://github.com/joeharris76/todo-db/releases/tag/v0.12.0",
+    "https://github.com/joeharris76/skill-sync-skills/pull/101"
+  ],
+  "sessions": [
+    {
+      "actor": "mcp:omp-coding-agent:joe@joe-mac-mini.local:fbecb18472a666af571711c0",
+      "at": "2026-11-01T13:45:40Z",
+      "client": "omp-coding-agent",
+      "op": "create",
+      "op_id": "a67452d0e5024f599114fbe1517864c2",
+      "session_id": "7b18fc3936e746599ee38b7ea424a960"
+    }
+  ]
+}

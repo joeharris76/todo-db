@@ -259,6 +259,13 @@
       "status": "done",
       "title": "Roll out 0.11.0 to the global todo-db install and the global todo skill"
     },
+    "global-install-and-skill-behind-0-12-0": {
+      "claim": null,
+      "needs": [],
+      "priority": "medium",
+      "status": "open",
+      "title": "Roll out 0.12.0 to the global todo-db install and the global todo skill"
+    },
     "global-rollout-0-12-0": {
       "claim": null,
       "needs": [],
