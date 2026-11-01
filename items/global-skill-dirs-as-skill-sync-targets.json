@@ -5,7 +5,7 @@
     "The skill-sync-skills README and deployment template, its template gate, and todo-db's release-gates step 3 describe the new update path, and the release-snapshot activation steps are removed.",
     "A tested rollback restores the previous state without leaving any loader directory empty or broken."
   ],
-  "context": "Created 2026-10-31 when the owner chose to activate global release c6249751 by repointing the links, and to track moving to skill-sync-managed directories as a separate change.",
+  "context": "Created 2026-10-31 when the owner chose to activate global release c6249751 by repointing the links, and to track moving to skill-sync-managed directories as a separate change.\n\n2026-10-31 observation: before the c6249751 apply, `skill-sync preview` on `~/.skill-sync-deployment` reported 93 modified files although only 9 differed in bytes; the rest were mode 600 on disk against 644 in the manifest, and the serving release `cb442602…` had the same 600 modes. The README activation steps copy the store with `cp -a` and never check the snapshot, so drift like this goes unnoticed. Until the migration lands, run `skill-sync verify` on a release snapshot before repointing.",
   "description": "`~/.claude/skills`, `~/.codex/skills` and `~/.agents/skills` are symlinks to `~/.skill-sync-deployment/releases/<sha>/store/skills`. skill-sync builds and verifies the store, but it refuses by design to write through symlinks and has no activation command, so every global update ends with a manual snapshot (`cp -a`) and three `ln -sfn` commands that need owner approval. skill-sync's MIGRATION.md (\"Global agent directories\") describes the alternative: treat the home directory as an ordinary skill-sync project with its own `skill-sync.conf` and real directories, so an update is \"bump rev, apply, verify\". It asks for that as its own deliberate change, because a broken loader directory disables skills for every agent at once.\n\nOwning repositories: skill-sync-skills (deployment template, README activation section, template gate in `tests/test_skill_sync_conf.py`, which today rejects home targets) and skill-sync (MIGRATION.md). Tracked here because neither has a tracker; todo-db's `docs/operations/release-gates.md` step 3 refers to the activation step.",
   "sessions": [
     {
@@ -15,6 +15,14 @@
       "op": "create",
       "op_id": "f5eafecc3fdf47b7b1facd0fc9887a84",
       "session_id": "fa940fa556914498a74cb8091659e1f2"
+    },
+    {
+      "actor": "joe-batch-controller",
+      "at": "2026-11-01T13:45:33Z",
+      "client": "mcp",
+      "op": "update",
+      "op_id": "dcfa86cb2a554401a246f2ebb55a95b1",
+      "session_id": "ba8dff3f80a74dd9a9d84e7ab14ca24e"
     }
   ]
 }
