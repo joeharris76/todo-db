@@ -545,6 +545,13 @@
       "status": "done",
       "title": "The six hot-path lifecycle tools"
     },
+    "offline-reads-wait-full-ls-remote-timeout": {
+      "claim": null,
+      "needs": [],
+      "priority": "low",
+      "status": "open",
+      "title": "Offline reads wait the full 60-second ls-remote timeout on every call when the remote hangs"
+    },
     "opt-audit-head-check-on-open": {
       "claim": null,
       "needs": [

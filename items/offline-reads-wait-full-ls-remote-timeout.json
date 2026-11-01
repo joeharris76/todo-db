@@ -1,0 +1,22 @@
+{
+  "acceptance": [
+    "While the remote hangs, a read served from the cache returns within a short bound (seconds, not `GIT_TIMEOUT_S`) and is marked `stale` with `cached_rev`.",
+    "Once the remote answers again, the next read is fresh without a restart.",
+    "Mutations keep their current timeouts and their `E_OFFLINE` / `E_UNKNOWN` semantics.",
+    "A test injects a hanging `ls-remote` and asserts the bound without waiting out the full timeout."
+  ],
+  "description": "`read()` in `src/todo_db/git_backend.py` calls `ls_remote_tip(ref)` with the default `GIT_TIMEOUT_S` (60 s) before it falls back to the cached revision. A remote that refuses connections falls back at once. A hanging network does not: on 2026-10-28 `ls-remote` ended with `Recv failure: Operation timed out` after about 48 s. During such an outage every `list_items`, `show_item` and `list_deferrals` call blocks for up to 60 s before serving stale data, and a server started offline from its cache (todo-db#58) pays that on each call. A client whose per-call timeout is shorter sees the read fail instead of getting the cached answer [INFERENCE: per-call timeouts vary by client].\n\nPossible shapes: a short read probe like the 10 s startup probe, or remembering a recent probe failure for a short window before probing again.",
+  "links": [
+    "https://github.com/joeharris76/todo-db/pull/58"
+  ],
+  "sessions": [
+    {
+      "actor": "joe-batch-controller",
+      "at": "2026-11-01T13:45:29Z",
+      "client": "mcp",
+      "op": "create",
+      "op_id": "937b1aad42a444af8f4485cf46e6046f",
+      "session_id": "ba8dff3f80a74dd9a9d84e7ab14ca24e"
+    }
+  ]
+}
