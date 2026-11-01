@@ -201,6 +201,13 @@
       "status": "done",
       "title": "Implement audited claim takeover for dead sessions"
     },
+    "cli-version-flag": {
+      "claim": null,
+      "needs": [],
+      "priority": "low",
+      "status": "open",
+      "title": "`todo-db` and `todo-db-mcp` have no `--version`, so an install cannot be checked from the command line"
+    },
     "credential-provider-review-remediation": {
       "claim": null,
       "needs": [

@@ -1,0 +1,17 @@
+{
+  "acceptance": [
+    "`todo-db --version` and `todo-db-mcp --version` print the installed package version and exit 0 without resolving a state remote or config.",
+    "Tests cover both entry points."
+  ],
+  "description": "`todo-db --version` prints the usage and \"the following arguments are required: command\" (0.11.0); `src/todo_db/cli.py` defines no version option. Checking a rollout today needs `uv tool list`, which only covers uv tool installs, or an MCP `initialize` handshake to read `serverInfo.version`. The \"After the tag\" steps in `docs/operations/release-gates.md` ask the operator to confirm the new version.",
+  "sessions": [
+    {
+      "actor": "joe-batch-controller",
+      "at": "2026-11-01T13:45:31Z",
+      "client": "mcp",
+      "op": "create",
+      "op_id": "c6d1564c0c514cf396f1258825d4bb62",
+      "session_id": "ba8dff3f80a74dd9a9d84e7ab14ca24e"
+    }
+  ]
+}
