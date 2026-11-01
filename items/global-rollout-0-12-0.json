@@ -1,0 +1,23 @@
+{
+  "acceptance": [
+    "`uv tool list` reports todo-db 0.12.0 or later, installed from the release wheel pinned to its `SHA256SUMS` hash.",
+    "The global template pins the catalog at `e7b7fd9` or later, merged through review; `~/.skill-sync-deployment` is applied and passes `skill-sync verify` and `check`.",
+    "With owner approval, the three loader links point to a release snapshot built from that pin, and the served `todo/SKILL.md` documents `drop(reason=...)`."
+  ],
+  "context": "Found 2026-11-01 while filing follow-ups. The 0.11.0 rollout (global-install-and-skill-behind-0-11-0) shows the exact commands.",
+  "description": "v0.12.0 (2026-10-31) made `drop` require `reason`. BenchBox (vendored `todo_db-0.12.0` wheel, catalog pin `e7b7fd9`) and this repository (catalog pin `e7b7fd9`, todo-db#60) moved to it. The global layer did not:\n- `uv tool list` reports todo-db v0.11.0.\n- skill-sync-skills `deployment/global/skill-sync.conf` still pins the catalog at `c624975`, so the global `todo/SKILL.md` served through `~/.claude/skills`, `~/.codex/skills` and `~/.agents/skills` (release `c6249751…`) has no `drop(reason=...)` guidance from skill-sync-skills#101 (`e7b7fd9`).\n\nThese are steps 1 and 3 of the \"After the tag\" section in `docs/operations/release-gates.md`, which landed (todo-db#56) before the 0.12.0 tag and were skipped for it. Global sessions are consistent today (0.11.0 server, pre-0.12.0 skill text), so move both halves together: a 0.12.0 server with the old text makes agents' drops fail with E_STATE, and the new text on a 0.11.0 server passes a `reason` that tool does not accept.",
+  "links": [
+    "https://github.com/joeharris76/todo-db/releases/tag/v0.12.0",
+    "https://github.com/joeharris76/skill-sync-skills/pull/101"
+  ],
+  "sessions": [
+    {
+      "actor": "joe-batch-controller",
+      "at": "2026-11-01T13:45:27Z",
+      "client": "mcp",
+      "op": "create",
+      "op_id": "f5c194d2f6014c99b5eeafee2ed3bbc7",
+      "session_id": "ba8dff3f80a74dd9a9d84e7ab14ca24e"
+    }
+  ]
+}
