@@ -783,7 +783,7 @@
       "claim": null,
       "needs": [],
       "priority": "high",
-      "status": "open",
+      "status": "blocked",
       "title": "Configure PyPI trusted publisher for publish workflow"
     },
     "release-0-4-3-and-downstream-upgrade": {
