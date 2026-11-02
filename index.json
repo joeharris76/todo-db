@@ -202,15 +202,10 @@
       "title": "Implement audited claim takeover for dead sessions"
     },
     "cli-version-flag": {
-      "claim": {
-        "expires_at": "2026-11-03T01:45:26Z",
-        "generation": "6ed3062d4eab4e0d831e5d4b219fbdf5",
-        "renewals": 0,
-        "worker": "joe-rollout-controller"
-      },
+      "claim": null,
       "needs": [],
       "priority": "low",
-      "status": "active",
+      "status": "done",
       "title": "`todo-db` and `todo-db-mcp` have no `--version`, so an install cannot be checked from the command line"
     },
     "credential-provider-review-remediation": {
