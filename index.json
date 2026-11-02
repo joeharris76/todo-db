@@ -757,7 +757,7 @@
     "pypi-trusted-publisher-configuration": {
       "claim": null,
       "needs": [],
-      "priority": "medium",
+      "priority": "high",
       "status": "open",
       "title": "Configure PyPI trusted publisher for publish workflow"
     },
