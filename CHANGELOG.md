@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `todo-db --version` and `todo-db-mcp --version` print the installed
+  version and exit 0 without resolving a config or state remote, touching
+  the network, or (for `todo-db`) requiring the `mcp` extra.
+
 ### Fixed
 
 - `todo-db-mcp` no longer refuses to start when the state remote is
