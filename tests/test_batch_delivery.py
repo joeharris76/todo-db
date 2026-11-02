@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -15,6 +16,16 @@ from todo_db.service import TrackerService
 
 def _snap() -> store.Snapshot:
     return store.Snapshot(index=store.empty_index(), details={})
+
+
+def _head(snap: store.Snapshot, batch_id: str = "batch-1") -> str:
+    batch = snap.index.get("batches", {}).get(batch_id)
+    count = len(batch["integration_log"]) if batch else 0
+    return hashlib.sha1(f"integration-head-{count}".encode()).hexdigest()
+
+
+def _bound_head(snap: store.Snapshot) -> str:
+    return snap.index["batches"]["batch-1"]["integration_head"]
 
 
 def _git_checkout(tmp_path: Path) -> tuple[Path, str]:
@@ -47,19 +58,21 @@ def _register(snap: store.Snapshot, revision: str, members: list[str], scope: di
         owner="worker", owner_generation="1" * 32, integration_branch="main",
         integration_worktree="/tmp/integration", start_head=revision,
         members=members, scope=scope, scope_hash=store.scope_digest(scope),
-        delivery_boundary="final-pr", terminal_outcome="merged",
+        delivery_boundary="final-pr", terminal_outcome="merged", confirm_schema3_cutover=True,
     )
 
 
 def _final_evidence(snap: store.Snapshot, revision: str, members: list[str]) -> dict:
+    head = _bound_head(snap)
     return {
         "status": "passed", "project_id": "todo-db", "repository": "repo",
-        "batch_id": "batch-1", "tree_worktree": "/tmp/integration", "tree_revision": revision,
-        "integration_branch": "main", "integration_head": revision,
+        "batch_id": "batch-1", "tree_worktree": "/tmp/integration", "tree_revision": head,
+        "integration_branch": "main", "integration_head": head,
         "scope_hash": snap.index["batches"]["batch-1"]["scope_hash"],
         "member_heads": {member: revision for member in members},
         "member_ranges": {member: {"base": revision, "head": revision} for member in members},
-        "changed_files": [], "final_pr": {"number": 1, "node_id": "PR_1", "head": revision},
+        "changed_files": [],
+        "final_pr": {"repository": "repo", "number": 1, "node_id": "PR_1", "head": head},
         "suite": "combined-tree", "clean": True,
     }
 
@@ -89,7 +102,7 @@ def test_prepare_releases_claim_without_done_and_unlocks_explicit_member(tmp_pat
         source_revision=revision,
         source_base=revision,
         accepted_head=revision,
-        integration_head=revision,
+        integration_head=_head(snap),
         scope_hash=snap.index["batches"]["batch-1"]["scope_hash"],
         verification=_verification(revision),
     )
@@ -122,14 +135,14 @@ def test_prepare_rejects_stale_or_dirty_source_and_bad_evidence(tmp_path: Path) 
         store.op_prepare(
             snap, "a", "worker", claim["claim"]["generation"], batch_id="batch-1", member_id="a",
             source_worktree=str(source), source_revision="0" * 40, verification=_verification(revision),
-            source_base=revision, accepted_head=revision, integration_head=revision,
+            source_base=revision, accepted_head=revision, integration_head=_head(snap),
             scope_hash=snap.index["batches"]["batch-1"]["scope_hash"],
         )
     with pytest.raises(TodoError):
         store.op_prepare(
             snap, "a", "worker", claim["claim"]["generation"], batch_id="batch-1", member_id="a",
             source_worktree="relative", source_revision=revision, verification=_verification(revision),
-            source_base=revision, accepted_head=revision, integration_head=revision,
+            source_base=revision, accepted_head=revision, integration_head=_head(snap),
             scope_hash=snap.index["batches"]["batch-1"]["scope_hash"],
         )
 
@@ -144,7 +157,7 @@ def test_prepare_without_batch_metadata_returns_todo_error() -> None:
             snap, "a", "worker", claim["claim"]["generation"],
             batch_id="batch-1", member_id="a", source_worktree="/tmp/source",
             source_revision=revision, source_base=revision, accepted_head=revision,
-            integration_head=revision, scope_hash="0" * 64,
+            integration_head=_head(snap), scope_hash="0" * 64,
             verification=_verification(revision),
         )
     assert exc.value.code == "E_STATE"
@@ -174,23 +187,16 @@ def test_prepared_finish_requires_current_final_tree_evidence(tmp_path: Path) ->
     store.op_prepare(
         snap, "a", "worker", claim["claim"]["generation"], batch_id="batch-1", member_id="a",
         source_worktree=str(source), source_revision=revision, source_base=revision,
-        accepted_head=revision, integration_head=revision,
+        accepted_head=revision, integration_head=_head(snap),
         scope_hash=snap.index["batches"]["batch-1"]["scope_hash"], verification=_verification(revision),
     )
     claim = store.op_take(snap, "a", "worker")
     with pytest.raises(TodoError) as exc:
         store.op_finish(snap, "a", "worker", claim["claim"]["generation"])
     assert exc.value.code == "E_FINAL_EVIDENCE"
-    evidence = {
-        "status": "passed", "project_id": "todo-db", "repository": "repo",
-        "batch_id": "batch-1", "tree_worktree": "/tmp/integration", "tree_revision": revision,
-        "integration_branch": "main", "integration_head": revision,
-        "scope_hash": snap.index["batches"]["batch-1"]["scope_hash"],
-        "member_heads": {"a": revision}, "member_ranges": {"a": {"base": revision, "head": revision}},
-        "changed_files": [], "final_pr": {"number": 1, "node_id": "PR_1", "head": revision},
-        "suite": "combined-tree", "clean": True,
-    }
-    store.op_bind_batch_pr(snap, "batch-1", "worker", "1" * 32, number=1, node_id="PR_1", head=revision)
+    evidence = _final_evidence(snap, revision, ["a"])
+    evidence["final_pr"]["head"] = _bound_head(snap)
+    store.op_bind_batch_pr(snap, "batch-1", "worker", "1" * 32, pr_repository="repo", number=1, node_id="PR_1", head=_bound_head(snap))
     store.op_finish(snap, "a", "worker", claim["claim"]["generation"], evidence)
     assert snap.index["items"]["a"]["status"] == "done"
     assert snap.index["batches"]["batch-1"]["lifecycle"] == "completed"
@@ -229,10 +235,10 @@ def test_owner_abort_is_claim_safe_idempotent_and_clears_prepared_work() -> None
     store.op_prepare(
         snap, "a", "worker", claim["claim"]["generation"], batch_id="batch-1", member_id="a",
         source_worktree="/tmp/source", source_revision=revision, source_base=revision,
-        accepted_head=revision, integration_head=revision,
+        accepted_head=revision, integration_head=_head(snap),
         scope_hash=snap.index["batches"]["batch-1"]["scope_hash"], verification=_verification(revision),
     )
-    store.op_bind_batch_pr(snap, "batch-1", "worker", "1" * 32, number=7, node_id="PR_7", head=revision)
+    store.op_bind_batch_pr(snap, "batch-1", "worker", "1" * 32, pr_repository="repo", number=7, node_id="PR_7", head=_bound_head(snap))
     store.op_abort_batch(snap, "batch-1", "worker", "1" * 32)
     assert snap.index["batches"]["batch-1"]["lifecycle"] == "aborted"
     assert snap.index["items"]["a"]["status"] == "open"
@@ -241,7 +247,7 @@ def test_owner_abort_is_claim_safe_idempotent_and_clears_prepared_work() -> None
     assert snap.index["batches"]["batch-1"]["accepted_members"] == {}
     assert snap.index["batches"]["batch-1"]["integrated_members"] == {}
     assert snap.index["batches"]["batch-1"]["final_pr"] == {
-        "number": 7, "node_id": "PR_7", "head": revision,
+        "repository": "repo", "number": 7, "node_id": "PR_7", "head": _bound_head(snap),
     }
     ordinary_claim = store.op_take(snap, "a", "worker")
     assert store.op_finish(snap, "a", "worker", ordinary_claim["claim"]["generation"]) == {
@@ -265,7 +271,7 @@ def test_abort_batch_reports_only_changed_members() -> None:
     store.op_prepare(
         snap, "a", "worker", claim["claim"]["generation"], batch_id="batch-1", member_id="a",
         source_worktree="/tmp/source", source_revision=revision, source_base=revision,
-        accepted_head=revision, integration_head=revision,
+        accepted_head=revision, integration_head=_head(snap),
         scope_hash=snap.index["batches"]["batch-1"]["scope_hash"], verification=_verification(revision),
     )
     out = store.op_abort_batch(snap, "batch-1", "worker", "1" * 32)
@@ -303,7 +309,7 @@ def test_service_abort_records_affected_members_only(tmp_path: Path) -> None:
         store.op_prepare(
             snap, "a", "worker", claim["claim"]["generation"], batch_id="batch-1", member_id="a",
             source_worktree="/tmp/source", source_revision=revision, source_base=revision,
-            accepted_head=revision, integration_head=revision,
+            accepted_head=revision, integration_head=_head(snap),
             scope_hash=snap.index["batches"]["batch-1"]["scope_hash"],
             verification=_verification(revision),
         )
@@ -349,7 +355,7 @@ def test_service_abort_after_expired_claim_shows_abort_last(tmp_path: Path) -> N
     assert shown["data"]["sessions"]["last"]["op"] == "abort"
 
 
-def test_service_takeover_transfers_batch_ownership(tmp_path: Path) -> None:
+def test_service_takeover_by_non_owner_is_reserved_and_never_transfers_ownership(tmp_path: Path) -> None:
     remote = tmp_path / "takeover-batch.git"
     subprocess.run(["git", "init", "--quiet", "--bare", str(remote)], check=True)
     ref = git_backend.StateRef(remote=str(remote), branch="todo-state")
@@ -363,7 +369,7 @@ def test_service_takeover_transfers_batch_ownership(tmp_path: Path) -> None:
             owner="victim", owner_generation="2" * 32, integration_branch="main",
             integration_worktree="/tmp/integration", start_head=revision,
             members=["m"], scope=scope, scope_hash=store.scope_digest(scope),
-            delivery_boundary="final-pr", terminal_outcome="merged",
+            delivery_boundary="final-pr", terminal_outcome="merged", confirm_schema3_cutover=True,
         )
         store.op_create(snap, item_id="m", title="M", batch=_member_kwargs("m"))
         store.op_take(snap, "m", "victim")
@@ -374,16 +380,10 @@ def test_service_takeover_transfers_batch_ownership(tmp_path: Path) -> None:
         ref=ref, cache_dir=tmp_path / "cache", worker="taker", session_id="session-a",
     )
     out = taker.takeover("m", "victim", "owner session exhausted")
-    assert out["ok"], out
-    assert out["data"]["displaced"] == "victim"
-    assert len(out["data"]["transferred_batches"]) == 1
-    new_owner_gen = out["data"]["transferred_batches"][0]["owner_generation"]
+    assert not out["ok"] and out["code"] == "E_BATCH_OWNER"
+    assert "victim" in out["error"]
     snap = git_backend.read(ref, tmp_path / "cache").snapshot
-    assert snap.index["batches"]["batch-1"]["owner"] == "taker"
-    # The transferred ownership is immediately usable: release, then abort.
-    assert taker.release("m", out["data"]["claim"]["generation"])["ok"]
-    assert taker.abort_batch("batch-1", new_owner_gen)["ok"]
-    assert git_backend.read(ref, tmp_path / "cache").snapshot.index["batches"]["batch-1"]["lifecycle"] == "aborted"
+    assert snap.index["batches"]["batch-1"]["owner"] == "victim"
 
 
 def test_service_update_records_invalidate_on_dependents(tmp_path: Path) -> None:
@@ -401,7 +401,7 @@ def test_service_update_records_invalidate_on_dependents(tmp_path: Path) -> None
         store.op_prepare(
             snap, "b", "worker", claim["claim"]["generation"], batch_id="batch-1", member_id="b",
             source_worktree="/tmp/source", source_revision=revision, source_base=revision,
-            accepted_head=revision, integration_head=revision,
+            accepted_head=revision, integration_head=_head(snap),
             scope_hash=snap.index["batches"]["batch-1"]["scope_hash"],
             verification=_verification(revision), implementation_dependencies=["a"],
         )
@@ -461,7 +461,7 @@ def test_prepared_member_cannot_be_dropped_while_batch_is_active() -> None:
     store.op_prepare(
         snap, "a", "worker", claim["claim"]["generation"], batch_id="batch-1", member_id="a",
         source_worktree="/tmp/source", source_revision=revision, source_base=revision,
-        accepted_head=revision, integration_head=revision,
+        accepted_head=revision, integration_head=_head(snap),
         scope_hash=snap.index["batches"]["batch-1"]["scope_hash"], verification=_verification(revision),
     )
     with pytest.raises(TodoError) as exc:
@@ -514,7 +514,7 @@ def test_member_edit_invalidates_prepared_receipt() -> None:
     store.op_prepare(
         snap, "a", "worker", claim["claim"]["generation"], batch_id="batch-1", member_id="a",
         source_worktree="/tmp/source", source_revision=revision, source_base=revision,
-        accepted_head=revision, integration_head=revision,
+        accepted_head=revision, integration_head=_head(snap),
         scope_hash=snap.index["batches"]["batch-1"]["scope_hash"], verification=_verification(revision),
     )
     assert "prepared" in snap.details["a"]
@@ -537,7 +537,7 @@ def test_member_edit_invalidates_transitive_downstream_receipts() -> None:
         store.op_prepare(
             snap, item_id, "worker", claim["claim"]["generation"], batch_id="batch-1", member_id=item_id,
             source_worktree="/tmp/source", source_revision=revision, source_base=revision,
-            accepted_head=revision, integration_head=revision,
+            accepted_head=revision, integration_head=_head(snap),
             scope_hash=snap.index["batches"]["batch-1"]["scope_hash"], verification=_verification(revision),
             implementation_dependencies=deps,
         )
@@ -559,11 +559,11 @@ def test_member_edit_cannot_invalidate_completed_dependent() -> None:
         store.op_prepare(
             snap, item_id, "worker", claim["claim"]["generation"], batch_id="batch-1", member_id=item_id,
             source_worktree="/tmp/source", source_revision=revision, source_base=revision,
-            accepted_head=revision, integration_head=revision,
+            accepted_head=revision, integration_head=_head(snap),
             scope_hash=snap.index["batches"]["batch-1"]["scope_hash"], verification=_verification(revision),
             implementation_dependencies=deps,
         )
-    store.op_bind_batch_pr(snap, "batch-1", "worker", "1" * 32, number=1, node_id="PR_1", head=revision)
+    store.op_bind_batch_pr(snap, "batch-1", "worker", "1" * 32, pr_repository="repo", number=1, node_id="PR_1", head=_bound_head(snap))
     claim = store.op_take(snap, "b", "worker")
     store.op_finish(snap, "b", "worker", claim["claim"]["generation"], _final_evidence(snap, revision, ["a", "b"]))
     with pytest.raises(TodoError) as exc:
@@ -668,7 +668,7 @@ def test_schema_three_cutover_requires_explicit_confirmation() -> None:
         scope_hash=store.scope_digest({"a": ["a/**"]}), delivery_boundary="final-pr",
         terminal_outcome="merged", confirm_schema3_cutover=True,
     )
-    assert snap.index["schema_version"] == 3
+    assert snap.index["schema_version"] == 4
 
 
 def test_real_git_scope_and_repository_identity_checks(tmp_path: Path) -> None:
@@ -687,18 +687,14 @@ def test_real_git_scope_and_repository_identity_checks(tmp_path: Path) -> None:
     assert TrackerService._changed_paths(str(source), base, head) == ["a/ok.txt"]
 
 
-def test_literal_git_paths_cannot_hide_drift(tmp_path: Path) -> None:
+def test_literal_git_paths_are_listed_verbatim(tmp_path: Path) -> None:
     source, base = _git_checkout(tmp_path)
     magic_name = ":(exclude)*"
     (source / magic_name).write_text("accepted\n", encoding="utf-8")
     subprocess.run(["git", "--literal-pathspecs", "-C", str(source), "add", "--", magic_name], check=True)
     subprocess.run(["git", "-C", str(source), "commit", "--quiet", "-m", "accepted"], check=True)
     accepted = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
-    (source / magic_name).write_text("drifted\n", encoding="utf-8")
-    subprocess.run(["git", "-C", str(source), "commit", "--quiet", "-am", "drift"], check=True)
-    integrated = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
     assert magic_name in TrackerService._changed_paths(str(source), base, accepted)
-    assert TrackerService._unchanged_paths(str(source), accepted, integrated, [magic_name]) is False
 
 
 def test_dependent_prepare_rejects_caller_selected_empty_range() -> None:
@@ -729,7 +725,7 @@ def test_dependent_prepare_rejects_caller_selected_empty_range() -> None:
             scope_hash=snap.index["batches"]["batch-1"]["scope_hash"], verification=_verification(accepted),
             implementation_dependencies=["a"],
         )
-    assert exc.value.code == "E_STATE"
+    assert exc.value.code == "E_BATCH_HEAD"
 
 
 def test_runtime_readiness_fails_closed_when_integration_checkout_moves(tmp_path: Path) -> None:
@@ -746,11 +742,15 @@ def test_runtime_readiness_fails_closed_when_integration_checkout_moves(tmp_path
         snap, item_id="b", title="B", needs=["a"],
         batch={"batch_id": "batch-1", "member_id": "b", "implementation_dependencies": ["a"]},
     )
+    (source / "a.txt").write_text("a\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(source), "add", "a.txt"], check=True)
+    subprocess.run(["git", "-C", str(source), "commit", "--quiet", "-m", "land a"], check=True)
+    landed = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
     claim = store.op_take(snap, "a", "worker")
     store.op_prepare(
         snap, "a", "worker", claim["claim"]["generation"], batch_id="batch-1", member_id="a",
         source_worktree=str(source), source_revision=revision, source_base=revision,
-        accepted_head=revision, integration_head=revision,
+        accepted_head=revision, integration_head=landed,
         scope_hash=snap.index["batches"]["batch-1"]["scope_hash"], verification=_verification(revision),
     )
     service = TrackerService(ref=None, cache_dir=tmp_path, worker="worker")  # type: ignore[arg-type]

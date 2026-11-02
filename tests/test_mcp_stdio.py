@@ -10,6 +10,7 @@ from pathlib import Path
 
 EXPECTED_TOOLS = {
     "abort_batch",
+    "advance_batch_head",
     "bind_batch_pr",
     "create_item",
     "defer",
@@ -21,9 +22,11 @@ EXPECTED_TOOLS = {
     "list_items",
     "prepare",
     "promote_deferral",
+    "recover_batch_owner",
     "release",
     "renew",
     "register_batch",
+    "show_batch",
     "show_item",
     "take",
     "takeover",
@@ -124,6 +127,33 @@ def test_stdio_smoke_initialize_and_tools_list(tmp_path: Path):
         assert names == EXPECTED_TOOLS, f"tool surface drift: {sorted(names)}"
         resp3 = _rpc(proc, "tools/call", {"name": "list_items", "arguments": {}}, req_id=3)
         assert "result" in resp3
+    finally:
+        try:
+            proc.terminate()
+            proc.wait(timeout=5)
+        except Exception:
+            proc.kill()
+
+
+def test_initialize_advertises_batch_v2_capability(tmp_path: Path):
+    remote = _make_state(tmp_path)
+    proc = _spawn_server(remote, tmp_path / "cache")
+    try:
+        resp = _rpc(
+            proc,
+            "initialize",
+            {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "test-stdio", "version": "0"}},
+            req_id=1,
+        )
+        from todo_db import BATCH_CAPABILITY, TOOL_VERSION
+
+        advertised = resp["result"]["capabilities"]["experimental"]["todo_db_batch"]
+        assert advertised == BATCH_CAPABILITY
+        assert advertised["version"] == 2
+        assert advertised["receipt_schema"] == "prepared_work_v2"
+        assert advertised["store_schema_version"] == 4
+        assert advertised["supported_schema_versions"] == [1, 2, 3, 4]
+        assert advertised["tool_version"] == TOOL_VERSION
     finally:
         try:
             proc.terminate()

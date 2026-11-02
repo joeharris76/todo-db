@@ -230,7 +230,7 @@ def test_takeover_end_to_end_with_audit(tmp_path: Path) -> None:
     data = out["data"]
     assert data["displaced"] == "victim"
     assert data["claim"]["generation"] != old_gen
-    assert data["transferred_batches"] == []
+    assert "transferred_batches" not in data
     log = _sessions_of(ref, tmp_path / "cache-taker")["x1"]["sessions"]
     assert [entry["op"] for entry in log] == ["create", "take", "takeover"]
     taken = log[-1]

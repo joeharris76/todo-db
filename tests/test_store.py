@@ -146,7 +146,6 @@ def test_op_takeover_guards_and_fresh_claim() -> None:
     assert out["claim"]["worker"] == "taker"
     assert out["claim"]["generation"] != gen
     assert out["claim"]["renewals"] == 0
-    assert out["transferred_batches"] == []
     assert snap.index["items"]["task"]["status"] == "active"
     with pytest.raises(TodoError):
         store.op_renew(snap, "task", "victim", gen)
@@ -462,7 +461,8 @@ def test_validate_snapshot_drop_reason() -> None:
     store.op_create(snap, item_id="task", title="Legacy")
     snap.index["items"]["task"]["status"] = "dropped"
     store.validate_snapshot(snap.index, snap.details)  # dropped without reason stays valid
-    assert store.SCHEMA_VERSION == 3
+    assert store.SCHEMA_VERSION == 4
+    assert store.BOOTSTRAP_SCHEMA_VERSION == 3
     for bad in ("", "  ", 5, None, ["x"]):
         snap.details["task"]["drop_reason"] = bad
         with pytest.raises(TodoError) as exc:
