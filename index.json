@@ -274,18 +274,13 @@
       "title": "Roll out 0.11.0 to the global todo-db install and the global todo skill"
     },
     "global-install-and-skill-behind-0-12-0": {
-      "claim": {
-        "expires_at": "2026-11-03T02:08:29Z",
-        "generation": "a61c2430eeab4950a8ad03ab139c0a3e",
-        "renewals": 0,
-        "worker": "joe-rollout-global"
-      },
+      "claim": null,
       "needs": [
         "global-skill-dirs-as-skill-sync-targets",
         "cli-version-flag"
       ],
       "priority": "medium",
-      "status": "active",
+      "status": "done",
       "title": "Roll out 0.12.0 to the global todo-db install and the global todo skill"
     },
     "global-rollout-0-12-0": {

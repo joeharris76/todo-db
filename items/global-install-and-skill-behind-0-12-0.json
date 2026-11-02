@@ -43,6 +43,15 @@
       "op": "update",
       "op_id": "2c01d39b47374936ac829f3afb3a90fa",
       "session_id": "333d3bad0ac74e408d8b4beead2ef820"
+    },
+    {
+      "actor": "joe-rollout-global",
+      "at": "2026-11-02T02:08:35Z",
+      "client": "mcp",
+      "generation": "a61c2430eeab4950a8ad03ab139c0a3e",
+      "op": "finish",
+      "op_id": "661b9faf1dc548afa2ff3c20e5690557",
+      "session_id": "333d3bad0ac74e408d8b4beead2ef820"
     }
   ]
 }
