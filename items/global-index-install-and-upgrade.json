@@ -5,7 +5,7 @@
     "A fresh MCP server initializes, lists tools, and confirms expected store binding without mutating tracker state. Record which existing sessions need restart; do not claim running processes were updated by replacing files.",
     "Rollback procedure retains a checksum-verified compatible wheel; never downgrade below the active schema's minimum client version or migrate/downgrade state. Human-only E_SCHEMA recovery policy remains unchanged."
   ],
-  "context": "Global installation was observed at 0.14.0 before this batch: verify receipt rather than assuming the earlier 0.13.0 installation remains. This task changes distribution source, not schema.",
+  "context": "Global installation was observed at 0.14.0 before this batch: verify receipt rather than assuming the earlier 0.13.0 installation remains. This task changes distribution source, not schema.\n\nTODO review passed against approved proposal: description, observable acceptance, decision gates, guardrails, and needs cover publisher identity, original-tag artifact provenance, wheel/sdist parity, fresh index CLI/MCP smoke, global receipt/upgrade/restart/compatible rollback, publication-completion gate, and pre-cutover client inventory. Chain is publisher -> publication -> global source migration; release-process work is independent. No schema migration, token workaround, or consumer pin migration.",
   "description": "Replace the global versioned-wheel requirement with an index-resolved todo-db[mcp]>=0.14.0 requirement only after verified publication. Prior art: ~/.local/share/uv/tools/todo-db/uv-receipt.toml pins a GitHub URL; uv tool upgrade cannot discover newer GitHub assets. Decision gate: retain existing receipt/version and a verified wheel rollback command before replacement. Keep immutable pins for BenchBox and other reproducible consumers; no repo dependency migration. If index is unavailable or hashes differ, leave the working install untouched.",
   "sessions": [
     {
@@ -14,6 +14,14 @@
       "client": "omp-coding-agent",
       "op": "create",
       "op_id": "ebcd78322a62415a8dd83eb71cc79977",
+      "session_id": "ac6f10803392408b96a0d6760141aede"
+    },
+    {
+      "actor": "mcp:omp-coding-agent:joe@joe-mac-mini.local:cc945f1a9df6845bea34cddd",
+      "at": "2026-11-02T14:02:09Z",
+      "client": "omp-coding-agent",
+      "op": "update",
+      "op_id": "d83f2c3350df407f9f2f514ccdc28db9",
       "session_id": "ac6f10803392408b96a0d6760141aede"
     }
   ]
