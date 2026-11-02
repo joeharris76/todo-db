@@ -6,6 +6,71 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-11-01
+
+Batch v2 (ADR 0012): the integration-branch delivery loop. Receipts move to
+`prepared_work_v2` and the store to schema 4 through one cutover; see the
+upgrade note below before registering a batch.
+
+### Added
+
+- `show_batch` tool and `todo-db batch show BATCH_ID` read-only CLI command:
+  registry, receipts, integration log, acceptance requirements, recoveries and
+  final-PR history, with paged sections under the 16 KiB cap. The owner
+  generation is never served.
+- `advance_batch_head` tool: owner-only, compare-and-swap recording of a leader
+  `fix` or a `develop-merge` as the new integration head, with the changed files
+  verified against the real integration checkout.
+- `recover_batch_owner` tool: a new session takes over a batch from a dead
+  leader by naming the exact owner and generation, supplying its own new
+  generation, and giving a reason. Audited on the batch and on every member;
+  an exact retry is idempotent.
+- `develop_ref` on `register_batch`: the remote-tracking ref (under
+  `refs/remotes/`) that develop merges are verified against, fixed at
+  registration.
+- `initialize` advertises `capabilities.experimental.todo_db_batch` (version 2,
+  receipt schema, store schema, supported schema versions, tools), also exposed
+  as `todo_db.BATCH_CAPABILITY`.
+- Error codes `E_BATCH_OWNER` and `E_BATCH_HEAD`.
+
+### Changed
+
+- **Breaking, store cutover:** the first `register_batch` with
+  `confirm_schema3_cutover=true` moves a schema 1, 2 or 3 store directly to
+  schema 4 in one commit. It is refused while a schema-3 batch is active and
+  while another worker holds a live claim. Older clients refuse a schema-4 store
+  with `E_SCHEMA`. New state branches still bootstrap at schema 3. Item `batch`
+  metadata can no longer raise the schema on its own; below schema 4 it is
+  refused with `E_SCHEMA`.
+- **Breaking, receipts:** `prepare` writes `prepared_work_v2` receipts (adding
+  `owner_epoch`, `integration_seq` and `overlaps`, and dropping
+  `owner_generation`). `prepared_work_v1` receipts are never reinterpreted under
+  v2 rules and stay valid only on legacy batches.
+- Members of an active batch are reserved to the batch owner: `take`,
+  `takeover`, `prepare` and `finish` by anyone else are refused with
+  `E_BATCH_OWNER`. `takeover` no longer transfers batch ownership and its
+  acknowledgement drops `transferred_batches`; use `recover_batch_owner`.
+  `register_batch` refuses members claimed by another worker.
+- `prepare` accepts a `source_base` equal to the batch start head or any
+  recorded integration head, measures changed files from it without rename
+  detection, and records overlap with earlier members and with fixes dispatched
+  before them. Prepared heads must be new and must not carry unrecorded leader
+  commits. Receipts keep the integration head they were integrated at. Byte
+  equality of earlier members' files is no longer required.
+- Final evidence for a v2 batch must carry `current_acceptance` for every member
+  whose files were overlapped or touched by a fix, and `final_pr.repository`.
+  Develop-merge paths are excluded from the scope union unless a member or fix
+  also changed them.
+- **Breaking tool input:** `bind_batch_pr` takes `pr_repository` and an optional
+  `expected_previous_head`; the binding can move to a new head with the guard,
+  refuses a different PR, and an exact retry is idempotent.
+- `update_item` keeps a prepared member's receipt and its dependents for
+  `context`/`context_append`-only edits; every other edit still invalidates
+  transitively. Invalidating edits are refused once any member of the batch is
+  done, and a member without a receipt can be prepared again (`reprepare`).
+- Idempotent retries of `advance_batch_head`, `bind_batch_pr` and
+  `recover_batch_owner` succeed without writing a commit.
+
 ### Fixed
 
 - `todo-db-mcp` no longer refuses to start when the state remote is

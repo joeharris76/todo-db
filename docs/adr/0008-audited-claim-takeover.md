@@ -31,9 +31,12 @@ reinterprets — the §2.2 rule:
   under the cooperative model, not a proof of death.
 - **Fresh claim**: new generation, zeroed renewals, fresh lease; the
   displaced image goes stale exactly as in re-adoption.
-- **Batch ownership follows the item**: batches owned by the displaced
-  holder that contain the taken item transfer to the taker, or prepared
-  work strands permanently with no expiry to wait out.
+- **Batch ownership follows the item** *(superseded by ADR 0012: members of
+  an active batch are reserved to the batch owner and `takeover` no longer
+  transfers ownership; a dead owner is replaced with `recover_batch_owner`)*:
+  batches owned by the displaced holder that contain the taken item transfer
+  to the taker, or prepared work strands permanently with no expiry to wait
+  out.
 - **Fail-closed attribution**: takeover requires a session; sessionless
   callers are refused rather than recorded-skipped. Same-worker and
   unclaimed cases are redirected to `take`.
