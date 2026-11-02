@@ -69,7 +69,7 @@ it. Once the Publish run has produced the GitHub release:
 
 1. **Global tool.** Reinstall from the release wheel, pinned to its line in
    the release's `SHA256SUMS`, and confirm `uv tool list` reports the new
-   version:
+   version (from 0.13.0, `todo-db --version` also confirms it):
 
    ```bash
    uv tool install --reinstall "todo-db[mcp] @ https://github.com/joeharris76/todo-db/releases/download/v$VERSION/todo_db-$VERSION-py3-none-any.whl#sha256=$SHA256"
@@ -82,9 +82,14 @@ it. Once the Publish run has produced the GitHub release:
 3. **Skill text.** When the release changes what agents should do, merge the
    `todo` skill change in skill-sync-skills, then advance every pin that
    serves it: each project's `skill-sync.conf` (see
-   [skill-deployment.md](skill-deployment.md)) and the global store
-   (`deployment/global/skill-sync.conf`, then apply and activate it as the
-   skill-sync-skills README describes).
+   [skill-deployment.md](skill-deployment.md)) and the global loader folders
+   (`~/.claude/skills`, `~/.codex/skills`, `~/.agents/skills`). For the global
+   folders, bump the template rev (`deployment/global/skill-sync.conf`)
+   through review in skill-sync-skills, set the same rev in
+   `~/.skill-sync-deployment/skill-sync.conf`, then run `tools/skill-sync
+   apply`, `verify` and `check` with `-C ~ -f
+   ~/.skill-sync-deployment/skill-sync.conf`. There is no snapshot or symlink
+   repoint; the skill-sync-skills README has the details.
 4. **Running sessions.** An MCP server keeps the version it started with.
    Restart open sessions, then check the server: from 0.11.0, its
    `get_instructions` answer includes a "Bound store" section.

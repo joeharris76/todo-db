@@ -6,7 +6,7 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-## [0.13.0] - 2026-11-01
+## [0.14.0] - 2026-11-02
 
 Batch v2 (ADR 0012): the integration-branch delivery loop. Receipts move to
 `prepared_work_v2` and the store to schema 4 through one cutover; see the
@@ -73,15 +73,6 @@ upgrade note below before registering a batch.
 
 ### Fixed
 
-- `todo-db-mcp` no longer refuses to start when the state remote is
-  unreachable and a cached revision exists for the state branch. It probes
-  the remote for at most 10 seconds, logs a warning naming the cached
-  revision, and serves reads from it; mutations still fail with `E_OFFLINE`
-  until the remote is back. With no cache it still fails at startup, and a
-  reachable remote that lacks the state branch still reports the bootstrap
-  hint. `show_item`, including section reads, now reports `stale` and
-  `cached_rev` instead of `rev` when served from the cache, as `list_items`
-  already did.
 - Batch v2 acceptance accounting now remembers every integrated member's changed
   files, so a member re-prepared after an invalidating edit still requires its own
   acceptance rerun when a later member overlapped it (no silent revert).
@@ -91,6 +82,26 @@ upgrade note below before registering a batch.
 - Finishing a member of an active pre-v2 batch is refused with `E_SCHEMA` even
   without final evidence, and every new batch refusal carries recovery steps.
 - A completed prepared member refuses every edit, including `context`-only ones.
+
+## [0.13.0] - 2026-11-01
+
+### Added
+
+- `todo-db --version` and `todo-db-mcp --version` print the installed
+  version and exit 0 without resolving a config or state remote, touching
+  the network, or (for `todo-db`) requiring the `mcp` extra.
+
+### Fixed
+
+- `todo-db-mcp` no longer refuses to start when the state remote is
+  unreachable and a cached revision exists for the state branch. It probes
+  the remote for at most 10 seconds, logs a warning naming the cached
+  revision, and serves reads from it; mutations still fail with `E_OFFLINE`
+  until the remote is back. With no cache it still fails at startup, and a
+  reachable remote that lacks the state branch still reports the bootstrap
+  hint. `show_item`, including section reads, now reports `stale` and
+  `cached_rev` instead of `rev` when served from the cache, as `list_items`
+  already did.
 
 ## [0.12.0] - 2026-10-31
 

@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from . import git_backend
+from . import TOOL_VERSION, git_backend
 from . import store as S
 from .errors import TodoDBError
 from .migrate import migrate_file
@@ -300,6 +300,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="todo-db",
         description="Minimal human/CI CLI for the JSON/Git TODO tracker.",
     )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {TOOL_VERSION}")
     sub = parser.add_subparsers(dest="command", required=True)
 
     bootstrap = sub.add_parser("bootstrap", help="create the state branch with empty state")

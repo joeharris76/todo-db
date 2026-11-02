@@ -15,6 +15,7 @@ import sys
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
+from .. import TOOL_VERSION
 from ..errors import E_OFFLINE, TodoDBError, TodoError
 from .identity import Identity, PrincipalHolder, resolve_identity
 from .instructions import render_instructions
@@ -40,6 +41,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="todo-db-mcp",
         description="MCP stdio server for the JSON/Git TODO tracker: the agent interface.",
     )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {TOOL_VERSION}")
     parser.add_argument("--config", help="path to a .todo-db/config.json (overrides discovery)")
     parser.add_argument("--state-remote", help="Git URL or path of the state remote")
     parser.add_argument("--state-branch", help="state branch (default: todo-state)")
