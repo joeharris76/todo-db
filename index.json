@@ -386,6 +386,13 @@
       "status": "done",
       "title": "Give provisioning and rotation a named, one-time procedure the exit-4 message points at"
     },
+    "index-distribution-and-schema-cutover-gates": {
+      "claim": null,
+      "needs": [],
+      "priority": "high",
+      "status": "open",
+      "title": "Gate distribution on index installs and schema cutovers on upgraded clients"
+    },
     "mcp-0-5-0-release": {
       "claim": null,
       "needs": [

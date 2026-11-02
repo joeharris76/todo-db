@@ -1,0 +1,26 @@
+{
+  "acceptance": [
+    "Workflow has a fail-closed post-PyPI verification path comparing wheel/sdist digests to build artifacts and exercising both entry points and real MCP initialization/tools-list from a fresh index installation; failed/pending publish cannot satisfy distribution completion.",
+    "README and operations guidance distinguish index upgrade from URL pin replacement; document one-time migration with mcp retained and restart requirement, verified rollback, exact trusted publisher setup, original-tag rerun/artifact-expiry decision gate, and no secret-token workaround.",
+    "Release ordering separates existing pre-tag gates from post-publication distribution checks and requires an explicit affected-client inventory with restart/stop evidence before irreversible schema cutover; no agent bypass of E_SCHEMA or new automatic migration.",
+    "Run meaningful success/failure smoke cases for new verification behavior without publishing or mutating authoritative tracker state, then project lint and tests; review docs and workflow against the entire approved proposal before PR closeout.",
+    "Publication-dependent examples are explicitly conditional until PyPI verification succeeds; existing GitHub-wheel install remains usable meanwhile. No fabricated index success, forced tags, consumer pin changes, or dependency/toolchain churn."
+  ],
+  "context": "Independent repository slice in a serial batch, so account registration and publication need not block implementation. Prior art: existing OIDC publisher and release-gates.md after-tag instructions. Reuse build outputs; avoid alternate deployment systems, package update daemons, or auto-upgrading servers.",
+  "description": "Close the release-process gap independently of the PyPI account blocker. Extend .github/workflows/publish.yml, README.md, docs/operations/release-gates.md and directly affected install guidance using existing build-once artifacts. Global installs use the package index; versioned GitHub wheels remain an explicit immutable-pin alternative. Decision gate: distribution complete only after PyPI publish, artifact parity, and fresh index-install smoke succeed; no main-branch manual dispatch may publish as a tag. Before future schema cutovers, operator must enumerate affected clients, upgrade/restart or stop each, and retain compatible rollback. Preserve existing pre-tag lifecycle and real-consumer gates and human-only E_SCHEMA recovery; no schema changes in this batch.",
+  "links": [
+    ".github/workflows/publish.yml",
+    "README.md",
+    "docs/operations/release-gates.md"
+  ],
+  "sessions": [
+    {
+      "actor": "mcp:omp-coding-agent:joe@joe-mac-mini.local:cc945f1a9df6845bea34cddd",
+      "at": "2026-11-02T14:00:51Z",
+      "client": "omp-coding-agent",
+      "op": "create",
+      "op_id": "459cceb07eea401abd8a7147ae7a9b63",
+      "session_id": "ac6f10803392408b96a0d6760141aede"
+    }
+  ]
+}
