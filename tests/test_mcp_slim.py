@@ -108,6 +108,7 @@ def test_registered_batch_contract_is_public_over_mcp(tmp_path: Path) -> None:
                 "integration_worktree": str(repo), "start_head": revision,
                 "members": ["a"], "scope": scope, "scope_hash": store.scope_digest(scope),
                 "delivery_boundary": "final-pr", "terminal_outcome": "merged",
+                "confirm_schema3_cutover": True,
             }))
             assert registered["ok"], registered
             created = _payload(await session.call_tool("create_item", {
@@ -141,6 +142,7 @@ def test_public_mcp_prepared_delivery_and_finish(tmp_path: Path) -> None:
                 "integration_worktree": str(repo), "start_head": base, "members": ["a"],
                 "scope": scope, "scope_hash": store.scope_digest(scope),
                 "delivery_boundary": "final-pr", "terminal_outcome": "merged",
+                "confirm_schema3_cutover": True,
             }))
             assert registered["ok"], registered
             subprocess.run(["git", "-C", str(repo), "merge", "--ff-only", "worker-a"], check=True)
@@ -183,10 +185,10 @@ def test_public_mcp_prepared_delivery_and_finish(tmp_path: Path) -> None:
             assert prepared["ok"] and prepared["data"]["status"] == "open", prepared
             taken = _payload(await session.call_tool("take", {"id": "a"}))
             generation = taken["data"]["claim"]["generation"]
-            final_pr = {"number": 1, "node_id": "PR_delivery", "head": ahead}
+            final_pr = {"repository": "owner/repo", "number": 1, "node_id": "PR_delivery", "head": ahead}
             assert _payload(await session.call_tool("bind_batch_pr", {
                 "batch_id": "delivery", "owner_generation": "1" * 32,
-                **final_pr,
+                "pr_repository": "owner/repo", "number": 1, "node_id": "PR_delivery", "head": ahead,
             }))["ok"]
             malformed = _payload(await session.call_tool("finish", {
                 "id": "a", "generation": generation, "final_evidence": {
@@ -408,6 +410,9 @@ def test_startup_schema_cost_is_small(tmp_path: Path) -> None:
             # The required `reason` parameter on drop and its description
             # and guidance line raised the measured total from 4,670 to
             # 4,744; the ceiling rises by that 74.
-            assert tokens <= 4774, tokens
+            # Batch v2 adds show_batch, advance_batch_head and
+            # recover_batch_owner plus the owner/head guidance and the
+            # revisable bind_batch_pr arguments (ADR 0012): 4,744 -> 5,614.
+            assert tokens <= 5614, tokens
 
     anyio.run(go)

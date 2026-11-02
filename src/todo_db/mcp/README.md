@@ -23,10 +23,13 @@ One server instance is one logical worker. Default identities are isolated per
 server; stable explicit actors must not run concurrently. Blocking Git work
 runs via `asyncio.to_thread`; there is no shared mutable connection to guard.
 
-The first `register_batch` call that upgrades a state branch to schema 3 needs
-`confirm_schema3_cutover=true`. Set it only after stopping or upgrading every
-older process with access to that branch; schema-1 clients cannot read the
-upgraded state, and there is no runtime capability negotiation.
+The first `register_batch` call that upgrades a state branch to schema 4 needs
+`confirm_schema3_cutover=true` (ADR 0012). Set it only after stopping or
+upgrading every older process with access to that branch and releasing other
+workers' claims; older clients refuse a schema-4 store with `E_SCHEMA`.
+`initialize` advertises `capabilities.experimental.todo_db_batch` (version 2,
+receipt schema `prepared_work_v2`) so consumers can refuse a runtime without
+batch v2.
 
 `create_item` and `update_item` accept `not_before`, a future RFC 3339 time
 with `Z` or an offset. It holds an open task out of the ready queue until that

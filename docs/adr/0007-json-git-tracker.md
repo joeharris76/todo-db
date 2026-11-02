@@ -56,6 +56,12 @@ the state branch has been stopped or upgraded. There is no mixed-version
 capability negotiation. This fail-closed boundary prevents an older client from
 silently bypassing prepared-member evidence rules after the upgrade.
 
+Batch v2 amendment (2026-11-01): ADR 0012 replaces the schema-3 batch rules
+with schema 4, `prepared_work_v2` receipts and an advertised `todo_db_batch`
+capability. The first `register_batch` with the same confirm flag migrates a
+schema 1, 2 or 3 store directly to schema 4; older clients refuse it with
+`E_SCHEMA`.
+
 ## Consequences
 
 Breaking simplification: no compatibility layer for removed tools, gates,

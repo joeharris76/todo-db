@@ -79,6 +79,10 @@ environment, where per-call exit codes are vacuous.
 **Rejected — zero CLI.** A daemon cannot bootstrap itself, and a release
 pipeline should not depend on an agent runtime.
 
+*Amendment (2026-11-01, ADR 0012):* `todo-db batch show` joins the floor CLI
+as a read-only verb, because CI and landing scripts that cannot call MCP tools
+must read the batch registry, receipts and advances.
+
 ### G3: The server process is the credential-scoping boundary (amends ADR 0005 G1)
 
 ADR 0005 G1's non-goal reads: "A credential is resolved for the capability the

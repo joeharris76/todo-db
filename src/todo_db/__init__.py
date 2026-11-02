@@ -5,6 +5,8 @@ from importlib.metadata import version
 from . import store
 from .errors import (
     E_ACTIVE_CLAIMS,
+    E_BATCH_HEAD,
+    E_BATCH_OWNER,
     E_CLAIM_STALE,
     E_CONFLICT,
     E_CURSOR_STALE,
@@ -25,9 +27,12 @@ from .git_backend import ReconcileResult, StateRef, bootstrap, history, mutate, 
 from .service import TrackerService, count_tokens
 
 TOOL_VERSION = version("todo-db")
+BATCH_CAPABILITY = store.batch_capability(TOOL_VERSION)
 
 __all__ = [
     "E_ACTIVE_CLAIMS",
+    "E_BATCH_HEAD",
+    "E_BATCH_OWNER",
     "E_CLAIM_STALE",
     "E_CONFLICT",
     "E_CURSOR_STALE",
@@ -41,6 +46,7 @@ __all__ = [
     "E_SCHEMA",
     "E_STATE",
     "E_UNKNOWN",
+    "BATCH_CAPABILITY",
     "TOOL_VERSION",
     "ReconcileResult",
     "StateRef",

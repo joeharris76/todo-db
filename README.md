@@ -135,7 +135,7 @@ across ordinary restarts; do not run that actor concurrently in two servers.
 | Migration | `migrate --from-export <file> [--dry-run]` |
 | Recovery | `recover --op-id <id>` / `--restore-rev <sha>` / `--limit N` |
 | Cache | `cache prune [--older-than DAYS] [--dry-run]` |
-| Reads | `list`, `show` |
+| Reads | `list`, `show`, `batch show` |
 
 Planning and lifecycle mutation are MCP tools, not CLI commands.
 
