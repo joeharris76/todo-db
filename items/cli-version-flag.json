@@ -3,6 +3,7 @@
     "`todo-db --version` and `todo-db-mcp --version` print the installed package version and exit 0 without resolving a state remote or config.",
     "Tests cover both entry points."
   ],
+  "context": "DONE 2026-11-01: todo-db#62 merged (e1b226d) and released in v0.13.0. `todo-db --version` and `todo-db-mcp --version` print `<prog> <version>` from TOOL_VERSION during argument parsing, with no config, remote, network or (for todo-db) mcp extra. tests/test_version_flag.py covers both entry points, including the installed console scripts from a directory with no config; full suite 323 passed, ruff clean, CI 3.10/3.13 green. Release gate 1 checks both flags (pass on 0.13.0, fail on 0.12.0). The global install now reports `todo-db 0.13.0` / `todo-db-mcp 0.13.0`.",
   "description": "`todo-db --version` prints the usage and \"the following arguments are required: command\" (0.11.0); `src/todo_db/cli.py` defines no version option. Checking a rollout today needs `uv tool list`, which only covers uv tool installs, or an MCP `initialize` handshake to read `serverInfo.version`. The \"After the tag\" steps in `docs/operations/release-gates.md` ask the operator to confirm the new version.",
   "sessions": [
     {
@@ -21,6 +22,14 @@
       "op": "take",
       "op_id": "15b8edeacfdb4fc18565713f4d1daabf",
       "session_id": "14e5e7f1b4644303a0664ca76a90731c"
+    },
+    {
+      "actor": "joe-rollout-controller",
+      "at": "2026-11-02T02:08:05Z",
+      "client": "mcp",
+      "op": "update",
+      "op_id": "302549104f4b479183b059a25ff348a3",
+      "session_id": "5f023e11be2343959cc5285b3fd58465"
     }
   ]
 }
