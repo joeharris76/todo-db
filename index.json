@@ -266,6 +266,15 @@
       "status": "open",
       "title": "Isolate store init from global hooks on Git versions below 2.31"
     },
+    "global-index-install-and-upgrade": {
+      "claim": null,
+      "needs": [
+        "pypi-release-0-14-0-verify"
+      ],
+      "priority": "high",
+      "status": "open",
+      "title": "Move the global tracker installation to the verified package index"
+    },
     "global-install-and-skill-behind-0-11-0": {
       "claim": null,
       "needs": [],

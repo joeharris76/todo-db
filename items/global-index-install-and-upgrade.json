@@ -1,0 +1,20 @@
+{
+  "acceptance": [
+    "uv tool install --force using a package-name requirement and explicit PyPI default index succeeds; receipt contains no todo-db wheel URL or exact-version upper bound and retains mcp extra.",
+    "todo-db and todo-db-mcp on PATH report at least 0.14.0 and agree with installed metadata; uv tool upgrade todo-db resolves the index-based requirement successfully.",
+    "A fresh MCP server initializes, lists tools, and confirms expected store binding without mutating tracker state. Record which existing sessions need restart; do not claim running processes were updated by replacing files.",
+    "Rollback procedure retains a checksum-verified compatible wheel; never downgrade below the active schema's minimum client version or migrate/downgrade state. Human-only E_SCHEMA recovery policy remains unchanged."
+  ],
+  "context": "Global installation was observed at 0.14.0 before this batch: verify receipt rather than assuming the earlier 0.13.0 installation remains. This task changes distribution source, not schema.",
+  "description": "Replace the global versioned-wheel requirement with an index-resolved todo-db[mcp]>=0.14.0 requirement only after verified publication. Prior art: ~/.local/share/uv/tools/todo-db/uv-receipt.toml pins a GitHub URL; uv tool upgrade cannot discover newer GitHub assets. Decision gate: retain existing receipt/version and a verified wheel rollback command before replacement. Keep immutable pins for BenchBox and other reproducible consumers; no repo dependency migration. If index is unavailable or hashes differ, leave the working install untouched.",
+  "sessions": [
+    {
+      "actor": "mcp:omp-coding-agent:joe@joe-mac-mini.local:cc945f1a9df6845bea34cddd",
+      "at": "2026-11-02T14:00:49Z",
+      "client": "omp-coding-agent",
+      "op": "create",
+      "op_id": "ebcd78322a62415a8dd83eb71cc79977",
+      "session_id": "ac6f10803392408b96a0d6760141aede"
+    }
+  ]
+}
