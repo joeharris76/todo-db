@@ -754,6 +754,15 @@
       "status": "done",
       "title": "Publish todo-db to PyPI so dependents can pin a released version"
     },
+    "pypi-release-0-14-0-verify": {
+      "claim": null,
+      "needs": [
+        "pypi-trusted-publisher-configuration"
+      ],
+      "priority": "high",
+      "status": "open",
+      "title": "Publish and verify todo-db 0.14.0 on PyPI"
+    },
     "pypi-trusted-publisher-configuration": {
       "claim": null,
       "needs": [],
