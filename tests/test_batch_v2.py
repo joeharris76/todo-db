@@ -851,10 +851,10 @@ def test_new_stores_start_below_the_cutover_schema() -> None:
 
 
 def test_batch_capability_names_the_v2_contract() -> None:
-    capability = store.batch_capability("0.13.0")
+    capability = store.batch_capability("0.14.0")
     assert capability == {
         "version": 2, "receipt_schema": "prepared_work_v2", "store_schema_version": 4,
-        "supported_schema_versions": [1, 2, 3, 4], "tool_version": "0.13.0",
+        "supported_schema_versions": [1, 2, 3, 4], "tool_version": "0.14.0",
         "tools": ["advance_batch_head", "recover_batch_owner", "show_batch"],
     }
 

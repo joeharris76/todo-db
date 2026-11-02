@@ -505,7 +505,7 @@ dependents, while no content-affecting edit can outlive a stale receipt.
 - Store schema: **`schema_version` 4** (`SCHEMA_VERSION = 4`;
   `SUPPORTED_SCHEMA_VERSIONS = (1, 2, 3, 4)`).
 - Capability: **`batch-v2`**, version 2. The release shipping it is **todo-db
-  0.13.0** (`tool_version` is `0.13.0`).
+  0.14.0** (`tool_version` is `0.14.0`).
 
 **Advertisement.** The server's `initialize` result carries
 `capabilities.experimental["todo_db_batch"]`:
