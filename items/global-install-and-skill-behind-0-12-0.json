@@ -4,7 +4,7 @@
     "skill-sync-skills deployment/global/skill-sync.conf pins the main catalog group at e7b7fd9 or later, merged through review, and the global skill directories serve that pin through skill-sync (global-skill-dirs-as-skill-sync-targets), with `skill-sync verify` and `check` passing at the live paths; the runtime upgrade lands in the same step",
     "benchbox-site AGENTS.md names 0.12.0 as the minimum todo-db version for its tracker, merged by PR"
   ],
-  "context": "Found 2026-11-01 after the 0.12.0 release and the BenchBox runtime bump (BenchBox PR #3886).\n\nDECISIONS 2026-11-01 (owner, choice dialog): keep this item and drop the duplicate global-rollout-0-12-0. Cut 0.13.0 first (offline-startup fix #58 plus cli-version-flag) and install that globally; upgrade BenchBox's vendored wheel to 0.13.0 in the same batch; PyPI stays out. The global skill text goes live through the skill-sync migration in one switch, which the owner approved without further confirmation.",
+  "context": "Found 2026-11-01 after the 0.12.0 release and the BenchBox runtime bump (BenchBox PR #3886).\n\nDECISIONS 2026-11-01 (owner, choice dialog): keep this item and drop the duplicate global-rollout-0-12-0. Cut 0.13.0 first (offline-startup fix #58 plus cli-version-flag) and install that globally; upgrade BenchBox's vendored wheel to 0.13.0 in the same batch; PyPI stays out. The global skill text goes live through the skill-sync migration in one switch, which the owner approved without further confirmation.\n\nDONE 2026-11-01 (runtime moved to 0.13.0 by owner decision). (1) Released v0.13.0 (todo-db#63, merge b4aaa71, tag v0.13.0): gate 1 22/22 on the candidate, gate 2 `todo-db validate` on BenchBox todo-state (4,059 items, live tip); the release wheel SHA-256 edeff52e… equals the gated candidate and SHA256SUMS. `uv tool install --reinstall 'todo-db[mcp] @ <v0.13.0 wheel URL>#sha256=edeff52e…'`: `uv tool list` reports todo-db v0.13.0; /Users/joe/.local/bin/todo-db-mcp launched with no arguments from the todo-db root reports 0.13.0, a Bound store section, and `drop` requiring `id` and `reason`. (2) skill-sync-skills#102 merged: the global template pins the catalog at e7b7fd9, and the three global folders now serve it through skill-sync (see global-skill-dirs-as-skill-sync-targets); the runtime upgrade ran in the same switch; each live todo/SKILL.md documents expect_store and drop(reason). (3) BenchBox-dev/benchbox-site#103 merged (26de212): AGENTS.md names 0.12.0 as the minimum. The duplicate global-rollout-0-12-0 was dropped. BenchBox's vendored upgrade to 0.13.0 runs as its own PR. Owner step: restart open sessions.",
   "description": "0.12.0 (released 2026-10-31, GitHub release v0.12.0) makes drop require a reason and store it as drop_reason in the same commit. BenchBox pins 0.12.0 in _project/scripts, but the maintainer's machine still runs 0.11.0: `uv tool list` reports todo-db v0.11.0 (installed by global-install-and-skill-behind-0-11-0), and clients that launch todo-db-mcp from PATH get it, including this repository's .mcp.json and benchbox-site's .mcp.json. Those trackers still accept a drop with no reason. The catalog todo skill at skill-sync-skills e7b7fd9 tells agents to pass the reason on drop and notes it needs 0.12.0+, but the global skill directories (~/.claude/skills/todo) still carry the older text. If the global skills are moved to e7b7fd9 before the runtime, agents will pass reason to a 0.11.0 server [unverified whether 0.11.0 rejects the unknown argument]. benchbox-site AGENTS.md still says 'Use todo-db 0.11.0 or later'. The skill-sync-skills primary checkout has someone else's uncommitted edit to deployment/global/skill-sync.conf; coordinate rather than overwrite it.",
   "links": [
     "https://github.com/joeharris76/todo-db/releases/tag/v0.12.0",
@@ -35,6 +35,14 @@
       "op": "take",
       "op_id": "eeb6a875e1374b06a87ae18a23d01688",
       "session_id": "a4045578979c408ebd101c8639166981"
+    },
+    {
+      "actor": "joe-rollout-global",
+      "at": "2026-11-02T02:08:33Z",
+      "client": "mcp",
+      "op": "update",
+      "op_id": "2c01d39b47374936ac829f3afb3a90fa",
+      "session_id": "333d3bad0ac74e408d8b4beead2ef820"
     }
   ]
 }
