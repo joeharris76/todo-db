@@ -31,6 +31,15 @@
       "op": "update",
       "op_id": "597d843bebeb4ef0857f53f3d8751fae",
       "session_id": "14e5e7f1b4644303a0664ca76a90731c"
+    },
+    {
+      "actor": "joe-rollout-skill-dirs",
+      "at": "2026-11-02T01:45:46Z",
+      "client": "mcp",
+      "generation": "7e569c01a93e43d79b34d70d4a7af897",
+      "op": "take",
+      "op_id": "1534ad6ff76f488fb4a18e8adea976db",
+      "session_id": "68c8590366344c78af65b88815374e25"
     }
   ]
 }
