@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Release distribution now requires matching build, GitHub, and PyPI artifacts
+  plus a fresh index-installed CLI/MCP smoke check. Installation guidance
+  distinguishes upgradeable index requirements from immutable wheel pins;
+  schema cutovers require an explicit upgraded-or-stopped client inventory.
+
 ## [0.14.0] - 2026-11-02
 
 Batch v2 (ADR 0012): the integration-branch delivery loop. Receipts move to

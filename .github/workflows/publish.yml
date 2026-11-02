@@ -16,7 +16,7 @@ jobs:
         with: {python-version: "3.12"}
       - name: Validate version matches tag
         run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             TAG="${GITHUB_REF_NAME}"
             PKG_VERSION="$(grep -E '^version = ' pyproject.toml | head -1 | sed -E 's/.*"(.*)".*/\1/')"
             TAG_VERSION="${TAG#v}"
@@ -30,10 +30,10 @@ jobs:
           ls -lh dist/
           WHEEL="$(find dist -maxdepth 1 -name '*.whl' -print -quit)"
           test -n "$WHEEL"
-          uv run --isolated --with "$WHEEL[mcp]" python -c \
+          uv run --isolated --with "${WHEEL}[mcp]" python -c \
             'from importlib.metadata import version; from todo_db import TOOL_VERSION; assert TOOL_VERSION == version("todo-db")'
       - name: Generate checksums
-        run: (cd dist && sha256sum * > SHA256SUMS) && cat dist/SHA256SUMS
+        run: (cd dist && sha256sum -- *.whl *.tar.gz > SHA256SUMS) && cat dist/SHA256SUMS
       - name: Upload dist artifact
         uses: actions/upload-artifact@v4
         with: {name: dist, path: "dist/*", retention-days: 7}
@@ -55,5 +55,32 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with: {name: dist, path: dist}
+      - name: Select upload distributions
+        run: |
+          mkdir publish-dist
+          cp dist/*.whl dist/*.tar.gz publish-dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
-        with: {packages-dir: dist, verbose: true, print-hash: true}
+        with: {packages-dir: publish-dist, verbose: true, print-hash: true}
+  distribution-verify:
+    needs: [github-release, pypi-publish]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with: {python-version: "3.12"}
+      - uses: actions/download-artifact@v4
+        with: {name: dist, path: dist}
+      - name: Verify GitHub release matches the build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "$GITHUB_REF_NAME" --dir release-assets \
+            --pattern '*.whl' --pattern '*.tar.gz' --pattern SHA256SUMS
+          cmp dist/SHA256SUMS release-assets/SHA256SUMS
+          for artifact in dist/*.whl dist/*.tar.gz; do
+            cmp "$artifact" "release-assets/$(basename "$artifact")"
+          done
+      - name: Verify PyPI bytes and fresh index CLI/MCP installation
+        run: python scripts/verify_index_release.py "${GITHUB_REF_NAME#v}" dist

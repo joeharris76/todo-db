@@ -27,16 +27,33 @@ see [Migration from 0.6.x](#migration-from-06x) and the
 
 ## Install
 
-Every release ships a wheel on
-[GitHub Releases](https://github.com/joeharris76/todo-db/releases) with SHA-256
-checksums:
+For global tools, use the package index **after the selected release has passed
+the [distribution gate](docs/operations/release-gates.md#after-the-tag)**:
 
 ```sh
-VERSION=0.8.0
-gh release download "v$VERSION" --repo joeharris76/todo-db \
-  --pattern "todo_db-$VERSION-py3-none-any.whl"
-uv tool install "./todo_db-$VERSION-py3-none-any.whl[mcp]"
-# pipx accepts the same wheel, with the same extra.
+uv tool install --default-index https://pypi.org/simple 'todo-db[mcp]>=0.14.0'
+uv tool upgrade todo-db
+todo-db --version
+todo-db-mcp --version
+```
+
+To replace an existing GitHub-wheel or local-checkout installation, use the
+same install command with `--force`. Keep a checksum-verified wheel compatible
+with the active state schema for rollback before replacing a working install.
+Restart MCP servers after upgrading; running processes keep their old version.
+An index requirement lets `uv tool upgrade` discover later releases. A direct
+wheel URL is an immutable pin: upgrading it does not discover GitHub releases.
+
+Until PyPI publication is verified, or when an immutable pin is wanted, use a
+wheel from [GitHub Releases](https://github.com/joeharris76/todo-db/releases).
+Choose a release compatible with the state schema and copy its wheel digest
+from `SHA256SUMS`:
+
+```sh
+VERSION=0.14.0
+SHA256='<wheel digest from the selected release SHA256SUMS>'
+uv tool install --force \
+  "todo-db[mcp] @ https://github.com/joeharris76/todo-db/releases/download/v$VERSION/todo_db-$VERSION-py3-none-any.whl#sha256=$SHA256"
 ```
 
 From source:
