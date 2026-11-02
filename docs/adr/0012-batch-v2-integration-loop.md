@@ -80,7 +80,8 @@ Vocabulary used throughout:
 - **Idempotent results write nothing.** An idempotent result is decided inside
   `apply`; the service returns it as `{ok:true, data:{…, idempotent:true}}`
   without committing. `_mutate` gains a no-write success path for results marked
-  `idempotent: true`, and only those (today a no-change tree is refused
+  `idempotent: true`, and only those (the implementation carries the marker as
+  an internal `_no_write` ack key that never reaches the caller) (today a no-change tree is refused
   `E_STATE` "operation produced no state change"; `abort_batch`'s idempotent path
   keeps its legacy behaviour).
 - **Audit surfaces.** Every new mutation has a commit trailer/summary naming actor
@@ -357,6 +358,10 @@ writes nothing. Any other mismatch is the stale `E_CONFLICT`.
 overlap/acceptance accounting.
 
 ### 2.5 Recorded overlap and current-acceptance evidence
+
+A v2 client refuses `finish` of a member of a still-active legacy (`batch_schema: 1`)
+batch with `E_SCHEMA`: byte-equality evidence is gone, and the cutover from schema 3
+already refuses to run while such a batch is active.
 
 `_unchanged_paths` byte-equality checks (at `prepare` in the service, in
 `_batch_runtime_ready`, and in `_validate_final_checkout`) are removed. Same-file
