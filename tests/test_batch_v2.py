@@ -778,7 +778,7 @@ def test_cutover_from_schema_3_refused_with_active_batch() -> None:
             snap, batch_id="b2", members=["z"], scope=scope, scope_hash=store.scope_digest(scope),
             confirm_schema3_cutover=True,
         )
-    assert exc.value.code == "E_STATE"
+    assert exc.value.code == "E_STATE" and exc.value.recovery
     assert snap.index["schema_version"] == 3
     snap.index["batches"][BATCH]["lifecycle"] = "aborted"
     _register_plain(
@@ -1645,6 +1645,46 @@ def test_every_new_store_refusal_carries_recovery_steps() -> None:
     _refused(lambda: _recover(snap, expected_owner="someone-else"), "E_CONFLICT")
     _refused(lambda: _recover(snap, expected_owner_generation="9" * 32), "E_CLAIM_STALE")
     _refused(lambda: store.op_update(snap, "a", batch=_meta("a", ["b"])), "E_STATE")
+    _refused(lambda: advance(reason="bogus"), "E_STATE")
+    _refused(lambda: _recover(snap, new_owner_generation="short"), "E_STATE")
+    _refused(lambda: _recover(snap, new_owner_generation=GEN), "E_STATE")
+    _refused(
+        lambda: store.op_advance_batch_head(
+            snap, BATCH, "leader", "9" * 32, expected_head=_head(snap), head=h("f9"), reason="fix",
+            changed_files=["a/f"],
+        ),
+        "E_CLAIM_STALE",
+    )
+    _refused(lambda: _final_acceptance_refusal(snap, {"a": "bad"}, ["a"]), "E_FINAL_EVIDENCE")
+    _refused(lambda: _final_acceptance_refusal(snap, "not-an-object", ["a"]), "E_FINAL_EVIDENCE")
+    _refused(lambda: _final_acceptance_refusal(snap, {"ghost": {}}, ["a"]), "E_FINAL_EVIDENCE")
+
+
+def _final_acceptance_refusal(snap: store.Snapshot, acceptance: Any, members: list[str]) -> None:
+    evidence = _final(snap, members)
+    evidence["current_acceptance"] = acceptance
+    batch = snap.index["batches"][BATCH]
+    store._validate_current_acceptance(snap, members[0], BATCH, batch, evidence)
+
+
+def test_final_tree_missing_a_recorded_head_refused_with_recovery(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    flow = Flow(tmp_path, ["a"], SCOPE)
+    assert flow.land_and_prepare("a", {"a/f2": "two\n"})["ok"]
+    assert flow.bind()["ok"]
+    evidence = flow.evidence()
+    generation = flow.take("a")
+    monkeypatch.setattr(TrackerService, "_is_ancestor", staticmethod(lambda *args: False))
+    done = flow.leader.finish("a", generation, evidence)
+    assert not done["ok"] and done["code"] == "E_FINAL_EVIDENCE" and done["recovery"], done
+
+    def boom(*args: Any) -> bool:
+        raise TodoError("git failed", code="E_STATE")
+
+    monkeypatch.setattr(TrackerService, "_is_ancestor", staticmethod(boom))
+    done = flow.leader.finish("a", generation, evidence)
+    assert not done["ok"] and done["code"] == "E_FINAL_EVIDENCE" and done["recovery"], done
 
 
 def _flip_to_pre_v2(snap: store.Snapshot) -> None:

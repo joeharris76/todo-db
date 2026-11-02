@@ -846,9 +846,15 @@ class TrackerService:
             try:
                 contained = self._is_ancestor(clean, revision, checked["tree_revision"])
             except TodoError as exc:
-                raise TodoError(f"final tree does not contain {label}: {exc}", code=E_FINAL_EVIDENCE) from exc
+                raise TodoError(
+                    f"final tree does not contain {label}: {exc}", code=E_FINAL_EVIDENCE,
+                    recovery=["merge every recorded head into the integration worktree and rerun the final suite"],
+                ) from exc
             if not contained:
-                raise TodoError(f"final tree does not contain {label}", code=E_FINAL_EVIDENCE)
+                raise TodoError(
+                    f"final tree does not contain {label}", code=E_FINAL_EVIDENCE,
+                    recovery=["merge every recorded head into the integration worktree and rerun the final suite"],
+                )
         actual = set(self._changed_paths(clean, batch["start_head"], checked["tree_revision"]))
         expected = actual - S.excluded_paths(snap, batch_id)
         if expected != set(checked["changed_files"]):

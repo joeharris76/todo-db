@@ -973,7 +973,10 @@ def _validate_current_acceptance(
     required = acceptance_required(snapshot, batch_id)
     acceptance = evidence.get("current_acceptance", {})
     if not isinstance(acceptance, dict):
-        raise TodoError(f"final evidence for {item_id!r} has invalid current_acceptance", code=E_FINAL_EVIDENCE)
+        raise TodoError(
+            f"final evidence for {item_id!r} has invalid current_acceptance", code=E_FINAL_EVIDENCE,
+            recovery=["pass current_acceptance as an object keyed by member id"],
+        )
     receipts = _v2_receipts(snapshot, batch_id, batch)
     for member, reasons in sorted(required.items()):
         if member not in acceptance:
@@ -986,7 +989,10 @@ def _validate_current_acceptance(
     for member, row in acceptance.items():
         receipt = receipts.get(member)
         if receipt is None:
-            raise TodoError(f"current acceptance names unknown member {member!r}", code=E_FINAL_EVIDENCE)
+            raise TodoError(
+                f"current acceptance names unknown member {member!r}", code=E_FINAL_EVIDENCE,
+                recovery=["pass current_acceptance only for members with a prepared receipt in the batch"],
+            )
         verification = receipt["verification"]
         if (
             not isinstance(row, dict)
@@ -1756,7 +1762,10 @@ def _owned_batch(snapshot: Snapshot, batch_id: str, worker: str, owner_generatio
     except KeyError:
         raise TodoError(f"unknown batch {batch_id!r}", code=E_STATE) from None
     if batch["owner"] != worker or batch["owner_generation"] != owner_generation:
-        raise TodoError(f"stale batch owner for {batch_id!r}", code=E_CLAIM_STALE)
+        raise TodoError(
+            f"stale batch owner for {batch_id!r}", code=E_CLAIM_STALE,
+            recovery=["re-read the owner with show_batch; use your own owner_generation or recover_batch_owner"],
+        )
     if batch.get("lifecycle", "active") != "active":
         raise TodoError(
             f"batch {batch_id!r} is no longer active", code=E_STATE,
@@ -1855,6 +1864,7 @@ def op_register_batch(
             raise TodoError(
                 f"cutover refused: active batches {active} must be finished or aborted under the writing client first",
                 code=E_STATE,
+                recovery=["finish or abort the active batches with the client that registered them, then retry"],
             )
         foreign = sorted(
             f"{item_id} ({entry['claim']['worker']})"
@@ -2017,7 +2027,10 @@ def op_advance_batch_head(
     worker = validate_worker(worker)
     batch = _owned_batch(snapshot, batch_id, worker, owner_generation)
     if reason not in ADVANCE_REASONS:
-        raise TodoError(f"reason must be one of {ADVANCE_REASONS}", code=E_STATE)
+        raise TodoError(
+            f"reason must be one of {ADVANCE_REASONS}", code=E_STATE,
+            recovery=[f"retry with reason set to one of {list(ADVANCE_REASONS)}"],
+        )
     _validate_revision(expected_head, "expected_head")
     _validate_revision(head, "head")
     files = _validate_path_list("changed_files", sorted(set(changed_files)))
@@ -2112,7 +2125,10 @@ def op_recover_batch_owner(
     expected_owner = validate_worker(expected_owner)
     reason = validate_takeover_reason(reason)
     if not isinstance(new_owner_generation, str) or not GENERATION_RE.fullmatch(new_owner_generation):
-        raise TodoError("new_owner_generation must be 32 lowercase hex characters", code=E_STATE)
+        raise TodoError(
+            "new_owner_generation must be 32 lowercase hex characters", code=E_STATE,
+            recovery=["generate a fresh 32-character lowercase hex owner generation and retry"],
+        )
     try:
         batch = snapshot.index["batches"][batch_id]
     except KeyError:
@@ -2153,7 +2169,10 @@ def op_recover_batch_owner(
             recovery=["re-read the owner with show_batch"],
         )
     if new_owner_generation == batch["owner_generation"]:
-        raise TodoError("new_owner_generation must differ from the current generation", code=E_STATE)
+        raise TodoError(
+            "new_owner_generation must differ from the current generation", code=E_STATE,
+            recovery=["generate a fresh 32-character lowercase hex owner generation and retry"],
+        )
     previous_owner = batch["owner"]
     batch["owner"] = worker
     batch["owner_generation"] = new_owner_generation
