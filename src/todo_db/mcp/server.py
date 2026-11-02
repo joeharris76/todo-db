@@ -3,7 +3,8 @@
 This module builds the server: launch-arg parsing, stderr-only logging,
 state-target resolution plus a read-only startup reachability check that
 never bootstraps or migrates, explicit identity, the instructions
-surface, and the eighteen task-tool registrations plus `get_instructions`.
+surface, the batch v2 capability advertised in `initialize`, and the task-tool
+registrations plus `get_instructions`.
 """
 
 from __future__ import annotations
@@ -153,6 +154,16 @@ def build_server(launch: LaunchConfig) -> "FastMCP":  # noqa: F821
         server._mcp_server.version = TOOL_VERSION
     except AttributeError:  # pragma: no cover - depends on the installed SDK
         LOG.debug("MCP SDK does not expose a server version field; leaving it unset")
+    original_options = server._mcp_server.create_initialization_options
+
+    def initialization_options(*args, **kwargs):
+        from .. import BATCH_CAPABILITY
+
+        experimental = dict(kwargs.pop("experimental_capabilities", None) or {})
+        experimental["todo_db_batch"] = BATCH_CAPABILITY
+        return original_options(*args, experimental_capabilities=experimental, **kwargs)
+
+    server._mcp_server.create_initialization_options = initialization_options
     register_instructions(server, launch.target, principal)
     register_tools(server, launch.target, principal)
     return server

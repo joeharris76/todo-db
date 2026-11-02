@@ -27,8 +27,8 @@
     }
   },
   {
-    "name": "bind_batch_pr",
-    "description": "Bind the batch's final PR before closeout.",
+    "name": "advance_batch_head",
+    "description": "Owner-only: record a leader fix or develop merge as the new integration head. expected_head is compare-and-swap; reason is fix or develop-merge.",
     "inputSchema": {
       "properties": {
         "batch_id": {
@@ -37,6 +37,60 @@
         },
         "owner_generation": {
           "title": "Owner Generation",
+          "type": "string"
+        },
+        "expected_head": {
+          "title": "Expected Head",
+          "type": "string"
+        },
+        "head": {
+          "title": "Head",
+          "type": "string"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        },
+        "changed_files": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Changed Files",
+          "type": "array"
+        }
+      },
+      "required": [
+        "batch_id",
+        "owner_generation",
+        "expected_head",
+        "head",
+        "reason",
+        "changed_files"
+      ],
+      "title": "advance_batch_head_toolArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "advance_batch_head_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "name": "bind_batch_pr",
+    "description": "Bind the batch's final PR, or move its head with expected_previous_head. Same repository, number and node id only; an exact retry is idempotent.",
+    "inputSchema": {
+      "properties": {
+        "batch_id": {
+          "title": "Batch Id",
+          "type": "string"
+        },
+        "owner_generation": {
+          "title": "Owner Generation",
+          "type": "string"
+        },
+        "pr_repository": {
+          "title": "Pr Repository",
           "type": "string"
         },
         "number": {
@@ -50,11 +104,24 @@
         "head": {
           "title": "Head",
           "type": "string"
+        },
+        "expected_previous_head": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expected Previous Head"
         }
       },
       "required": [
         "batch_id",
         "owner_generation",
+        "pr_repository",
         "number",
         "node_id",
         "head"
@@ -490,7 +557,7 @@
   },
   {
     "name": "prepare",
-    "description": "Record verified batch-member work without completing the task.",
+    "description": "Record verified batch-member work without completing the task. source_base must be the batch start head or a recorded integration head.",
     "inputSchema": {
       "properties": {
         "id": {
@@ -633,8 +700,50 @@
     }
   },
   {
+    "name": "recover_batch_owner",
+    "description": "Take batch ownership after the leader died. Name the exact owner and generation you inspected, a new generation you generated and stored, and why the owner cannot resume.",
+    "inputSchema": {
+      "properties": {
+        "batch_id": {
+          "title": "Batch Id",
+          "type": "string"
+        },
+        "expected_owner": {
+          "title": "Expected Owner",
+          "type": "string"
+        },
+        "expected_owner_generation": {
+          "title": "Expected Owner Generation",
+          "type": "string"
+        },
+        "new_owner_generation": {
+          "title": "New Owner Generation",
+          "type": "string"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "batch_id",
+        "expected_owner",
+        "expected_owner_generation",
+        "new_owner_generation",
+        "reason"
+      ],
+      "title": "recover_batch_owner_toolArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "recover_batch_owner_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
     "name": "register_batch",
-    "description": "Register an immutable prepared-work batch after confirmed schema-3 cutover.",
+    "description": "Register an immutable batch. The first registration on a store below schema 4 needs confirm_schema3_cutover=true (one cutover to schema 4). develop_ref (refs/remotes/...) is fixed here and required for later develop-merge advances.",
     "inputSchema": {
       "properties": {
         "batch_id": {
@@ -693,6 +802,18 @@
         "terminal_outcome": {
           "title": "Terminal Outcome",
           "type": "string"
+        },
+        "develop_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Develop Ref"
         },
         "confirm_schema3_cutover": {
           "default": false,
@@ -778,6 +899,62 @@
     }
   },
   {
+    "name": "show_batch",
+    "description": "Show a batch registry record, or one paged section (members, receipts, integration_log, ...).",
+    "inputSchema": {
+      "properties": {
+        "batch_id": {
+          "title": "Batch Id",
+          "type": "string"
+        },
+        "field": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Field"
+        },
+        "offset": {
+          "default": 0,
+          "title": "Offset",
+          "type": "integer"
+        },
+        "budget": {
+          "default": 6000,
+          "title": "Budget",
+          "type": "integer"
+        },
+        "rev": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rev"
+        }
+      },
+      "required": [
+        "batch_id"
+      ],
+      "title": "show_batch_toolArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "show_batch_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
     "name": "show_item",
     "description": "Show a task or one paged large field.",
     "inputSchema": {
@@ -835,7 +1012,7 @@
   },
   {
     "name": "take",
-    "description": "Claim one ready task and return its generation and context.",
+    "description": "Claim one ready task and return its generation and context. Members of an active batch are reserved to the batch owner (E_BATCH_OWNER).",
     "inputSchema": {
       "properties": {
         "id": {

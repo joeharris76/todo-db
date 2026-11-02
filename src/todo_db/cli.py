@@ -2,7 +2,7 @@
 
 Bootstrap, validation, migration, and recovery live here. Agent planning
 verbs (create/take/finish/...) are MCP-only by design: there is no
-duplicate agent CLI. ``list``/``show`` are read-only recovery aids.
+duplicate agent CLI. ``list``/``show``/``batch show`` are read-only aids.
 """
 
 from __future__ import annotations
@@ -271,6 +271,20 @@ def cmd_cache_prune(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def cmd_batch_show(args: argparse.Namespace) -> int:
+    try:
+        ref, _ = _ref_from(args)
+        svc = TrackerService(
+            ref=ref, cache_dir=_cache(args), worker="cli",
+            session_id=_read_session_id(args), client_name="cli",
+        )
+        env = svc.show_batch(args.batch_id, field=args.field, offset=args.offset, budget=args.budget, rev=args.rev)
+    except TodoDBError as exc:
+        return _fail(str(exc))
+    _emit(env)
+    return EXIT_OK if env.get("ok") else EXIT_ERROR
+
+
 def _add_target_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--config", help="path to a .todo-db/config.json (overrides discovery)")
     parser.add_argument("--state-remote", help="Git URL or path of the state remote")
@@ -334,6 +348,17 @@ def build_parser() -> argparse.ArgumentParser:
     show.add_argument("--offset", type=int, default=0)
     show.add_argument("--budget", type=int, default=6000)
     show.set_defaults(func=cmd_show)
+
+    batch = sub.add_parser("batch", help="batch registry reads (read-only)")
+    batch_sub = batch.add_subparsers(dest="batch_command", required=True)
+    batch_show = batch_sub.add_parser("show", help="show one batch record or section (read-only)")
+    _add_target_options(batch_show)
+    batch_show.add_argument("batch_id")
+    batch_show.add_argument("--field", default=None)
+    batch_show.add_argument("--offset", type=int, default=0)
+    batch_show.add_argument("--budget", type=int, default=6000)
+    batch_show.add_argument("--rev", default=None)
+    batch_show.set_defaults(func=cmd_batch_show)
 
     cache = sub.add_parser("cache", help="manage the local state cache")
     cache_sub = cache.add_subparsers(dest="cache_command", required=True)

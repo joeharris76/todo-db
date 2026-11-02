@@ -2,6 +2,7 @@
 
 ``list_items`` / ``show_item`` / ``create_item`` / ``register_batch`` /
 ``update_item`` / ``take`` / ``prepare`` / ``bind_batch_pr`` /
+``advance_batch_head`` / ``recover_batch_owner`` / ``show_batch`` /
 ``abort_batch`` / ``release`` / ``finish`` / ``renew`` /
 ``list_deferrals`` / ``defer`` / ``promote_deferral`` /
 ``dismiss_deferral`` are backed by :mod:`todo_db.service`, the same
@@ -135,7 +136,11 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
 
     @server.tool(
         name="register_batch",
-        description="Register an immutable prepared-work batch after confirmed schema-3 cutover.",
+        description=(
+            "Register an immutable batch. The first registration on a store below schema 4 needs "
+            "confirm_schema3_cutover=true (one cutover to schema 4). develop_ref (refs/remotes/...) "
+            "is fixed here and required for later develop-merge advances."
+        ),
     )
     async def register_batch_tool(
         batch_id: str,
@@ -150,6 +155,7 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
         scope_hash: str,
         delivery_boundary: str,
         terminal_outcome: str,
+        develop_ref: str | None = None,
         confirm_schema3_cutover: bool = False,
         ctx: Context = None,  # type: ignore[assignment]
     ) -> dict[str, Any]:
@@ -164,7 +170,7 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
             integration_worktree=integration_worktree, start_head=start_head,
             members=members, scope=scope, scope_hash=scope_hash,
             delivery_boundary=delivery_boundary, terminal_outcome=terminal_outcome,
-            confirm_schema3_cutover=confirm_schema3_cutover,
+            develop_ref=develop_ref, confirm_schema3_cutover=confirm_schema3_cutover,
         )
 
     @server.tool(
@@ -221,7 +227,10 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
 
     @server.tool(
         name="take",
-        description="Claim one ready task and return its generation and context.",
+        description=(
+            "Claim one ready task and return its generation and context. Members of an active "
+            "batch are reserved to the batch owner (E_BATCH_OWNER)."
+        ),
     )
     async def take_tool(
         id: str,
@@ -270,7 +279,10 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
 
     @server.tool(
         name="prepare",
-        description="Record verified batch-member work without completing the task.",
+        description=(
+            "Record verified batch-member work without completing the task. source_base must be "
+            "the batch start head or a recorded integration head."
+        ),
     )
     async def prepare_tool(
         id: str,
@@ -309,14 +321,19 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
 
     @server.tool(
         name="bind_batch_pr",
-        description="Bind the batch's final PR before closeout.",
+        description=(
+            "Bind the batch's final PR, or move its head with expected_previous_head. Same "
+            "repository, number and node id only; an exact retry is idempotent."
+        ),
     )
     async def bind_batch_pr_tool(
         batch_id: str,
         owner_generation: str,
+        pr_repository: str,
         number: int,
         node_id: str,
         head: str,
+        expected_previous_head: str | None = None,
         ctx: Context = None,  # type: ignore[assignment]
     ) -> dict[str, Any]:
         worker = _need_principal(holder, ctx)
@@ -324,8 +341,76 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
             return worker
         svc = _service(target, worker, holder, ctx)
         return await asyncio.to_thread(
-            svc.bind_batch_pr, batch_id, owner_generation, number=number, node_id=node_id, head=head,
+            svc.bind_batch_pr, batch_id, owner_generation, pr_repository=pr_repository, number=number,
+            node_id=node_id, head=head, expected_previous_head=expected_previous_head,
         )
+
+    @server.tool(
+        name="advance_batch_head",
+        description=(
+            "Owner-only: record a leader fix or develop merge as the new integration head. "
+            "expected_head is compare-and-swap; reason is fix or develop-merge."
+        ),
+    )
+    async def advance_batch_head_tool(
+        batch_id: str,
+        owner_generation: str,
+        expected_head: str,
+        head: str,
+        reason: str,
+        changed_files: list[str],
+        ctx: Context = None,  # type: ignore[assignment]
+    ) -> dict[str, Any]:
+        worker = _need_principal(holder, ctx)
+        if not isinstance(worker, str):
+            return worker
+        svc = _service(target, worker, holder, ctx)
+        return await asyncio.to_thread(
+            svc.advance_batch_head, batch_id, owner_generation, expected_head=expected_head,
+            head=head, reason=reason, changed_files=changed_files,
+        )
+
+    @server.tool(
+        name="recover_batch_owner",
+        description=(
+            "Take batch ownership after the leader died. Name the exact owner and generation you "
+            "inspected, a new generation you generated and stored, and why the owner cannot resume."
+        ),
+    )
+    async def recover_batch_owner_tool(
+        batch_id: str,
+        expected_owner: str,
+        expected_owner_generation: str,
+        new_owner_generation: str,
+        reason: str,
+        ctx: Context = None,  # type: ignore[assignment]
+    ) -> dict[str, Any]:
+        worker = _need_principal(holder, ctx)
+        if not isinstance(worker, str):
+            return worker
+        svc = _service(target, worker, holder, ctx)
+        return await asyncio.to_thread(
+            svc.recover_batch_owner, batch_id, expected_owner, expected_owner_generation,
+            new_owner_generation, reason,
+        )
+
+    @server.tool(
+        name="show_batch",
+        description="Show a batch registry record, or one paged section (members, receipts, integration_log, ...).",
+    )
+    async def show_batch_tool(
+        batch_id: str,
+        field: str | None = None,
+        offset: int = 0,
+        budget: int = 6000,
+        rev: str | None = None,
+        ctx: Context = None,  # type: ignore[assignment]
+    ) -> dict[str, Any]:
+        worker = _need_principal(holder, ctx)
+        if not isinstance(worker, str):
+            return worker
+        svc = _service(target, worker, holder, ctx)
+        return await asyncio.to_thread(svc.show_batch, batch_id, field=field, offset=offset, budget=budget, rev=rev)
 
     @server.tool(
         name="abort_batch",

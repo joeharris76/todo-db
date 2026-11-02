@@ -591,6 +591,13 @@ def _mutate_once(
             return MutationOutcome(ok=False, outcome="error", op_id=op_id, code=exc.code or E_STATE, error=str(exc))
         tree = store.write_tree(tip, snapshot, files)
         if tree == store.tree_of(tip):
+            if ack.get("_no_write") is True:
+                # An idempotent retry of an operation that already landed:
+                # report the tip it landed under, commit nothing.
+                return MutationOutcome(
+                    ok=True, outcome="applied", op_id=op_id, sha=tip,
+                    ack={k: v for k, v in ack.items() if k != "_no_write"},
+                )
             return MutationOutcome(
                 ok=False, outcome="error", op_id=op_id, code=E_STATE,
                 error="operation produced no state change",

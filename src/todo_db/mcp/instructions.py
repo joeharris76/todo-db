@@ -21,9 +21,10 @@ acknowledgement; lists return brief rows (id/title/priority/status).
 2. `show_item` -- one task with needs, readiness, and sections.
    Large fields arrive as section reads: field/offset/budget.
 3. `register_batch` -- register the immutable repository/integration contract
-   before enrolling prepared members. The first schema-3 registration needs
-   `confirm_schema3_cutover=true` once every process with state-branch access
-   is stopped or upgraded; older clients cannot coexist after it.
+   before enrolling prepared members. The first registration on a store below
+   schema 4 needs `confirm_schema3_cutover=true` once every process with
+   state-branch access is stopped or upgraded; older clients refuse the store
+   with `E_SCHEMA`. `develop_ref` (refs/remotes/...) is fixed here.
 4. `create_item` -- a task; optional batch metadata is `batch_id`,
    `member_id`, `implementation_dependencies`.
 5. `take` -- claim a task; returns the claim generation plus enough
@@ -32,7 +33,10 @@ acknowledgement; lists return brief rows (id/title/priority/status).
    Needs the registered batch, explicit same-batch edge, actual member base,
    accepted/current heads, frozen scope, clean exact checkout, and passed
    bounded-suite evidence.
-7. `bind_batch_pr` -- bind exactly one final PR identity after integration.
+7. `bind_batch_pr` -- bind the one final PR; move its head with
+   `expected_previous_head`. `advance_batch_head` records a leader fix or
+   develop merge; `recover_batch_owner` replaces a dead owner; `show_batch`
+   reads the registry, receipts and log. Only the batch owner claims members.
 8. `abort_batch` -- owner-only, resumable, after all member claims are
    released. Invalidates prepared/final evidence, keeps any bound final PR
    receipt, and returns non-terminal members to ordinary claim/finish outside
@@ -94,6 +98,9 @@ revision.
   Every agent on one server shares that one claim slot; for concurrent
   agents run one server per agent with a distinct --actor.
 - `E_CLAIM_STALE` -- wrong generation or another holder. Show and retry.
+- `E_BATCH_OWNER` -- only the batch owner claims its members. Ask the named
+  owner, or recover the batch if it is dead.
+- `E_BATCH_HEAD` -- head lineage refused. Record leader commits first.
 - `E_CONFLICT` -- someone changed the task first. Re-read, re-evaluate.
 - `E_CURSOR_STALE` -- state moved under your pages. Restart listing.
 - `E_OVERSIZED` -- one field exceeds the cap. Use its section read.

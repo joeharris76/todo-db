@@ -50,6 +50,8 @@ from uuid import uuid4
 
 from .errors import (
     E_ACTIVE_CLAIMS,
+    E_BATCH_HEAD,
+    E_BATCH_OWNER,
     E_CLAIM_STALE,
     E_CONFLICT,
     E_FINAL_EVIDENCE,
@@ -59,8 +61,28 @@ from .errors import (
     TodoError,
 )
 
-SCHEMA_VERSION = 3
-SUPPORTED_SCHEMA_VERSIONS = (1, 2, SCHEMA_VERSION)
+SCHEMA_VERSION = 4
+#: New state branches start here; only the first ``register_batch`` with the
+#: confirm flag moves a store to ``SCHEMA_VERSION``.
+BOOTSTRAP_SCHEMA_VERSION = 3
+SUPPORTED_SCHEMA_VERSIONS = (1, 2, 3, SCHEMA_VERSION)
+BATCH_CAPABILITY_VERSION = 2
+BATCH_SCHEMA = 2
+BATCH_TOOLS = ("advance_batch_head", "recover_batch_owner", "show_batch")
+DEVELOP_REF_PREFIX = "refs/remotes/"
+ADVANCE_REASONS = ("fix", "develop-merge")
+
+
+def batch_capability(tool_version: str) -> dict[str, Any]:
+    """The advertised batch v2 capability (initialize and batch reads)."""
+    return {
+        "version": BATCH_CAPABILITY_VERSION,
+        "receipt_schema": PREPARED_RECEIPT_SCHEMA,
+        "store_schema_version": SCHEMA_VERSION,
+        "supported_schema_versions": list(SUPPORTED_SCHEMA_VERSIONS),
+        "tool_version": tool_version,
+        "tools": sorted(BATCH_TOOLS),
+    }
 STATUSES = ("open", "active", "blocked", "done", "dropped")
 PRIORITIES = ("critical", "high", "medium-high", "medium", "low")
 PRIORITY_RANK = {name: rank for rank, name in enumerate(PRIORITIES)}
@@ -102,7 +124,8 @@ INDEX_OWNED_FIELDS = frozenset({"title", "priority", "status", "claim", "needs"}
 # status: an item is still open after its claim is handed back, while the
 # receipt records the work that is available to an explicitly registered
 # same-batch implementation edge.
-PREPARED_RECEIPT_SCHEMA = "prepared_work_v1"
+PREPARED_RECEIPT_SCHEMA = "prepared_work_v2"
+LEGACY_RECEIPT_SCHEMA = "prepared_work_v1"
 REVISION_RE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 SCOPE_HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 
@@ -133,7 +156,7 @@ DEFERRAL_RESOLUTIONS = ("open", "promoted", "dismissed")
 #: strand older clients; only writers are bound to this allowlist.
 SESSION_OPS = frozenset({
     "create", "take", "renew", "release", "prepare", "finish", "drop", "update",
-    "abort", "invalidate", "takeover", "defer", "promote", "dismiss",
+    "abort", "invalidate", "takeover", "defer", "promote", "dismiss", "recover",
 })
 
 OP_ID_RE = re.compile(r"^[0-9a-f]{32}$")
@@ -486,7 +509,7 @@ def validate_drop_reason(reason: str) -> str:
 
 
 def empty_index() -> dict[str, Any]:
-    return {"schema_version": SCHEMA_VERSION, "items": {}, "batches": {}}
+    return {"schema_version": BOOTSTRAP_SCHEMA_VERSION, "items": {}, "batches": {}}
 
 
 #: The exact index-entry schema. Anything else is rejected so detail files
@@ -617,6 +640,85 @@ def scope_digest(scope: dict[str, list[str]]) -> str:
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
+def batch_schema_of(batch: dict[str, Any]) -> int:
+    value = batch.get("batch_schema", 1)
+    return value if isinstance(value, int) and not isinstance(value, bool) else -1
+
+
+def _validate_develop_ref(value: Any) -> str:
+    if (
+        not isinstance(value, str)
+        or not value.startswith(DEVELOP_REF_PREFIX)
+        or len(value) == len(DEVELOP_REF_PREFIX)
+        or len(value) > 200
+        or ".." in value
+        or any(ord(ch) < 33 or ch in "~^:?*[\\" for ch in value)
+    ):
+        raise TodoError(
+            f"develop_ref must be a remote-tracking ref under {DEVELOP_REF_PREFIX}",
+            code=E_STATE,
+        )
+    return value
+
+
+def _validate_path_list(label: str, value: Any) -> list[str]:
+    if (
+        not isinstance(value, list)
+        or any(not isinstance(path, str) or not path for path in value)
+        or value != sorted(set(value))
+    ):
+        raise TodoError(f"{label} must be a sorted list of unique paths", code=E_STATE)
+    return value
+
+
+def _validate_batch_v2_fields(batch_id: str, batch: dict[str, Any]) -> None:
+    for key in ("owner_epoch", "integration_log", "recoveries", "final_pr_history", "integration_head"):
+        if key not in batch:
+            raise TodoError(f"batch {batch_id!r} is missing {key!r}", code=E_STATE)
+    epoch = batch["owner_epoch"]
+    if not isinstance(epoch, int) or isinstance(epoch, bool) or epoch < 0:
+        raise TodoError(f"batch {batch_id!r} has an invalid owner_epoch", code=E_STATE)
+    if "develop_ref" in batch:
+        _validate_develop_ref(batch["develop_ref"])
+    log = batch["integration_log"]
+    if not isinstance(log, list) or not log:
+        raise TodoError(f"batch {batch_id!r} has an invalid integration log", code=E_STATE)
+    for seq, entry in enumerate(log):
+        if not isinstance(entry, dict) or entry.get("seq") != seq:
+            raise TodoError(f"batch {batch_id!r} integration log entry {seq} is malformed", code=E_STATE)
+        _validate_revision(entry.get("head"), f"integration log head {seq}")
+        kind = entry.get("kind")
+        if kind not in ("start", "prepare", "reprepare", "fix", "develop-merge"):
+            raise TodoError(f"batch {batch_id!r} integration log entry {seq} has an invalid kind", code=E_STATE)
+        if (seq == 0) != (kind == "start"):
+            raise TodoError(f"batch {batch_id!r} integration log must start with exactly one start entry", code=E_STATE)
+        if seq:
+            _validate_revision(entry.get("previous_head"), f"integration log previous head {seq}")
+            if entry["previous_head"] != log[seq - 1]["head"]:
+                raise TodoError(f"batch {batch_id!r} integration log is not a chain at {seq}", code=E_STATE)
+            if (kind == "reprepare") != (entry["head"] == entry["previous_head"]):
+                raise TodoError(f"batch {batch_id!r} integration log entry {seq} disagrees with its kind", code=E_STATE)
+        if kind in ("fix", "develop-merge"):
+            _validate_path_list("advance changed_files", entry.get("changed_files"))
+        if kind == "fix":
+            requires = entry.get("requires_acceptance")
+            if not isinstance(requires, list) or any(item not in batch["members"] for item in requires):
+                raise TodoError(f"batch {batch_id!r} fix entry {seq} has invalid requires_acceptance", code=E_STATE)
+        if kind == "develop-merge":
+            _validate_revision(entry.get("merged_parent"), f"merged_parent {seq}")
+        if kind in ("prepare", "reprepare") and entry.get("member") not in batch["members"]:
+            raise TodoError(f"batch {batch_id!r} integration log entry {seq} names a foreign member", code=E_STATE)
+    if log[0]["head"] != batch["start_head"] or log[-1]["head"] != batch["integration_head"]:
+        raise TodoError(f"batch {batch_id!r} integration log disagrees with its registered heads", code=E_STATE)
+    for member, evidence in batch.get("integrated_members", {}).items():
+        seq = evidence.get("integration_seq")
+        if not isinstance(seq, int) or not 0 < seq < len(log) or log[seq]["head"] != evidence["integration_head"]:
+            raise TodoError(f"batch {batch_id!r} integration evidence for {member!r} disagrees with the log", code=E_STATE)
+    for key in ("recoveries", "final_pr_history"):
+        if not isinstance(batch[key], list) or any(not isinstance(row, dict) for row in batch[key]):
+            raise TodoError(f"batch {batch_id!r} has invalid {key}", code=E_STATE)
+
+
 def _validate_batch_record(batch_id: str, batch: Any) -> dict[str, Any]:
     if not isinstance(batch, dict):
         raise TodoError(f"batch {batch_id!r} must be an object", code=E_STATE)
@@ -674,10 +776,19 @@ def _validate_batch_record(batch_id: str, batch: Any) -> dict[str, Any]:
             raise TodoError(f"batch {batch_id!r} has invalid integration evidence for {member!r}", code=E_STATE)
         _validate_revision(evidence.get("accepted_head"), f"integrated accepted head for {member!r}")
         _validate_revision(evidence.get("integration_head"), f"integrated head for {member!r}")
+    schema = batch_schema_of(batch)
+    if schema not in (1, BATCH_SCHEMA):
+        raise TodoError(f"batch {batch_id!r} has an unknown batch_schema", code=E_SCHEMA)
+    if schema == BATCH_SCHEMA:
+        _validate_batch_v2_fields(batch_id, batch)
     final_pr = batch.get("final_pr")
     if final_pr is not None:
         if not isinstance(final_pr, dict):
             raise TodoError(f"batch {batch_id!r} final_pr must be an object", code=E_STATE)
+        if schema == BATCH_SCHEMA and (
+            not isinstance(final_pr.get("repository"), str) or not final_pr["repository"].strip()
+        ):
+            raise TodoError(f"batch {batch_id!r} final_pr has no repository", code=E_STATE)
         if not isinstance(final_pr.get("number"), int) or final_pr["number"] <= 0:
             raise TodoError(f"batch {batch_id!r} final_pr has an invalid number", code=E_STATE)
         if not isinstance(final_pr.get("node_id"), str) or not final_pr["node_id"].strip():
@@ -689,19 +800,44 @@ def _validate_batch_record(batch_id: str, batch: Any) -> dict[str, Any]:
 def _validate_prepared_receipt(item_id: str, prepared: Any) -> dict[str, Any]:
     if not isinstance(prepared, dict):
         raise TodoError(f"prepared receipt for {item_id!r} must be an object", code=E_STATE)
-    if prepared.get("schema") != PREPARED_RECEIPT_SCHEMA:
+    schema = prepared.get("schema")
+    if schema not in (PREPARED_RECEIPT_SCHEMA, LEGACY_RECEIPT_SCHEMA):
         raise TodoError(f"prepared receipt for {item_id!r} has an unknown schema", code=E_SCHEMA)
-    for key in (
-        "batch_id", "member_id", "owner_generation", "source_worktree", "source_revision",
+    v2 = schema == PREPARED_RECEIPT_SCHEMA
+    required = [
+        "batch_id", "member_id", "source_worktree", "source_revision",
         "source_base", "accepted_head", "integration_head", "scope_hash", "changed_files", "verification",
-    ):
+    ]
+    required += ["owner_epoch", "integration_seq", "overlaps"] if v2 else ["owner_generation"]
+    for key in required:
         if key not in prepared:
             raise TodoError(f"prepared receipt for {item_id!r} is missing {key!r}", code=E_STATE)
     validate_id(prepared["batch_id"])
     validate_id(prepared["member_id"])
-    generation = prepared["owner_generation"]
-    if not isinstance(generation, str) or not re.fullmatch(r"[0-9a-f]{32}", generation):
-        raise TodoError(f"prepared receipt for {item_id!r} has an invalid owner generation", code=E_STATE)
+    if v2:
+        epoch = prepared["owner_epoch"]
+        if not isinstance(epoch, int) or isinstance(epoch, bool) or epoch < 0:
+            raise TodoError(f"prepared receipt for {item_id!r} has an invalid owner epoch", code=E_STATE)
+        seq = prepared["integration_seq"]
+        if not isinstance(seq, int) or isinstance(seq, bool) or seq < 1:
+            raise TodoError(f"prepared receipt for {item_id!r} has an invalid integration_seq", code=E_STATE)
+        overlaps = prepared["overlaps"]
+        if not isinstance(overlaps, list):
+            raise TodoError(f"prepared receipt for {item_id!r} has invalid overlaps", code=E_STATE)
+        for row in overlaps:
+            if (
+                not isinstance(row, dict)
+                or row.get("kind") not in ("member", "fix")
+                or not row.get("paths")
+                or (row["kind"] == "member" and not isinstance(row.get("member"), str))
+                or (row["kind"] == "fix" and not isinstance(row.get("seq"), int))
+            ):
+                raise TodoError(f"prepared receipt for {item_id!r} has a malformed overlap", code=E_STATE)
+            _validate_path_list("overlap paths", row["paths"])
+    else:
+        generation = prepared["owner_generation"]
+        if not isinstance(generation, str) or not re.fullmatch(r"[0-9a-f]{32}", generation):
+            raise TodoError(f"prepared receipt for {item_id!r} has an invalid owner generation", code=E_STATE)
     worktree = prepared["source_worktree"]
     if not isinstance(worktree, str) or not worktree or not os.path.isabs(worktree):
         raise TodoError(f"prepared receipt for {item_id!r} requires an absolute source_worktree", code=E_STATE)
@@ -768,6 +904,103 @@ def _validate_final_evidence(item_id: str, evidence: Any) -> dict[str, Any]:
     return evidence
 
 
+def _v2_receipts(snapshot: Snapshot, batch_id: str, batch: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    out: dict[str, dict[str, Any]] = {}
+    for member in batch["members"]:
+        receipt = snapshot.details.get(member, {}).get("prepared")
+        if isinstance(receipt, dict) and receipt.get("batch_id") == batch_id:
+            out[member] = receipt
+    return out
+
+
+def acceptance_required(snapshot: Snapshot, batch_id: str) -> dict[str, list[dict[str, Any]]]:
+    """Members needing current-acceptance evidence at final, with reasons.
+
+    Derived on every call from receipts and the integration log; never stored.
+    """
+    batch = snapshot.index["batches"][batch_id]
+    if batch_schema_of(batch) != BATCH_SCHEMA:
+        return {}
+    receipts = _v2_receipts(snapshot, batch_id, batch)
+    required: dict[str, list[dict[str, Any]]] = {}
+    for member, receipt in receipts.items():
+        if receipt.get("schema") != PREPARED_RECEIPT_SCHEMA:
+            continue
+        for overlap in receipt.get("overlaps", []):
+            if overlap["kind"] == "member":
+                required.setdefault(overlap["member"], []).append(
+                    {"kind": "overlap", "by": member, "paths": overlap["paths"]}
+                )
+            else:
+                required.setdefault(member, []).append(
+                    {"kind": "fix-overlap", "seq": overlap["seq"], "paths": overlap["paths"]}
+                )
+    for entry in batch["integration_log"]:
+        if entry["kind"] != "fix":
+            continue
+        for member in entry["requires_acceptance"]:
+            touched = sorted(set(entry["changed_files"]) & set(receipts.get(member, {}).get("changed_files", [])))
+            required.setdefault(member, []).append({"kind": "fix", "seq": entry["seq"], "paths": touched})
+    return required
+
+
+def excluded_paths(snapshot: Snapshot, batch_id: str) -> set[str]:
+    """Develop-merge paths exempt from final scope accounting.
+
+    A path that a member receipt or a fix entry also touched stays subject to
+    scope, so a develop merge never hides a member or fix change.
+    """
+    batch = snapshot.index["batches"][batch_id]
+    if batch_schema_of(batch) != BATCH_SCHEMA:
+        return set()
+    develop: set[str] = set()
+    owned: set[str] = set()
+    for entry in batch["integration_log"]:
+        if entry["kind"] == "develop-merge":
+            develop.update(entry["changed_files"])
+        elif entry["kind"] == "fix":
+            owned.update(entry["changed_files"])
+    for receipt in _v2_receipts(snapshot, batch_id, batch).values():
+        owned.update(receipt.get("changed_files", []))
+    return develop - owned
+
+
+def _validate_current_acceptance(
+    snapshot: Snapshot, item_id: str, batch_id: str, batch: dict[str, Any], evidence: dict[str, Any],
+) -> None:
+    required = acceptance_required(snapshot, batch_id)
+    acceptance = evidence.get("current_acceptance", {})
+    if not isinstance(acceptance, dict):
+        raise TodoError(f"final evidence for {item_id!r} has invalid current_acceptance", code=E_FINAL_EVIDENCE)
+    receipts = _v2_receipts(snapshot, batch_id, batch)
+    for member, reasons in sorted(required.items()):
+        if member not in acceptance:
+            why = ", ".join(sorted({row["kind"] for row in reasons}))
+            raise TodoError(
+                f"final evidence for {item_id!r} lacks current acceptance for {member!r} ({why})",
+                code=E_FINAL_EVIDENCE,
+                recovery=[f"rerun {member!r}'s own verification at the final integration head and pass it in current_acceptance"],
+            )
+    for member, row in acceptance.items():
+        receipt = receipts.get(member)
+        if receipt is None:
+            raise TodoError(f"current acceptance names unknown member {member!r}", code=E_FINAL_EVIDENCE)
+        verification = receipt["verification"]
+        if (
+            not isinstance(row, dict)
+            or row.get("status") != "passed"
+            or row.get("clean") is not True
+            or row.get("revision") != evidence["integration_head"]
+            or row.get("worktree") != batch["integration_worktree"]
+            or row.get("suite") != verification["suite"]
+            or row.get("command") != verification["command"]
+        ):
+            raise TodoError(
+                f"current acceptance for {member!r} is not its own passed verification at the final head",
+                code=E_FINAL_EVIDENCE,
+            )
+
+
 def _validate_batch_final_evidence(snapshot: Snapshot, item_id: str, evidence: dict[str, Any]) -> dict[str, Any]:
     """Validate final evidence against every prepared member and its registry."""
     detail = snapshot.details[item_id]
@@ -789,6 +1022,7 @@ def _validate_batch_final_evidence(snapshot: Snapshot, item_id: str, evidence: d
         raise TodoError(f"final evidence for {item_id!r} is not bound to the declared final PR", code=E_FINAL_EVIDENCE)
     if final_pr["head"] != evidence["integration_head"]:
         raise TodoError(f"final evidence for {item_id!r} is not at the final PR head", code=E_FINAL_EVIDENCE)
+    v2 = batch_schema_of(batch) == BATCH_SCHEMA
     members = batch["members"]
     heads = evidence["member_heads"]
     ranges = evidence["member_ranges"]
@@ -806,6 +1040,8 @@ def _validate_batch_final_evidence(snapshot: Snapshot, item_id: str, evidence: d
         if not isinstance(member_range, dict) or member_range.get("base") != receipt["source_base"] or member_range.get("head") != heads[member]:
             raise TodoError(f"member {member!r} range is not bound to its prepared receipt", code=E_FINAL_EVIDENCE)
         allowed.extend(batch["scope"][member])
+    if v2:
+        _validate_current_acceptance(snapshot, item_id, batch_id, batch, evidence)
     for path in evidence["changed_files"]:
         if not any(fnmatch.fnmatch(path, pattern) for pattern in allowed):
             raise TodoError(f"final evidence includes unauthorized file {path!r}", code=E_FINAL_EVIDENCE)
@@ -876,6 +1112,8 @@ def validate_snapshot(index: Any, details: dict[str, Any]) -> dict[str, Any]:
             raise TodoError("index.json batches must be an object keyed by batch ID", code=E_STATE)
         for batch_id, batch in batches.items():
             _validate_batch_record(batch_id, batch)
+            if version < SCHEMA_VERSION and batch_schema_of(batch) != 1:
+                raise TodoError("batch v2 records require index schema version 4", code=E_SCHEMA)
     elif batches not in ({}, None):
         raise TodoError("batch registry requires index schema version 3", code=E_SCHEMA)
     for item_id, entry in items.items():
@@ -995,13 +1233,7 @@ def validate_snapshot(index: Any, details: dict[str, Any]) -> dict[str, Any]:
                 raise TodoError(f"prepared receipt for {item_id!r} names an unregistered member", code=E_STATE)
             if prepared["scope_hash"] != record["scope_hash"]:
                 raise TodoError(f"prepared receipt for {item_id!r} has a foreign scope", code=E_STATE)
-            if prepared["owner_generation"] != record["owner_generation"]:
-                raise TodoError(f"prepared receipt for {item_id!r} has a stale owner generation", code=E_CLAIM_STALE)
-            if record.get("accepted_members", {}).get(prepared["member_id"]) != prepared["accepted_head"]:
-                raise TodoError(f"prepared receipt for {item_id!r} is not the registered accepted head", code=E_STATE)
-            integrated = record.get("integrated_members", {}).get(prepared["member_id"])
-            if not isinstance(integrated, dict) or integrated.get("accepted_head") != prepared["accepted_head"]:
-                raise TodoError(f"prepared receipt for {item_id!r} lacks integration ancestry evidence", code=E_STATE)
+            _check_receipt_against_batch(item_id, prepared, record)
         batch = detail.get("batch")
         if batch is not None and version >= 3:
             record = batches.get(batch["batch_id"])
@@ -1010,6 +1242,34 @@ def validate_snapshot(index: Any, details: dict[str, Any]) -> dict[str, Any]:
             if batch["member_id"] != item_id or batch["member_id"] not in record["members"]:
                 raise TodoError(f"item {item_id!r} is not a declared member of its batch", code=E_STATE)
     return index
+
+
+def _check_receipt_against_batch(item_id: str, prepared: dict[str, Any], record: dict[str, Any]) -> None:
+    member = prepared["member_id"]
+    v2_batch = batch_schema_of(record) == BATCH_SCHEMA
+    v2_receipt = prepared["schema"] == PREPARED_RECEIPT_SCHEMA
+    if v2_batch and not v2_receipt:
+        raise TodoError(
+            f"prepared receipt for {item_id!r} uses {LEGACY_RECEIPT_SCHEMA}, which batch v2 never reinterprets",
+            code=E_SCHEMA,
+        )
+    if v2_receipt and not v2_batch:
+        raise TodoError(f"prepared receipt for {item_id!r} is v2 under a legacy batch", code=E_STATE)
+    if record.get("accepted_members", {}).get(member) != prepared["accepted_head"]:
+        raise TodoError(f"prepared receipt for {item_id!r} is not the registered accepted head", code=E_STATE)
+    integrated = record.get("integrated_members", {}).get(member)
+    if not isinstance(integrated, dict) or integrated.get("accepted_head") != prepared["accepted_head"]:
+        raise TodoError(f"prepared receipt for {item_id!r} lacks integration ancestry evidence", code=E_STATE)
+    if v2_receipt:
+        if prepared["owner_epoch"] > record["owner_epoch"]:
+            raise TodoError(f"prepared receipt for {item_id!r} is from a future owner epoch", code=E_STATE)
+        if (
+            integrated.get("integration_head") != prepared["integration_head"]
+            or integrated.get("integration_seq") != prepared["integration_seq"]
+        ):
+            raise TodoError(f"prepared receipt for {item_id!r} disagrees with its integration entry", code=E_STATE)
+    elif prepared["owner_generation"] != record["owner_generation"]:
+        raise TodoError(f"prepared receipt for {item_id!r} has a stale owner generation", code=E_CLAIM_STALE)
 
 
 @dataclass
@@ -1151,11 +1411,18 @@ def is_ready(item_id: str, snapshot: Snapshot, now: datetime | None = None) -> b
             or batch_record is None
             or receipt.get("batch_id") != batch.get("batch_id")
             or receipt.get("member_id") != dep
-            or receipt.get("owner_generation") != batch_record.get("owner_generation")
             or receipt.get("scope_hash") != batch_record.get("scope_hash")
             or batch_record.get("accepted_members", {}).get(dep) != receipt.get("accepted_head")
             or batch_record.get("integrated_members", {}).get(dep, {}).get("accepted_head") != receipt.get("accepted_head")
-            or batch_record.get("integrated_members", {}).get(dep, {}).get("integration_head") != batch_record.get("integration_head")
+        ):
+            return False
+        if batch_schema_of(batch_record) == BATCH_SCHEMA:
+            if receipt.get("schema") != PREPARED_RECEIPT_SCHEMA:
+                return False
+        elif (
+            receipt.get("owner_generation") != batch_record.get("owner_generation")
+            or batch_record.get("integrated_members", {}).get(dep, {}).get("integration_head")
+            != batch_record.get("integration_head")
         ):
             return False
         if dep_detail.get("batch", {}).get("batch_id") != batch.get("batch_id"):
@@ -1210,6 +1477,16 @@ def query_items(
     return rows
 
 
+def _require_batch_schema(snapshot: Snapshot, what: str) -> None:
+    if snapshot.index["schema_version"] < SCHEMA_VERSION:
+        raise TodoError(
+            f"{what} requires index schema version {SCHEMA_VERSION}; only register_batch with "
+            "confirm_schema3_cutover=true performs the cutover",
+            code=E_SCHEMA,
+            recovery=["register the batch with confirm_schema3_cutover=true after every consumer is upgraded"],
+        )
+
+
 def op_create(
     snapshot: Snapshot,
     *,
@@ -1246,8 +1523,8 @@ def op_create(
             raise TodoError(f"task {item_id!r} needs unknown task {dep!r}", code=E_STATE)
     items[item_id] = entry
     previous_version = snapshot.index["schema_version"]
-    if batch is not None and previous_version < SCHEMA_VERSION:
-        snapshot.index["schema_version"] = SCHEMA_VERSION
+    if batch is not None:
+        _require_batch_schema(snapshot, "writing item batch metadata")
     detail: dict[str, Any] = {}
     if description:
         detail["description"] = description
@@ -1270,6 +1547,14 @@ def op_create(
         snapshot.index["schema_version"] = previous_version
         raise
     return item_id
+
+
+def _closeout_started(snapshot: Snapshot, item_id: str) -> bool:
+    meta = snapshot.details.get(item_id, {}).get("batch")
+    record = snapshot.index.get("batches", {}).get(meta.get("batch_id")) if isinstance(meta, dict) else None
+    if not isinstance(record, dict) or record.get("lifecycle", "active") != "active":
+        return False
+    return any(snapshot.index["items"].get(member, {}).get("status") == "done" for member in record["members"])
 
 
 def _invalidate_prepared_dependents(snapshot: Snapshot, root_id: str) -> list[str]:
@@ -1410,24 +1695,35 @@ def op_update(
         changed.append("not_before")
     if batch is not None:
         if batch != existing_batch:
-            if snapshot.index["schema_version"] < SCHEMA_VERSION:
-                snapshot.index["schema_version"] = SCHEMA_VERSION
+            _require_batch_schema(snapshot, "writing item batch metadata")
             detail["batch"] = json.loads(json.dumps(batch))
             changed.append("batch")
     invalidated: list[str] = []
     try:
-        if changed and "prepared" in detail:
+        context_only = set(changed) <= {"context"}
+        closeout = _closeout_started(snapshot, item_id)
+        if changed and not context_only and "prepared" in detail:
             if entry["status"] == "done":
                 raise TodoError(f"cannot edit completed prepared batch member {item_id!r}", code=E_STATE)
+            if closeout:
+                raise TodoError(
+                    f"closeout has started for the batch of {item_id!r}; receipt-invalidating edits are refused",
+                    code=E_STATE,
+                )
             # A prepared receipt binds the exact member content and declared
             # edge. Any later edit invalidates it instead of allowing a stale
             # receipt to unlock a dependent member.
             detail.pop("prepared", None)
             detail.pop("final_evidence", None)
             changed.append("prepared_receipt")
-        if changed:
+        if changed and not context_only:
             invalidated = _invalidate_prepared_dependents(snapshot, item_id)
             if invalidated:
+                if closeout:
+                    raise TodoError(
+                        f"closeout has started for the batch of {item_id!r}; receipt-invalidating edits are refused",
+                        code=E_STATE,
+                    )
                 changed.append("downstream_prepared_receipts")
         validate_snapshot(snapshot.index, snapshot.details)
     except TodoError:
@@ -1437,6 +1733,51 @@ def op_update(
         snapshot.index["schema_version"] = previous_version
         raise
     return {"id": item_id, "changed": changed, "invalidated": invalidated}
+
+
+def _now_iso(now: datetime | None = None) -> str:
+    return (now or datetime.now(timezone.utc)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _owned_batch(snapshot: Snapshot, batch_id: str, worker: str, owner_generation: str) -> dict[str, Any]:
+    """The active v2 batch, after proving owner worker and generation."""
+    try:
+        batch = snapshot.index["batches"][batch_id]
+    except KeyError:
+        raise TodoError(f"unknown batch {batch_id!r}", code=E_STATE) from None
+    if batch["owner"] != worker or batch["owner_generation"] != owner_generation:
+        raise TodoError(f"stale batch owner for {batch_id!r}", code=E_CLAIM_STALE)
+    if batch.get("lifecycle", "active") != "active":
+        raise TodoError(f"batch {batch_id!r} is no longer active", code=E_STATE)
+    if batch_schema_of(batch) != BATCH_SCHEMA:
+        raise TodoError(f"batch {batch_id!r} predates batch v2", code=E_SCHEMA)
+    return batch
+
+
+def active_batch_of(snapshot: Snapshot, item_id: str) -> tuple[str, dict[str, Any]] | tuple[None, None]:
+    for batch_id, batch in snapshot.index.get("batches", {}).items():
+        if batch.get("lifecycle", "active") == "active" and item_id in batch.get("members", []):
+            return batch_id, batch
+    return None, None
+
+
+def require_member_owner(snapshot: Snapshot, item_id: str, worker: str) -> None:
+    """Reserve claims on active-batch members to the batch owner."""
+    batch_id, batch = active_batch_of(snapshot, item_id)
+    if batch is not None and batch["owner"] != worker:
+        raise TodoError(
+            f"task {item_id!r} belongs to active batch {batch_id!r} owned by {batch['owner']!r}; "
+            "only the owner may claim it",
+            code=E_BATCH_OWNER,
+            recovery=[
+                f"ask {batch['owner']!r} to take {item_id!r}",
+                f"if {batch['owner']!r} is dead, recover_batch_owner for batch {batch_id!r}",
+            ],
+        )
+
+
+def _closeout_or_done(snapshot: Snapshot, batch: dict[str, Any]) -> bool:
+    return any(snapshot.index["items"].get(member, {}).get("status") == "done" for member in batch["members"])
 
 
 def op_register_batch(
@@ -1455,17 +1796,22 @@ def op_register_batch(
     scope_hash: str,
     delivery_boundary: str,
     terminal_outcome: str,
+    develop_ref: str | None = None,
     confirm_schema3_cutover: bool = False,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
-    """Register one immutable batch contract before member preparation."""
-    if snapshot.index["schema_version"] < SCHEMA_VERSION and confirm_schema3_cutover is not True:
+    """Register one immutable batch contract; the first call may cut the store over."""
+    owner = validate_worker(owner)
+    previous_version = snapshot.index["schema_version"]
+    migrating = previous_version < SCHEMA_VERSION
+    if migrating and confirm_schema3_cutover is not True:
         raise TodoError(
             "register_batch requires confirm_schema3_cutover=true after every active consumer is upgraded",
             code=E_STATE,
+            recovery=["stop or upgrade every process with access to the state branch, then retry with the flag"],
         )
-    previous_version = snapshot.index["schema_version"]
-    if snapshot.index["schema_version"] < SCHEMA_VERSION:
-        snapshot.index["schema_version"] = SCHEMA_VERSION
+    if develop_ref is not None:
+        _validate_develop_ref(develop_ref)
     batches = snapshot.index.setdefault("batches", {})
     if batch_id in batches:
         raise TodoError(f"batch {batch_id!r} is already registered; refusing duplicate enrollment", code=E_CONFLICT)
@@ -1477,15 +1823,52 @@ def op_register_batch(
                 f"batch members already belong to active batch {existing_id!r}: {overlap}",
                 code=E_CONFLICT,
             )
+    moment = now or datetime.now(timezone.utc)
+    for member in members:
+        claim = snapshot.index["items"].get(member, {}).get("claim")
+        if claim_is_live(claim, moment) and claim["worker"] != owner:
+            raise TodoError(
+                f"member {member!r} is claimed by {claim['worker']!r}; the batch owner must be able to claim it",
+                code=E_CONFLICT,
+                recovery=[f"ask {claim['worker']!r} to release {member!r}, or register after the claim expires"],
+            )
+    if migrating:
+        active = sorted(bid for bid, rec in batches.items() if rec.get("lifecycle", "active") == "active")
+        if active:
+            raise TodoError(
+                f"cutover refused: active batches {active} must be finished or aborted under the writing client first",
+                code=E_STATE,
+            )
+        foreign = sorted(
+            f"{item_id} ({entry['claim']['worker']})"
+            for item_id, entry in snapshot.index["items"].items()
+            if claim_is_live(entry.get("claim"), moment) and entry["claim"]["worker"] != owner
+        )
+        if foreign:
+            raise TodoError(
+                f"cutover refused: live claims held by other workers: {', '.join(foreign)}",
+                code=E_ACTIVE_CLAIMS,
+                recovery=["wait for those claims to be released or to expire, then retry"],
+            )
+    previous_batches = json.loads(json.dumps(batches))
+    if migrating:
+        snapshot.index["schema_version"] = SCHEMA_VERSION
+        for record in batches.values():
+            record["batch_schema"] = 1
     record = {
+        "batch_schema": BATCH_SCHEMA,
         "project_id": project_id,
         "repository": repository,
-        "owner": validate_worker(owner),
+        "owner": owner,
         "owner_generation": owner_generation,
+        "owner_epoch": 0,
         "integration_branch": integration_branch,
         "integration_worktree": integration_worktree,
         "start_head": start_head,
         "integration_head": start_head,
+        "integration_log": [{"seq": 0, "head": start_head, "kind": "start", "at": _now_iso(moment)}],
+        "recoveries": [],
+        "final_pr_history": [],
         "accepted_members": {},
         "integrated_members": {},
         "members": list(members),
@@ -1495,14 +1878,22 @@ def op_register_batch(
         "terminal_outcome": terminal_outcome,
         "lifecycle": "active",
     }
+    if develop_ref is not None:
+        record["develop_ref"] = develop_ref
     batches[batch_id] = record
     try:
         validate_snapshot(snapshot.index, snapshot.details)
     except TodoError:
-        del batches[batch_id]
+        snapshot.index["batches"] = previous_batches
         snapshot.index["schema_version"] = previous_version
         raise
-    return {"batch_id": batch_id, "members": list(members), "start_head": start_head}
+    return {
+        "batch_id": batch_id,
+        "members": list(members),
+        "start_head": start_head,
+        "schema_version": snapshot.index["schema_version"],
+        "migrated_from": previous_version if migrating else None,
+    }
 
 
 def op_bind_batch_pr(
@@ -1511,29 +1902,204 @@ def op_bind_batch_pr(
     worker: str,
     owner_generation: str,
     *,
+    pr_repository: str,
     number: int,
     node_id: str,
     head: str,
+    expected_previous_head: str | None = None,
+    op_id: str | None = None,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
-    """Bind the single declared final PR identity to a batch exactly once."""
+    """Bind, or revise, the single final PR of a batch."""
     worker = validate_worker(worker)
+    batch = _owned_batch(snapshot, batch_id, worker, owner_generation)
+    final_pr = {"repository": pr_repository, "number": number, "node_id": node_id, "head": head}
+    _validate_batch_record(batch_id, {**batch, "final_pr": final_pr})
+    if expected_previous_head is not None:
+        _validate_revision(expected_previous_head, "expected_previous_head")
+    bound = batch.get("final_pr")
+    history = batch["final_pr_history"]
+    if bound is None:
+        if expected_previous_head is not None:
+            raise TodoError(f"batch {batch_id!r} has no final PR binding to revise", code=E_CONFLICT)
+        if head != batch["integration_head"]:
+            raise TodoError(
+                f"final PR head is not the registered integration head for {batch_id!r}", code=E_CONFLICT
+            )
+        batch["final_pr"] = final_pr
+        history.append({"previous_head": None, "head": head, "op_id": op_id, "at": _now_iso(now)})
+        validate_snapshot(snapshot.index, snapshot.details)
+        return {"batch_id": batch_id, "final_pr": final_pr, "idempotent": False}
+    if any(bound[key] != final_pr[key] for key in ("repository", "number", "node_id")):
+        raise TodoError(
+            f"batch {batch_id!r} is bound to a different PR; one batch has one final PR", code=E_CONFLICT
+        )
+    if head == bound["head"]:
+        last_previous = history[-1]["previous_head"] if history else None
+        if expected_previous_head is not None and expected_previous_head != last_previous:
+            raise TodoError(f"stale expected_previous_head for {batch_id!r}", code=E_CONFLICT)
+        return {"batch_id": batch_id, "final_pr": bound, "previous_head": last_previous, "idempotent": True, "_no_write": True}
+    if expected_previous_head is None:
+        raise TodoError(
+            f"revising the final PR head of {batch_id!r} needs expected_previous_head", code=E_CONFLICT
+        )
+    if expected_previous_head != bound["head"]:
+        raise TodoError(f"stale expected_previous_head for {batch_id!r}", code=E_CONFLICT)
+    if head != batch["integration_head"]:
+        raise TodoError(
+            f"final PR head is not the registered integration head for {batch_id!r}", code=E_CONFLICT
+        )
+    if _closeout_or_done(snapshot, batch):
+        raise TodoError(f"closeout has started for {batch_id!r}; the final PR head can no longer change", code=E_STATE)
+    batch["final_pr"] = final_pr
+    history.append({"previous_head": bound["head"], "head": head, "op_id": op_id, "at": _now_iso(now)})
+    for member in batch["members"]:
+        snapshot.details.get(member, {}).pop("final_evidence", None)
+    validate_snapshot(snapshot.index, snapshot.details)
+    return {"batch_id": batch_id, "final_pr": final_pr, "previous_head": bound["head"], "idempotent": False}
+
+
+def op_advance_batch_head(
+    snapshot: Snapshot,
+    batch_id: str,
+    worker: str,
+    owner_generation: str,
+    *,
+    expected_head: str,
+    head: str,
+    reason: str,
+    changed_files: list[str] | tuple[str, ...],
+    merged_parent: str | None = None,
+    op_id: str | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Record a leader fix or develop merge as the new integration head."""
+    worker = validate_worker(worker)
+    batch = _owned_batch(snapshot, batch_id, worker, owner_generation)
+    if reason not in ADVANCE_REASONS:
+        raise TodoError(f"reason must be one of {ADVANCE_REASONS}", code=E_STATE)
+    _validate_revision(expected_head, "expected_head")
+    _validate_revision(head, "head")
+    files = _validate_path_list("changed_files", sorted(set(changed_files)))
+    log = batch["integration_log"]
+    for entry in log:
+        if (
+            entry["kind"] == reason
+            and entry["head"] == head
+            and entry["previous_head"] == expected_head
+            and entry.get("changed_files") == files
+        ):
+            return {
+                "batch_id": batch_id, "integration_head": head, "seq": entry["seq"], "reason": reason,
+                "changed_files": files, "requires_acceptance": list(entry.get("requires_acceptance", [])),
+                "idempotent": True, "_no_write": True,
+            }
+    if _closeout_or_done(snapshot, batch):
+        raise TodoError(
+            f"closeout has started for {batch_id!r}; resume closeout instead of changing the head", code=E_STATE
+        )
+    if expected_head != batch["integration_head"]:
+        raise TodoError(
+            f"stale expected head for {batch_id!r}; re-read with show_batch and retry", code=E_CONFLICT
+        )
+    if head == expected_head or any(entry["head"] == head for entry in log):
+        raise TodoError(f"head {head} is already recorded; an advance needs a new head", code=E_BATCH_HEAD)
+    entry: dict[str, Any] = {
+        "seq": len(log), "head": head, "previous_head": expected_head, "kind": reason,
+        "changed_files": files, "op_id": op_id, "at": _now_iso(now),
+    }
+    if reason == "fix":
+        union = [pattern for member in batch["members"] for pattern in batch["scope"][member]]
+        outside = [path for path in files if not any(fnmatch.fnmatch(path, pattern) for pattern in union)]
+        if outside:
+            raise TodoError(
+                f"a fix cannot widen scope; outside the member scopes: {outside[:5]}", code=E_BATCH_HEAD
+            )
+        touched = []
+        for member, receipt in _v2_receipts(snapshot, batch_id, batch).items():
+            if set(files) & set(receipt.get("changed_files", [])):
+                touched.append(member)
+        entry["requires_acceptance"] = sorted(touched)
+    else:
+        if "develop_ref" not in batch:
+            raise TodoError(
+                f"batch {batch_id!r} was registered without a develop_ref; develop merges cannot be recorded",
+                code=E_BATCH_HEAD,
+            )
+        if merged_parent is None:
+            raise TodoError("a develop merge needs its merged parent", code=E_BATCH_HEAD)
+        entry["merged_parent"] = _validate_revision(merged_parent, "merged_parent")
+    log.append(entry)
+    batch["integration_head"] = head
+    validate_snapshot(snapshot.index, snapshot.details)
+    return {
+        "batch_id": batch_id, "integration_head": head, "seq": entry["seq"], "reason": reason,
+        "changed_files": files, "requires_acceptance": list(entry.get("requires_acceptance", [])),
+        "idempotent": False,
+    }
+
+
+def op_recover_batch_owner(
+    snapshot: Snapshot,
+    batch_id: str,
+    worker: str,
+    *,
+    expected_owner: str,
+    expected_owner_generation: str,
+    new_owner_generation: str,
+    reason: str,
+    session_id: str | None = None,
+    client: str | None = None,
+    op_id: str | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Take batch ownership from a dead leader; the caller names the new generation."""
+    worker = validate_worker(worker)
+    expected_owner = validate_worker(expected_owner)
+    reason = validate_takeover_reason(reason)
+    if not isinstance(new_owner_generation, str) or not GENERATION_RE.fullmatch(new_owner_generation):
+        raise TodoError("new_owner_generation must be 32 lowercase hex characters", code=E_STATE)
     try:
         batch = snapshot.index["batches"][batch_id]
     except KeyError:
         raise TodoError(f"unknown batch {batch_id!r}", code=E_STATE) from None
-    if batch["owner"] != worker or batch["owner_generation"] != owner_generation:
-        raise TodoError(f"stale batch owner for {batch_id!r}", code=E_CLAIM_STALE)
     if batch.get("lifecycle", "active") != "active":
         raise TodoError(f"batch {batch_id!r} is no longer active", code=E_STATE)
-    if batch.get("final_pr") is not None:
-        raise TodoError(f"batch {batch_id!r} already has a final PR binding", code=E_CONFLICT)
-    final_pr = {"number": number, "node_id": node_id, "head": head}
-    _validate_batch_record(batch_id, {**batch, "final_pr": final_pr})
-    if head != batch.get("integration_head"):
-        raise TodoError(f"final PR head is not the registered integration head for {batch_id!r}", code=E_CONFLICT)
-    batch["final_pr"] = final_pr
+    if batch_schema_of(batch) != BATCH_SCHEMA:
+        raise TodoError(f"batch {batch_id!r} predates batch v2", code=E_SCHEMA)
+    recoveries = batch["recoveries"]
+    members = list(batch["members"])
+    if (
+        batch["owner"] == worker
+        and batch["owner_generation"] == new_owner_generation
+        and recoveries
+        and recoveries[-1]["previous_owner"] == expected_owner
+    ):
+        return {
+            "batch_id": batch_id, "owner": worker, "owner_epoch": batch["owner_epoch"],
+            "recovered_members": members, "idempotent": True, "_no_write": True,
+        }
+    if batch["owner"] != expected_owner:
+        raise TodoError(
+            f"owner of {batch_id!r} changed; re-read with show_batch and retry", code=E_CONFLICT
+        )
+    if batch["owner_generation"] != expected_owner_generation:
+        raise TodoError(f"stale owner generation for {batch_id!r}", code=E_CLAIM_STALE)
+    if new_owner_generation == batch["owner_generation"]:
+        raise TodoError("new_owner_generation must differ from the current generation", code=E_STATE)
+    previous_owner = batch["owner"]
+    batch["owner"] = worker
+    batch["owner_generation"] = new_owner_generation
+    batch["owner_epoch"] += 1
+    recoveries.append({
+        "epoch": batch["owner_epoch"], "previous_owner": previous_owner, "new_owner": worker,
+        "reason": reason, "session_id": session_id, "client": client, "op_id": op_id, "at": _now_iso(now),
+    })
     validate_snapshot(snapshot.index, snapshot.details)
-    return {"batch_id": batch_id, "final_pr": final_pr}
+    return {
+        "batch_id": batch_id, "owner": worker, "owner_epoch": batch["owner_epoch"],
+        "recovered_members": members, "idempotent": False, "previous_owner": previous_owner,
+    }
 
 
 def op_abort_batch(snapshot: Snapshot, batch_id: str, worker: str, owner_generation: str) -> dict[str, Any]:
@@ -1604,6 +2170,7 @@ def op_take(
 ) -> dict[str, Any]:
     worker = validate_worker(worker)
     entry = _require_entry(snapshot, item_id)
+    require_member_owner(snapshot, item_id, worker)
     moment = now or datetime.now(timezone.utc)
     if not 0 < ttl_hours <= MAX_TTL_HOURS:
         raise TodoError(f"ttl must be within (0, {MAX_TTL_HOURS}] hours", code=E_STATE)
@@ -1651,15 +2218,16 @@ def op_takeover(
     overwrites a *foreign* live claim — but only the exact claim the
     caller inspected: the holder must still match *expected_holder*.
     Anything else (no live claim, same worker, changed holder, terminal
-    state) is refused with direction to the ordinary path. Batch
-    ownership held by the displaced worker transfers with the item, so a
-    dead batch owner cannot strand prepared members; the fresh owner
-    generations are returned for the taker's next batch calls.
+    state) is refused with direction to the ordinary path. Members of an
+    active batch are reserved to the batch owner (``E_BATCH_OWNER``); a dead
+    owner is replaced with ``op_recover_batch_owner``, never as a side
+    effect of taking over a member.
     """
     worker = validate_worker(worker)
     expected_holder = validate_worker(expected_holder)
     reason = validate_takeover_reason(reason)
     entry = _require_entry(snapshot, item_id)
+    require_member_owner(snapshot, item_id, worker)
     moment = now or datetime.now(timezone.utc)
     if not 0 < ttl_hours <= MAX_TTL_HOURS:
         raise TodoError(f"ttl must be within (0, {MAX_TTL_HOURS}] hours", code=E_STATE)
@@ -1681,18 +2249,8 @@ def op_takeover(
     }
     entry["claim"] = fresh
     entry["status"] = "active"
-    transferred: list[dict[str, str]] = []
-    for batch_id, batch in snapshot.index.get("batches", {}).items():
-        if (
-            batch.get("lifecycle", "active") == "active"
-            and batch.get("owner") == displaced
-            and item_id in batch.get("members", [])
-        ):
-            batch["owner"] = worker
-            batch["owner_generation"] = new_generation()
-            transferred.append({"batch_id": batch_id, "owner_generation": batch["owner_generation"]})
     validate_snapshot(snapshot.index, snapshot.details)
-    return {"id": item_id, "claim": fresh, "displaced": displaced, "transferred_batches": transferred}
+    return {"id": item_id, "claim": fresh, "displaced": displaced}
 
 
 def op_renew(
@@ -1761,6 +2319,8 @@ def op_prepare(
     verification: dict[str, Any],
     changed_files: list[str] | tuple[str, ...] = (),
     implementation_dependencies: list[str] | tuple[str, ...] = (),
+    op_id: str | None = None,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
     """Persist prepared evidence and release the member claim.
 
@@ -1768,13 +2328,15 @@ def op_prepare(
     with no claim, and only an explicitly registered same-batch implementation
     edge may use its receipt for readiness.  The service validates the actual
     Git checkout before calling this pure operation; this function validates
-    the durable shape and claim authority again on every publication retry.
+    the durable shape, claim authority, recorded-head lineage and overlap
+    accounting again on every publication retry.
     """
     worker = validate_worker(worker)
     entry = _require_entry(snapshot, item_id)
     claim = entry.get("claim")
     if not claim or claim.get("worker") != worker or claim.get("generation") != generation:
         raise TodoError(f"stale claim for {item_id!r}: only the holder can prepare", code=E_CLAIM_STALE)
+    require_member_owner(snapshot, item_id, worker)
     if entry["status"] != "active":
         raise TodoError(f"task {item_id!r} must be active before it can be prepared", code=E_STATE)
     validate_id(batch_id)
@@ -1810,58 +2372,81 @@ def op_prepare(
         )
     if batch_record.get("lifecycle", "active") != "active":
         raise TodoError(f"batch {batch_id!r} is no longer active", code=E_STATE)
+    if batch_schema_of(batch_record) != BATCH_SCHEMA:
+        raise TodoError(f"batch {batch_id!r} predates batch v2", code=E_SCHEMA)
     registered_deps = list(batch.get("implementation_dependencies", []))
     if registered_deps != deps:
         raise TodoError("prepare dependencies differ from registered batch metadata", code=E_STATE)
-    expected_base = batch_record["integration_head"] if deps else batch_record["start_head"]
-    if source_base != expected_base:
-        kind = "current integration head" if deps else "registered batch head"
-        raise TodoError(f"prepared member must start at the {kind}", code=E_STATE)
+    log = batch_record["integration_log"]
+    base_seqs = [row["seq"] for row in log if row["head"] == source_base]
+    if not base_seqs:
+        raise TodoError(
+            "source base is neither the batch start head nor a recorded integration head",
+            code=E_BATCH_HEAD,
+            recovery=["merge the current integration head into the member branch and prepare from it"],
+        )
     if scope_hash != batch_record["scope_hash"]:
         raise TodoError("prepared source does not match the registered batch scope", code=E_STATE)
     if member_id not in batch_record["members"]:
         raise TodoError("prepared member is not declared in the batch", code=E_STATE)
-    previous_detail = json.loads(json.dumps(detail))
-    previous_batch_record = json.loads(json.dumps(batch_record))
-    previous_index_version = snapshot.index["schema_version"]
     if detail.get("prepared") is not None:
         raise TodoError(f"task {item_id!r} already has prepared evidence", code=E_STATE)
-    if snapshot.index["schema_version"] < SCHEMA_VERSION:
-        snapshot.index["schema_version"] = SCHEMA_VERSION
+    registered_head = batch_record["integration_head"]
+    reprepare = member_id in batch_record.get("integrated_members", {}) and integration_head == registered_head
+    if not reprepare and any(row["head"] == integration_head for row in log):
+        raise TodoError(
+            "prepared integration head must be new; record leader commits with advance_batch_head first",
+            code=E_BATCH_HEAD,
+        )
+    previous_detail = json.loads(json.dumps(detail))
+    previous_batch_record = json.loads(json.dumps(batch_record))
+    base_seq = min(base_seqs)
+    overlaps: list[dict[str, Any]] = []
+    for other, receipt in _v2_receipts(snapshot, batch_id, batch_record).items():
+        if other == member_id or receipt.get("schema") != PREPARED_RECEIPT_SCHEMA:
+            continue
+        shared = sorted(set(changed_files) & set(receipt["changed_files"]))
+        if shared:
+            overlaps.append({"kind": "member", "member": other, "paths": shared})
+    for row in log:
+        if row["kind"] == "fix" and row["seq"] > base_seq:
+            shared = sorted(set(changed_files) & set(row["changed_files"]))
+            if shared:
+                overlaps.append({"kind": "fix", "seq": row["seq"], "paths": shared})
+    seq = len(log)
+    log.append({
+        "seq": seq, "head": integration_head, "previous_head": registered_head,
+        "kind": "reprepare" if reprepare else "prepare", "member": member_id,
+        "op_id": op_id, "at": _now_iso(now),
+    })
     detail["prepared"] = {
         "schema": PREPARED_RECEIPT_SCHEMA,
         "batch_id": batch_id,
         "member_id": member_id,
-        "owner_generation": batch_record["owner_generation"],
+        "owner_epoch": batch_record["owner_epoch"],
         "source_worktree": source_worktree,
         "source_revision": source_revision,
         "source_base": source_base,
         "accepted_head": accepted_head,
         "integration_head": integration_head,
+        "integration_seq": seq,
         "scope_hash": scope_hash,
         "changed_files": changed_files,
+        "overlaps": overlaps,
         "verification": json.loads(json.dumps(verification)),
     }
-    # Advancing the registered integration head is part of the same state
-    # transaction as the receipt.  The service has already proved that this
-    # exact clean checkout is the integration worktree at this head, and the
-    # map lets pure readiness checks distinguish an accepted member from a
-    # merely caller-asserted receipt.
     batch_record["integration_head"] = integration_head
-    accepted_members = batch_record.setdefault("accepted_members", {})
-    accepted_members[member_id] = accepted_head
-    integrated_members = batch_record.setdefault("integrated_members", {})
-    for integrated_member, integrated_head in accepted_members.items():
-        integrated_members[integrated_member] = {
-            "accepted_head": integrated_head,
-            "integration_head": integration_head,
-        }
+    batch_record.setdefault("accepted_members", {})[member_id] = accepted_head
+    batch_record.setdefault("integrated_members", {})[member_id] = {
+        "accepted_head": accepted_head,
+        "integration_head": integration_head,
+        "integration_seq": seq,
+    }
     entry["claim"] = None
     entry["status"] = "open"
     try:
         validate_snapshot(snapshot.index, snapshot.details)
     except TodoError:
-        snapshot.index["schema_version"] = previous_index_version
         snapshot.details[item_id] = previous_detail
         snapshot.index["batches"][batch_id] = previous_batch_record
         raise
@@ -1873,6 +2458,9 @@ def op_prepare(
             "member_id": member_id,
             "source_worktree": source_worktree,
             "source_revision": source_revision,
+            "integration_head": integration_head,
+            "integration_seq": seq,
+            "overlaps": overlaps,
         },
     }
 
@@ -1894,6 +2482,7 @@ def op_finish(
         or claim.get("generation") != generation
     ):
         raise TodoError(f"stale claim for {item_id!r}: only the holder can finish", code=E_CLAIM_STALE)
+    require_member_owner(snapshot, item_id, worker)
     detail = snapshot.details[item_id]
     blocking = [row["id"] for row in open_deferrals(snapshot, item_id)]
     if blocking:
