@@ -1,6 +1,6 @@
 # ADR 0012: Batch v2 — the integration-branch delivery loop
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-01
 - **Relationship to prior ADRs**: amends ADR 0007 (prepared-batch amendment:
   schema 3, `prepared_work_v1`), ADR 0008 (batch ownership no longer follows a
@@ -476,7 +476,9 @@ registered `batch` metadata is refused (`E_STATE`, "registered batch metadata is
 immutable; abort the batch before reassignment") when the new value differs. Both
 therefore cannot leave a receipt over changed content, and the refusal leaves
 receipt and dependents untouched. An edit mixing `context` with any other field
-invalidates. Completed prepared members still refuse edits (`E_STATE`, kept). While any member
+invalidates. A completed (`done`) prepared member refuses **every** edit, including a
+`context`-only edit (`E_STATE`, 0.12.0 behaviour kept); that refusal precedes the
+`context`-only exemption. While any member
 of a batch is `done`, every receipt-invalidating edit on any member of that batch
 is refused `E_STATE` ("closeout has started"), because the head can no longer
 move and a receipt could not be rebuilt; `context`-only edits are still allowed.
@@ -519,6 +521,12 @@ same object is `todo_db.BATCH_CAPABILITY` and the `capability` field of
 `show_batch`/`todo-db batch show`. A consumer refuses a runtime without
 `todo_db_batch.version >= 2` (an 0.12.0 server has no such key). It must key on
 the capability and receipt schema, not on the package version string.
+
+**Implemented beyond the original contract.** Bootstrap creates a new state branch
+at schema 3 (`empty_index()` is schema 3), so older clients keep working against it
+until the first `register_batch` performs the confirmed cutover to schema 4; even a
+brand-new store needs `confirm_schema3_cutover` before its first batch. The
+`show_batch` summary additionally returns `batch_schema` and `develop_ref`.
 
 **Store cutover.** One cutover, directly from the current schema to 4, performed
 by the first `register_batch` behind the existing flag. The flag keeps its name
@@ -597,7 +605,7 @@ SHAs. Success results are the `data` of `{ok:true, data}`; refusals are
 
 | Tool | New/changed | Arguments | Success result | Refusal codes |
 |---|---|---|---|---|
-| `show_batch` | new | `batch_id`; `field=None`, `offset=0`, `budget=6000`, `rev=None` | summary + `sections` map + `capability` + `rev` (§2.2); with `field`: `{field, offset, next_offset?, total_bytes, text}` window | `E_STATE` unknown batch, `E_CURSOR_STALE`, `E_OVERSIZED`, `E_OFFLINE` |
+| `show_batch` | new | `batch_id`; `field=None`, `offset=0`, `budget=6000`, `rev=None` | summary + `sections` map + `capability` + `rev` (§2.2); with `field`: `{batch_id, field, offset, total, window, rev, continuation?}` (the `show_item` section-window shape; `continuation` is `{field, offset, budget, rev}` while more remains) | `E_STATE` unknown batch, `E_CURSOR_STALE`, `E_OVERSIZED`, `E_OFFLINE` |
 | `recover_batch_owner` | new | `batch_id`, `expected_owner`, `expected_owner_generation`, `new_owner_generation` (caller-generated, 32 hex), `reason` | `{batch_id, owner, owner_epoch, recovered_members, idempotent}` | `E_CONFLICT` owner changed, `E_CLAIM_STALE` wrong generation, `E_STATE` not active / no session / bad reason, `E_SCHEMA` store below 4 |
 | `advance_batch_head` | new | `batch_id`, `owner_generation`, `expected_head`, `head`, `reason` (`fix`\|`develop-merge`), `changed_files` | `{batch_id, integration_head, seq, reason, changed_files, requires_acceptance, idempotent}` | `E_CLAIM_STALE`, `E_CONFLICT` stale head, `E_BATCH_HEAD` (non-descendant, not a real merge, merge parent not under the registered `develop_ref`, no registered `develop_ref`, non-develop content, fix outside scope), `E_STATE` (files mismatch, member done, inactive), `E_SCHEMA` |
 | `take` | changed | `id` | unchanged ack | adds `E_BATCH_OWNER` (active-batch member, caller not owner) |

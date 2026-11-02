@@ -82,6 +82,15 @@ upgrade note below before registering a batch.
   hint. `show_item`, including section reads, now reports `stale` and
   `cached_rev` instead of `rev` when served from the cache, as `list_items`
   already did.
+- Batch v2 acceptance accounting now remembers every integrated member's changed
+  files, so a member re-prepared after an invalidating edit still requires its own
+  acceptance rerun when a later member overlapped it (no silent revert).
+- `show_batch` always returns a default response within the 16 KiB cap (sections
+  that do not fit are paged), serves no `owner_generation` from old receipts, and
+  rejects a moved `rev` on the summary read with `E_CURSOR_STALE`.
+- Finishing a member of an active pre-v2 batch is refused with `E_SCHEMA` even
+  without final evidence, and every new batch refusal carries recovery steps.
+- A completed prepared member refuses every edit, including `context`-only ones.
 
 ## [0.12.0] - 2026-10-31
 

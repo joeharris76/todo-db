@@ -776,6 +776,8 @@ def _validate_batch_record(batch_id: str, batch: Any) -> dict[str, Any]:
             raise TodoError(f"batch {batch_id!r} has invalid integration evidence for {member!r}", code=E_STATE)
         _validate_revision(evidence.get("accepted_head"), f"integrated accepted head for {member!r}")
         _validate_revision(evidence.get("integration_head"), f"integrated head for {member!r}")
+        if "changed_files" in evidence:
+            _validate_path_list(f"integrated changed files for {member!r}", evidence["changed_files"])
     schema = batch_schema_of(batch)
     if schema not in (1, BATCH_SCHEMA):
         raise TodoError(f"batch {batch_id!r} has an unknown batch_schema", code=E_SCHEMA)
@@ -998,6 +1000,7 @@ def _validate_current_acceptance(
             raise TodoError(
                 f"current acceptance for {member!r} is not its own passed verification at the final head",
                 code=E_FINAL_EVIDENCE,
+                recovery=[f"rerun {member!r}'s own verification in the integration worktree at the final head"],
             )
 
 
@@ -1618,6 +1621,7 @@ def op_update(
         raise TodoError(
             f"registered batch metadata for {item_id!r} is immutable; abort the batch before reassignment",
             code=E_STATE,
+            recovery=["abort the batch, then register the member again with the new metadata"],
         )
     if isinstance(existing_batch, dict):
         batch_record = snapshot.index.get("batches", {}).get(existing_batch.get("batch_id"))
@@ -1702,13 +1706,18 @@ def op_update(
     try:
         context_only = set(changed) <= {"context"}
         closeout = _closeout_started(snapshot, item_id)
+        if changed and "prepared" in detail and entry["status"] == "done":
+            raise TodoError(
+                f"cannot edit completed prepared batch member {item_id!r}",
+                code=E_STATE,
+                recovery=["completed prepared members are immutable; record follow-up work as a new task"],
+            )
         if changed and not context_only and "prepared" in detail:
-            if entry["status"] == "done":
-                raise TodoError(f"cannot edit completed prepared batch member {item_id!r}", code=E_STATE)
             if closeout:
                 raise TodoError(
                     f"closeout has started for the batch of {item_id!r}; receipt-invalidating edits are refused",
                     code=E_STATE,
+                    recovery=["finish closeout, then record the change as a new task"],
                 )
             # A prepared receipt binds the exact member content and declared
             # edge. Any later edit invalidates it instead of allowing a stale
@@ -1723,6 +1732,7 @@ def op_update(
                     raise TodoError(
                         f"closeout has started for the batch of {item_id!r}; receipt-invalidating edits are refused",
                         code=E_STATE,
+                        recovery=["finish closeout, then record the change as a new task"],
                     )
                 changed.append("downstream_prepared_receipts")
         validate_snapshot(snapshot.index, snapshot.details)
@@ -1748,9 +1758,16 @@ def _owned_batch(snapshot: Snapshot, batch_id: str, worker: str, owner_generatio
     if batch["owner"] != worker or batch["owner_generation"] != owner_generation:
         raise TodoError(f"stale batch owner for {batch_id!r}", code=E_CLAIM_STALE)
     if batch.get("lifecycle", "active") != "active":
-        raise TodoError(f"batch {batch_id!r} is no longer active", code=E_STATE)
+        raise TodoError(
+            f"batch {batch_id!r} is no longer active", code=E_STATE,
+            recovery=["read the batch with show_batch; a finished or aborted batch accepts no batch operations"],
+        )
     if batch_schema_of(batch) != BATCH_SCHEMA:
-        raise TodoError(f"batch {batch_id!r} predates batch v2", code=E_SCHEMA)
+        raise TodoError(
+            f"batch {batch_id!r} predates batch v2",
+            code=E_SCHEMA,
+            recovery=["finish or abort it with the client that registered it"],
+        )
     return batch
 
 
@@ -1921,10 +1938,16 @@ def op_bind_batch_pr(
     history = batch["final_pr_history"]
     if bound is None:
         if expected_previous_head is not None:
-            raise TodoError(f"batch {batch_id!r} has no final PR binding to revise", code=E_CONFLICT)
+            raise TodoError(
+                f"batch {batch_id!r} has no final PR binding to revise",
+                code=E_CONFLICT,
+                recovery=["bind the final PR without expected_previous_head"],
+            )
         if head != batch["integration_head"]:
             raise TodoError(
-                f"final PR head is not the registered integration head for {batch_id!r}", code=E_CONFLICT
+                f"final PR head is not the registered integration head for {batch_id!r}",
+                code=E_CONFLICT,
+                recovery=["re-read integration_head with show_batch and bind the PR at that head"],
             )
         batch["final_pr"] = final_pr
         history.append({"previous_head": None, "head": head, "op_id": op_id, "at": _now_iso(now)})
@@ -1932,25 +1955,42 @@ def op_bind_batch_pr(
         return {"batch_id": batch_id, "final_pr": final_pr, "idempotent": False}
     if any(bound[key] != final_pr[key] for key in ("repository", "number", "node_id")):
         raise TodoError(
-            f"batch {batch_id!r} is bound to a different PR; one batch has one final PR", code=E_CONFLICT
+            f"batch {batch_id!r} is bound to a different PR; one batch has one final PR",
+            code=E_CONFLICT,
+            recovery=["bind the PR already recorded in show_batch final_pr"],
         )
     if head == bound["head"]:
         last_previous = history[-1]["previous_head"] if history else None
         if expected_previous_head is not None and expected_previous_head != last_previous:
-            raise TodoError(f"stale expected_previous_head for {batch_id!r}", code=E_CONFLICT)
+            raise TodoError(
+                f"stale expected_previous_head for {batch_id!r}",
+                code=E_CONFLICT,
+                recovery=["re-read final_pr with show_batch and retry"],
+            )
         return {"batch_id": batch_id, "final_pr": bound, "previous_head": last_previous, "idempotent": True, "_no_write": True}
     if expected_previous_head is None:
         raise TodoError(
-            f"revising the final PR head of {batch_id!r} needs expected_previous_head", code=E_CONFLICT
+            f"revising the final PR head of {batch_id!r} needs expected_previous_head",
+            code=E_CONFLICT,
+            recovery=["re-read final_pr with show_batch and pass its head as expected_previous_head"],
         )
     if expected_previous_head != bound["head"]:
-        raise TodoError(f"stale expected_previous_head for {batch_id!r}", code=E_CONFLICT)
+        raise TodoError(
+            f"stale expected_previous_head for {batch_id!r}",
+            code=E_CONFLICT,
+            recovery=["re-read final_pr with show_batch and retry"],
+        )
     if head != batch["integration_head"]:
         raise TodoError(
-            f"final PR head is not the registered integration head for {batch_id!r}", code=E_CONFLICT
+            f"final PR head is not the registered integration head for {batch_id!r}",
+            code=E_CONFLICT,
+            recovery=["re-read integration_head with show_batch and bind the PR at that head"],
         )
     if _closeout_or_done(snapshot, batch):
-        raise TodoError(f"closeout has started for {batch_id!r}; the final PR head can no longer change", code=E_STATE)
+        raise TodoError(
+            f"closeout has started for {batch_id!r}; the final PR head can no longer change", code=E_STATE,
+            recovery=["resume closeout with the registered final PR head"],
+        )
     batch["final_pr"] = final_pr
     history.append({"previous_head": bound["head"], "head": head, "op_id": op_id, "at": _now_iso(now)})
     for member in batch["members"]:
@@ -1996,14 +2036,21 @@ def op_advance_batch_head(
             }
     if _closeout_or_done(snapshot, batch):
         raise TodoError(
-            f"closeout has started for {batch_id!r}; resume closeout instead of changing the head", code=E_STATE
+            f"closeout has started for {batch_id!r}; resume closeout instead of changing the head", code=E_STATE,
+            recovery=["resume closeout with the registered integration head"],
         )
     if expected_head != batch["integration_head"]:
         raise TodoError(
-            f"stale expected head for {batch_id!r}; re-read with show_batch and retry", code=E_CONFLICT
+            f"stale expected head for {batch_id!r}; re-read with show_batch and retry",
+            code=E_CONFLICT,
+            recovery=["re-read integration_head with show_batch and retry with it as expected_head"],
         )
     if head == expected_head or any(entry["head"] == head for entry in log):
-        raise TodoError(f"head {head} is already recorded; an advance needs a new head", code=E_BATCH_HEAD)
+        raise TodoError(
+            f"head {head} is already recorded; an advance needs a new head",
+            code=E_BATCH_HEAD,
+            recovery=["create a new commit and advance to its head"],
+        )
     entry: dict[str, Any] = {
         "seq": len(log), "head": head, "previous_head": expected_head, "kind": reason,
         "changed_files": files, "op_id": op_id, "at": _now_iso(now),
@@ -2013,7 +2060,9 @@ def op_advance_batch_head(
         outside = [path for path in files if not any(fnmatch.fnmatch(path, pattern) for pattern in union)]
         if outside:
             raise TodoError(
-                f"a fix cannot widen scope; outside the member scopes: {outside[:5]}", code=E_BATCH_HEAD
+                f"a fix cannot widen scope; outside the member scopes: {outside[:5]}",
+                code=E_BATCH_HEAD,
+                recovery=["split member changes into a fix advance limited to the registered scope"],
             )
         touched = []
         for member, receipt in _v2_receipts(snapshot, batch_id, batch).items():
@@ -2025,9 +2074,14 @@ def op_advance_batch_head(
             raise TodoError(
                 f"batch {batch_id!r} was registered without a develop_ref; develop merges cannot be recorded",
                 code=E_BATCH_HEAD,
+                recovery=["record the change as a fix advance or register the batch with a develop_ref"],
             )
         if merged_parent is None:
-            raise TodoError("a develop merge needs its merged parent", code=E_BATCH_HEAD)
+            raise TodoError(
+                "a develop merge needs its merged parent",
+                code=E_BATCH_HEAD,
+                recovery=["pass merged_parent with the develop commit that was merged"],
+            )
         entry["merged_parent"] = _validate_revision(merged_parent, "merged_parent")
     log.append(entry)
     batch["integration_head"] = head
@@ -2064,9 +2118,16 @@ def op_recover_batch_owner(
     except KeyError:
         raise TodoError(f"unknown batch {batch_id!r}", code=E_STATE) from None
     if batch.get("lifecycle", "active") != "active":
-        raise TodoError(f"batch {batch_id!r} is no longer active", code=E_STATE)
+        raise TodoError(
+            f"batch {batch_id!r} is no longer active", code=E_STATE,
+            recovery=["read the batch with show_batch; a finished or aborted batch accepts no batch operations"],
+        )
     if batch_schema_of(batch) != BATCH_SCHEMA:
-        raise TodoError(f"batch {batch_id!r} predates batch v2", code=E_SCHEMA)
+        raise TodoError(
+            f"batch {batch_id!r} predates batch v2",
+            code=E_SCHEMA,
+            recovery=["finish or abort it with the client that registered it"],
+        )
     recoveries = batch["recoveries"]
     members = list(batch["members"])
     if (
@@ -2081,10 +2142,16 @@ def op_recover_batch_owner(
         }
     if batch["owner"] != expected_owner:
         raise TodoError(
-            f"owner of {batch_id!r} changed; re-read with show_batch and retry", code=E_CONFLICT
+            f"owner of {batch_id!r} changed; re-read with show_batch and retry",
+            code=E_CONFLICT,
+            recovery=["re-read the owner with show_batch"],
         )
     if batch["owner_generation"] != expected_owner_generation:
-        raise TodoError(f"stale owner generation for {batch_id!r}", code=E_CLAIM_STALE)
+        raise TodoError(
+            f"stale owner generation for {batch_id!r}",
+            code=E_CLAIM_STALE,
+            recovery=["re-read the owner with show_batch"],
+        )
     if new_owner_generation == batch["owner_generation"]:
         raise TodoError("new_owner_generation must differ from the current generation", code=E_STATE)
     previous_owner = batch["owner"]
@@ -2371,9 +2438,16 @@ def op_prepare(
             code=E_STATE,
         )
     if batch_record.get("lifecycle", "active") != "active":
-        raise TodoError(f"batch {batch_id!r} is no longer active", code=E_STATE)
+        raise TodoError(
+            f"batch {batch_id!r} is no longer active", code=E_STATE,
+            recovery=["read the batch with show_batch; a finished or aborted batch accepts no batch operations"],
+        )
     if batch_schema_of(batch_record) != BATCH_SCHEMA:
-        raise TodoError(f"batch {batch_id!r} predates batch v2", code=E_SCHEMA)
+        raise TodoError(
+            f"batch {batch_id!r} predates batch v2",
+            code=E_SCHEMA,
+            recovery=["finish or abort it with the client that registered it"],
+        )
     registered_deps = list(batch.get("implementation_dependencies", []))
     if registered_deps != deps:
         raise TodoError("prepare dependencies differ from registered batch metadata", code=E_STATE)
@@ -2397,15 +2471,16 @@ def op_prepare(
         raise TodoError(
             "prepared integration head must be new; record leader commits with advance_batch_head first",
             code=E_BATCH_HEAD,
+            recovery=["record leader commits with advance_batch_head, then prepare from the new head"],
         )
     previous_detail = json.loads(json.dumps(detail))
     previous_batch_record = json.loads(json.dumps(batch_record))
     base_seq = min(base_seqs)
     overlaps: list[dict[str, Any]] = []
-    for other, receipt in _v2_receipts(snapshot, batch_id, batch_record).items():
-        if other == member_id or receipt.get("schema") != PREPARED_RECEIPT_SCHEMA:
+    for other, integrated in batch_record.get("integrated_members", {}).items():
+        if other == member_id:
             continue
-        shared = sorted(set(changed_files) & set(receipt["changed_files"]))
+        shared = sorted(set(changed_files) & set(integrated.get("changed_files", [])))
         if shared:
             overlaps.append({"kind": "member", "member": other, "paths": shared})
     for row in log:
@@ -2441,6 +2516,7 @@ def op_prepare(
         "accepted_head": accepted_head,
         "integration_head": integration_head,
         "integration_seq": seq,
+        "changed_files": changed_files,
     }
     entry["claim"] = None
     entry["status"] = "open"

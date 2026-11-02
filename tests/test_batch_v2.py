@@ -1467,12 +1467,12 @@ def test_show_batch_pages_oversized_section(tmp_path: Path) -> None:
     assert not svc.show_batch(BATCH, field="bogus")["ok"]
 
 
-def _bulk_service(tmp_path: Path) -> tuple[TrackerService, git_backend.StateRef]:
-    remote = tmp_path / "bulk.git"
+def _bulk_service(tmp_path: Path, count: int = 12) -> tuple[TrackerService, git_backend.StateRef]:
+    remote = tmp_path / f"bulk{count}.git"
     subprocess.run(["git", "init", "--quiet", "--bare", str(remote)], check=True)
     ref = git_backend.StateRef(remote=str(remote), branch="todo-state")
     git_backend.bootstrap(ref)
-    members = [f"m{i}" for i in range(12)]
+    members = [f"m{i}" for i in range(count)]
 
     def seed(snap: store.Snapshot) -> dict[str, Any]:
         scope = {m: [f"{m}/**"] for m in members}
@@ -1497,7 +1497,7 @@ def _bulk_service(tmp_path: Path) -> tuple[TrackerService, git_backend.StateRef]
         return {"id": "seed"}
 
     assert git_backend.mutate(ref, op="update", summary="seed bulk", worker="seeder", apply=seed).ok
-    return TrackerService(ref=ref, cache_dir=tmp_path / "cache-bulk", worker="reader"), ref
+    return TrackerService(ref=ref, cache_dir=tmp_path / f"cache-bulk{count}", worker="reader"), ref
 
 
 def test_cli_batch_show_matches_tool_and_never_writes(tmp_path: Path) -> None:
@@ -1533,3 +1533,191 @@ def test_owner_reservation_survives_a_real_prepare_flow(tmp_path: Path) -> None:
     assert flow.finish("a", flow.evidence())["ok"]
     assert flow.finish("b", flow.evidence())["ok"]
     assert flow.batch()["lifecycle"] == "completed"
+
+
+# ------------------------------------------------- review fixes (ADR 0012)
+
+
+def test_silent_revert_blocked_after_invalidate_then_reprepare() -> None:
+    snap = _pure(["a", "b"])
+    _prep(snap, "a", files=["shared/f"])
+    store.op_update(snap, "a", description="clarified")
+    assert "prepared" not in snap.details["a"]
+    accepted = snap.index["batches"][BATCH]["accepted_members"]["a"]
+    out_b = _prep(snap, "b", base=_head(snap), files=["shared/f"])
+    assert out_b["prepared"]["overlaps"] == [{"kind": "member", "member": "a", "paths": ["shared/f"]}]
+    _prep(snap, "a", base=h("start"), head=_head(snap), files=["shared/f"], accepted=accepted)
+    assert snap.index["batches"][BATCH]["integrated_members"]["a"]["changed_files"] == ["shared/f"]
+    required = store.acceptance_required(snap, BATCH)
+    assert sorted(required) == ["a", "b"]
+    assert required["a"][0]["by"] == "b"
+    store.validate_snapshot(snap.index, snap.details)
+    _bind(snap)
+    with pytest.raises(TodoError) as exc:
+        _finish(snap, "a", _final(snap, ["a", "b"], _accept(snap, ["b"])))
+    assert exc.value.code == "E_FINAL_EVIDENCE" and "'a'" in str(exc.value)
+    with pytest.raises(TodoError) as exc:
+        _finish(snap, "a", _final(snap, ["a", "b"]))
+    assert exc.value.code == "E_FINAL_EVIDENCE"
+    snap.index["items"]["a"]["claim"] = None
+    snap.index["items"]["a"]["status"] = "open"
+    _finish(snap, "a", _final(snap, ["a", "b"], _accept(snap, ["a", "b"])))
+    assert snap.index["items"]["a"]["status"] == "done"
+
+
+def test_any_edit_of_done_prepared_member_is_refused() -> None:
+    snap = _pure(["a", "b"])
+    _prep(snap, "a")
+    _prep(snap, "b", base=_head(snap))
+    _bind(snap)
+    _finish(snap, "a", _final(snap, ["a", "b"]))
+    for kwargs in ({"context_append": "note"}, {"description": "late edit"}):
+        with pytest.raises(TodoError) as exc:
+            store.op_update(snap, "a", **kwargs)
+        assert exc.value.code == "E_STATE" and exc.value.recovery
+    assert "prepared" in snap.details["a"]
+    assert "note" not in snap.details["a"].get("context", "")
+
+
+def _overlap_snap() -> store.Snapshot:
+    snap = _pure(["a", "b"])
+    _prep(snap, "a", files=["shared/f"])
+    _prep(snap, "b", base=_head(snap), files=["shared/f"])
+    _bind(snap)
+    return snap
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [("worktree", "/tmp/elsewhere"), ("suite", "weaker-suite"), ("clean", False), ("status", "failed")],
+)
+def test_current_acceptance_mismatch_refused(field: str, value: Any) -> None:
+    snap = _overlap_snap()
+    acceptance = _accept(snap, ["a"])
+    acceptance["a"][field] = value
+    with pytest.raises(TodoError) as exc:
+        _finish(snap, "b", _final(snap, ["a", "b"], acceptance))
+    assert exc.value.code == "E_FINAL_EVIDENCE" and exc.value.recovery
+    snap.index["items"]["b"]["claim"] = None
+    snap.index["items"]["b"]["status"] = "open"
+    _finish(snap, "b", _final(snap, ["a", "b"], _accept(snap, ["a"])))
+
+
+def test_lacking_acceptance_refusal_has_recovery() -> None:
+    snap = _overlap_snap()
+    with pytest.raises(TodoError) as exc:
+        _finish(snap, "b", _final(snap, ["a", "b"]))
+    assert exc.value.code == "E_FINAL_EVIDENCE" and exc.value.recovery
+
+
+def _refused(call: Any, code: str) -> None:
+    with pytest.raises(TodoError) as exc:
+        call()
+    assert exc.value.code == code, (exc.value.code, str(exc.value))
+    assert exc.value.recovery, f"{code} refusal has no recovery steps: {exc.value}"
+
+
+def test_every_new_store_refusal_carries_recovery_steps() -> None:
+    snap = _pure(["a", "b"], develop_ref="refs/remotes/origin/develop")
+    start = _head(snap)
+
+    def advance(**kw: Any) -> dict[str, Any]:
+        params: dict[str, Any] = dict(expected_head=_head(snap), head=h("f1"), reason="fix", changed_files=["a/f"])
+        params.update(kw)
+        return store.op_advance_batch_head(snap, BATCH, "leader", GEN, **params)
+
+    _refused(lambda: advance(expected_head=h("stale")), "E_CONFLICT")
+    _refused(lambda: advance(head=start), "E_BATCH_HEAD")
+    _refused(lambda: advance(changed_files=["outside/f"]), "E_BATCH_HEAD")
+    _refused(lambda: advance(reason="develop-merge", changed_files=["docs/x"]), "E_BATCH_HEAD")
+    _prep(snap, "a", files=["a/f"])
+    _refused(lambda: _prep(snap, "b", base=_head(snap), head=start), "E_BATCH_HEAD")
+    _refused(lambda: _prep(snap, "b", base=h("nowhere")), "E_BATCH_HEAD")
+    _refused(lambda: _bind(snap, expected_previous_head=h("x")), "E_CONFLICT")
+    _refused(lambda: _bind(snap, head=h("other")), "E_CONFLICT")
+    assert _bind(snap)["idempotent"] is False
+    _refused(lambda: _bind(snap, number=2, node="PR_2"), "E_CONFLICT")
+    _refused(lambda: _bind(snap, expected_previous_head=h("x")), "E_CONFLICT")
+    advance()
+    _refused(lambda: _bind(snap), "E_CONFLICT")
+    _refused(lambda: _bind(snap, expected_previous_head=h("x")), "E_CONFLICT")
+    _refused(lambda: _bind(snap, head=h("other"), expected_previous_head=start), "E_CONFLICT")
+    _refused(lambda: _recover(snap, expected_owner="someone-else"), "E_CONFLICT")
+    _refused(lambda: _recover(snap, expected_owner_generation="9" * 32), "E_CLAIM_STALE")
+    _refused(lambda: store.op_update(snap, "a", batch=_meta("a", ["b"])), "E_STATE")
+
+
+def _flip_to_pre_v2(snap: store.Snapshot) -> None:
+    snap.index["schema_version"] = 3
+    snap.index["batches"][BATCH]["batch_schema"] = 1
+
+
+def test_v2_batch_operations_refused_on_pre_v2_batch_with_recovery() -> None:
+    snap = _pure(["a"])
+    store.op_take(snap, "a", "leader")
+    _flip_to_pre_v2(snap)
+    _refused(lambda: _prep(snap, "a"), "E_SCHEMA")
+    _refused(
+        lambda: store.op_advance_batch_head(
+            snap, BATCH, "leader", GEN, expected_head=_head(snap), head=h("f"), reason="fix", changed_files=["a/f"],
+        ),
+        "E_SCHEMA",
+    )
+    _refused(lambda: _recover(snap), "E_SCHEMA")
+    _refused(lambda: _bind(snap), "E_SCHEMA")
+
+
+def test_show_batch_receipts_never_serve_owner_generation_for_v1_receipts() -> None:
+    snap = _pure(["a", "b"])
+    _prep(snap, "a", files=["a/f"])
+    _prep(snap, "b", base=_head(snap), files=["b/f"])
+    snap.details["a"]["prepared"]["owner_generation"] = GEN
+    service = object.__new__(TrackerService)
+    section = service._batch_section(snap, BATCH, "receipts")
+    assert sorted(section) == ["a", "b"] and GEN not in json.dumps(section)
+    assert snap.details["a"]["prepared"]["owner_generation"] == GEN
+
+
+@pytest.mark.parametrize("count", [1, 8, 16, 24, 29, 33, 40])
+def test_show_batch_default_response_fits_the_cap_at_every_member_count(tmp_path: Path, count: int) -> None:
+    svc, _ = _bulk_service(tmp_path, count)
+    shown = svc.show_batch(BATCH)
+    assert shown["ok"], shown
+    assert len(json.dumps(shown, indent=2, sort_keys=True).encode()) <= 16 * 1024
+    for name, section in shown["data"]["sections"].items():
+        assert name in shown["data"] or "continuation" in section
+    receipts: list[str] = []
+    offset, rev = 0, shown["data"]["rev"]
+    while "receipts" not in shown["data"]:
+        page = svc.show_batch(BATCH, field="receipts", offset=offset, budget=4000, rev=rev if offset else None)
+        assert page["ok"], page
+        receipts.append(page["data"]["window"])
+        if "continuation" not in page["data"]:
+            break
+        offset = page["data"]["continuation"]["offset"]
+    if receipts:
+        assert len(json.loads("".join(receipts))) == count
+
+
+def test_show_batch_summary_read_pins_rev_and_oversized_window_is_refused(tmp_path: Path) -> None:
+    svc, _ = _bulk_service(tmp_path)
+    current = svc.show_batch(BATCH)["data"]["rev"]
+    assert svc.show_batch(BATCH, rev=current)["ok"]
+    moved = svc.show_batch(BATCH, rev="0" * 40)
+    assert not moved["ok"] and moved["code"] == "E_CURSOR_STALE" and moved["recovery"]
+    big = svc.show_batch(BATCH, field="receipts", budget=10**9)
+    assert not big["ok"] and big["code"] == "E_OVERSIZED" and big["recovery"]
+
+
+def test_finishing_a_member_of_an_active_pre_v2_batch_is_refused_with_e_schema(tmp_path: Path) -> None:
+    flow = Flow(tmp_path, ["a"], SCOPE)
+    generation = flow.take("a")
+
+    def flip(snap: store.Snapshot) -> dict[str, Any]:
+        snap.index["batches"][BATCH]["batch_schema"] = 1
+        return {"id": "flip"}
+
+    assert git_backend.mutate(flow.ref, op="update", summary="flip", worker="seeder", apply=flip).ok
+    for evidence in (None, {}):
+        done = flow.leader.finish("a", generation, evidence)
+        assert not done["ok"] and done["code"] == "E_SCHEMA" and done["recovery"], done

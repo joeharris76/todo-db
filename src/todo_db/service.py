@@ -929,13 +929,17 @@ class TrackerService:
                 recovery=["commit the advance on top of the registered integration head"],
             )
         if self._changed_paths(worktree, expected_head, head) != sorted(set(changed_files)):
-            raise TodoError("changed_files differ from the advance's actual diff", code=E_STATE)
+            raise TodoError(
+                "changed_files differ from the advance's actual diff", code=E_STATE,
+                recovery=["pass changed_files equal to the git diff between expected_head and head"],
+            )
         if reason != "develop-merge":
             return None
         develop_ref = batch.get("develop_ref")
         if develop_ref is None:
             raise TodoError(
                 f"batch {batch['integration_branch']!r} was registered without a develop_ref", code=E_BATCH_HEAD,
+                recovery=["record the change as a fix advance"],
             )
         parents = self._git_out(worktree, "rev-list", "--parents", "-n", "1", head).split()[1:]
         if len(parents) != 2 or parents[0] != expected_head:
@@ -947,13 +951,22 @@ class TrackerService:
         try:
             self._git_out(worktree, "rev-parse", "--verify", "--quiet", f"{develop_ref}^{{commit}}")
         except TodoError as exc:
-            raise TodoError(f"develop_ref {develop_ref!r} does not resolve in the integration worktree", code=E_BATCH_HEAD) from exc
+            raise TodoError(
+                f"develop_ref {develop_ref!r} does not resolve in the integration worktree", code=E_BATCH_HEAD,
+                recovery=["fetch the develop ref into the integration worktree and retry"],
+            ) from exc
         if not self._is_ancestor(worktree, merged_parent, develop_ref):
-            raise TodoError("merged parent is not an ancestor of the registered develop_ref", code=E_BATCH_HEAD)
+            raise TodoError(
+                "merged parent is not an ancestor of the registered develop_ref", code=E_BATCH_HEAD,
+                recovery=["merge a commit that is already on the registered develop_ref"],
+            )
         base = self._git_out(worktree, "merge-base", expected_head, merged_parent)
         side = set(self._changed_paths(worktree, base, merged_parent))
         if not set(changed_files) <= side:
-            raise TodoError("merge introduces non-develop content", code=E_BATCH_HEAD)
+            raise TodoError(
+                "merge introduces non-develop content", code=E_BATCH_HEAD,
+                recovery=["split member changes into a fix advance"],
+            )
         return merged_parent
 
     def advance_batch_head(
@@ -1038,7 +1051,11 @@ class TrackerService:
         if name == "scope":
             return batch["scope"]
         if name == "receipts":
-            return {m: details[m]["prepared"] for m in batch["members"] if "prepared" in details.get(m, {})}
+            return {
+                m: {k: v for k, v in details[m]["prepared"].items() if k != "owner_generation"}
+                for m in batch["members"]
+                if "prepared" in details.get(m, {})
+            }
         if name == "integration_log":
             return batch.get("integration_log", [])
         if name == "acceptance_required":
@@ -1069,17 +1086,17 @@ class TrackerService:
             if batch is None:
                 return err(E_STATE, f"unknown batch {batch_id!r}")
             current_rev = outcome.rev
+            if rev is not None and rev != current_rev:
+                return err(
+                    E_CURSOR_STALE, "revision changed; re-read show_batch before continuing",
+                    recovery=["call show_batch without field/offset"],
+                )
             if field is not None:
                 if field not in self.BATCH_SECTIONS:
                     return err(E_STATE, f"batch {batch_id!r} has no section {field!r}")
                 if offset > 0 and rev is None:
                     return err(
                         E_CURSOR_STALE, "section continuation requires its revision; re-read show_batch first",
-                        recovery=["call show_batch without field/offset"],
-                    )
-                if rev is not None and rev != current_rev:
-                    return err(
-                        E_CURSOR_STALE, "section revision changed; re-read show_batch before continuing",
                         recovery=["call show_batch without field/offset"],
                     )
                 blob = _compact(self._batch_section(snap, batch_id, field))
@@ -1133,14 +1150,17 @@ class TrackerService:
                 sections[name] = {"bytes": len(_compact(values[name]).encode("utf-8")), "items": len(values[name])}
             summary["sections"] = sections
             for name in self.BATCH_SECTIONS:
+                sections[name]["continuation"] = {
+                    "field": name, "offset": 0, "budget": SECTION_BUDGET, "rev": current_rev,
+                }
+            for name in self.BATCH_SECTIONS:
+                stub = sections[name].pop("continuation")
                 trial = dict(summary)
                 trial[name] = values[name]
                 if _fits(ok(trial)):
                     summary = trial
                 else:
-                    sections[name]["continuation"] = {
-                        "field": name, "offset": 0, "budget": SECTION_BUDGET, "rev": current_rev,
-                    }
+                    sections[name]["continuation"] = stub
             env = ok(summary)
             if not _fits(env):
                 return err(E_OVERSIZED, f"batch {batch_id!r} summary exceeds the byte cap")
@@ -1409,11 +1429,15 @@ class TrackerService:
                         recovery=["merge the current integration head into the member branch and prepare from it"],
                     )
                 if not self._is_ancestor(integration_worktree, accepted_head, integration_head):
-                    raise TodoError("integration head is missing the current accepted member", code=E_BATCH_HEAD)
+                    raise TodoError(
+                        "integration head is missing the current accepted member", code=E_BATCH_HEAD,
+                        recovery=["merge the accepted member head into the integration branch and prepare again"],
+                    )
                 if not self._is_ancestor(integration_worktree, registered_head, integration_head):
                     raise TodoError(
                         "prepared integration head does not descend from the registered integration head",
                         code=E_BATCH_HEAD,
+                        recovery=["rebase the prepared head on the registered integration_head from show_batch"],
                     )
                 for integrated_member, integrated_revision in batch_record.get("accepted_members", {}).items():
                     if integrated_member == member_id:
@@ -1422,13 +1446,20 @@ class TrackerService:
                         raise TodoError(
                             f"integration head is missing accepted member {integrated_member!r}",
                             code=E_BATCH_HEAD,
+                            recovery=["merge every accepted member into the integration head and prepare again"],
                         )
             if not self._is_ancestor(current_worktree, source_base, accepted_head):
-                raise TodoError("accepted member head is not based on its registered source base", code=E_STATE)
+                raise TodoError(
+                    "accepted member head is not based on its registered source base", code=E_STATE,
+                    recovery=["prepare from the member branch based on source_base"],
+                )
             changed_files = self._changed_paths(current_worktree, source_base, accepted_head)
             member_scope = batch_record["scope"][member_id] if isinstance(batch_record, dict) else []
             if any(not any(fnmatch.fnmatch(path, pattern) for pattern in member_scope) for path in changed_files):
-                raise TodoError("prepared member range changes a path outside its frozen scope", code=E_STATE)
+                raise TodoError(
+                    "prepared member range changes a path outside its frozen scope", code=E_STATE,
+                    recovery=["move out-of-scope changes out of the member range"],
+                )
             if isinstance(batch_record, dict) and S.batch_schema_of(batch_record) == S.BATCH_SCHEMA:
                 unrecorded = set(self._changed_paths(integration_worktree, registered_head, integration_head))
                 if not unrecorded <= set(changed_files):
@@ -1478,6 +1509,19 @@ class TrackerService:
                     "or clear it with update_item not_before=\"\"",
                     code=E_NOTHING_READY,
                 )
+            batch_meta = snap.details.get(item_id, {}).get("batch")
+            if isinstance(batch_meta, dict):
+                record = snap.index.get("batches", {}).get(batch_meta.get("batch_id"))
+                if (
+                    isinstance(record, dict)
+                    and record.get("lifecycle", "active") == "active"
+                    and S.batch_schema_of(record) != S.BATCH_SCHEMA
+                ):
+                    raise TodoError(
+                        f"batch {batch_meta['batch_id']!r} predates batch v2; finish it with the client that registered it or abort it",
+                        code=E_SCHEMA,
+                        recovery=["finish or abort it with the client that registered it"],
+                    )
             checked = final_evidence
             if checked is not None:
                 checked = self._validate_final_checkout(snap, item_id, checked)
