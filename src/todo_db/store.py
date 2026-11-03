@@ -82,6 +82,9 @@ def batch_capability(tool_version: str) -> dict[str, Any]:
         "supported_schema_versions": list(SUPPORTED_SCHEMA_VERSIONS),
         "tool_version": tool_version,
         "tools": sorted(BATCH_TOOLS),
+        "features": {
+            "integration_worktree_relocation": True,
+        },
     }
 STATUSES = ("open", "active", "blocked", "done", "dropped")
 PRIORITIES = ("critical", "high", "medium-high", "medium", "low")
@@ -2115,6 +2118,9 @@ def op_recover_batch_owner(
     expected_owner_generation: str,
     new_owner_generation: str,
     reason: str,
+    expected_integration_worktree: str | None = None,
+    expected_integration_head: str | None = None,
+    integration_worktree: str | None = None,
     session_id: str | None = None,
     client: str | None = None,
     op_id: str | None = None,
@@ -2129,6 +2135,26 @@ def op_recover_batch_owner(
             "new_owner_generation must be 32 lowercase hex characters", code=E_STATE,
             recovery=["generate a fresh 32-character lowercase hex owner generation and retry"],
         )
+    relocation_requested = (
+        expected_integration_worktree is not None
+        or expected_integration_head is not None
+        or integration_worktree is not None
+    )
+    if relocation_requested:
+        if (
+            not isinstance(expected_integration_worktree, str)
+            or not isinstance(expected_integration_head, str)
+            or not isinstance(integration_worktree, str)
+            or not os.path.isabs(expected_integration_worktree)
+            or not os.path.isabs(integration_worktree)
+        ):
+            raise TodoError(
+                "relocation requires all of expected_integration_worktree, expected_integration_head, "
+                "and integration_worktree as absolute paths / full revisions",
+                code=E_STATE,
+                recovery=["pass all three relocation parameters as absolute paths and a full revision"],
+            )
+        _validate_revision(expected_integration_head, "expected_integration_head")
     try:
         batch = snapshot.index["batches"][batch_id]
     except KeyError:
@@ -2152,6 +2178,34 @@ def op_recover_batch_owner(
         and recoveries
         and recoveries[-1]["previous_owner"] == expected_owner
     ):
+        last_recovery = recoveries[-1]
+        last_reloc = last_recovery.get("relocation")
+        if relocation_requested:
+            expected_reloc = {
+                "expected_integration_worktree": expected_integration_worktree,
+                "expected_integration_head": expected_integration_head,
+                "integration_worktree": integration_worktree,
+            }
+            if not isinstance(last_reloc, dict) or {
+                k: last_reloc.get(k) for k in expected_reloc
+            } != expected_reloc:
+                raise TodoError(
+                    f"retry with the same new owner generation for {batch_id!r} with different relocation is refused",
+                    code=E_CONFLICT,
+                    recovery=["generate a fresh 32-character lowercase hex owner generation and retry"],
+                )
+        elif last_reloc is not None:
+            raise TodoError(
+                f"retry with the same new owner generation for {batch_id!r} without relocation is refused",
+                code=E_CONFLICT,
+                recovery=["generate a fresh 32-character lowercase hex owner generation and retry"],
+            )
+        if last_recovery.get("reason") != reason:
+            raise TodoError(
+                f"retry with the same new owner generation for {batch_id!r} with different reason is refused",
+                code=E_CONFLICT,
+                recovery=["generate a fresh 32-character lowercase hex owner generation and retry"],
+            )
         return {
             "batch_id": batch_id, "owner": worker, "owner_epoch": batch["owner_epoch"],
             "recovered_members": members, "idempotent": True, "_no_write": True,
@@ -2168,24 +2222,54 @@ def op_recover_batch_owner(
             code=E_CLAIM_STALE,
             recovery=["re-read the owner with show_batch"],
         )
+    if relocation_requested:
+        if batch.get("integration_worktree") != expected_integration_worktree:
+            raise TodoError(
+                f"expected integration worktree for {batch_id!r} changed; re-read with show_batch and retry",
+                code=E_CONFLICT,
+                recovery=["re-read the batch with show_batch"],
+            )
+        if batch.get("integration_head") != expected_integration_head:
+            raise TodoError(
+                f"expected integration head for {batch_id!r} changed; re-read with show_batch and retry",
+                code=E_CONFLICT,
+                recovery=["re-read the batch with show_batch"],
+            )
     if new_owner_generation == batch["owner_generation"]:
         raise TodoError(
             "new_owner_generation must differ from the current generation", code=E_STATE,
             recovery=["generate a fresh 32-character lowercase hex owner generation and retry"],
         )
     previous_owner = batch["owner"]
+    previous_worktree = batch["integration_worktree"]
+    if relocation_requested:
+        batch["integration_worktree"] = integration_worktree
     batch["owner"] = worker
     batch["owner_generation"] = new_owner_generation
     batch["owner_epoch"] += 1
-    recoveries.append({
+    recovery_entry: dict[str, Any] = {
         "epoch": batch["owner_epoch"], "previous_owner": previous_owner, "new_owner": worker,
         "reason": reason, "session_id": session_id, "client": client, "op_id": op_id, "at": _now_iso(now),
-    })
+    }
+    if relocation_requested:
+        recovery_entry["relocation"] = {
+            "expected_integration_worktree": expected_integration_worktree,
+            "expected_integration_head": expected_integration_head,
+            "previous_integration_worktree": previous_worktree,
+            "integration_worktree": integration_worktree,
+        }
+    recoveries.append(recovery_entry)
     validate_snapshot(snapshot.index, snapshot.details)
-    return {
+    out: dict[str, Any] = {
         "batch_id": batch_id, "owner": worker, "owner_epoch": batch["owner_epoch"],
         "recovered_members": members, "idempotent": False, "previous_owner": previous_owner,
     }
+    if relocation_requested:
+        out["relocation"] = {
+            "previous_integration_worktree": previous_worktree,
+            "integration_worktree": integration_worktree,
+        }
+    return out
 
 
 def op_abort_batch(snapshot: Snapshot, batch_id: str, worker: str, owner_generation: str) -> dict[str, Any]:

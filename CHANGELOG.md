@@ -6,6 +6,23 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-11-02
+
+### Added
+
+- Additive `todo_db_batch.features.integration_worktree_relocation = true`
+  capability advertised in `initialize` and `show_batch`.
+- `recover_batch_owner`: optional `expected_integration_worktree`,
+  `expected_integration_head`, and `integration_worktree` relocation tuple,
+  validated atomically with owner CAS and audited on the batch.
+- `todo-db show`: `--rev` option passed to `show_item` for revision-pinned
+  paged section reads.
+
+### Changed
+
+- `.github/workflows/publish.yml`: GitHub release assets publish on `v*` tags,
+  while PyPI publication requires an explicit affirmative `workflow_dispatch` opt-in.
+- `skill-sync.conf`: advance `skill-sync-skills` pin to `6b47649eaff3ee66bca25c62c954134daf405f34`.
 ## [0.14.0] - 2026-11-02
 
 Batch v2 (ADR 0012): the integration-branch delivery loop. Receipts move to

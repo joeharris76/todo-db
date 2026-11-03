@@ -239,3 +239,28 @@ def test_cache_prune_reports_and_validate_hints_at_legacy_cache(tmp_path: Path, 
     capsys.readouterr()
     assert main(["validate", *_args(remote), "--cache-dir", str(cache)]) == 0
     assert "cache prune" not in capsys.readouterr().err
+
+
+def test_show_item_field_continuation_accepts_rev(tmp_path: Path, capsys) -> None:
+    remote = _remote(tmp_path)
+    assert main(["bootstrap", *_args(remote)]) == 0
+    capsys.readouterr()
+    ref = StateRef(remote=remote, branch="todo-state")
+    svc = TrackerService(ref=ref, cache_dir=tmp_path / "cache-seeder", worker="seeder")
+    desc = "A" * 100
+    assert svc.create_item("big-item", "Big Item", description=desc)["ok"]
+    assert main(["show", "big-item", "--field", "description", "--offset", "0", "--budget", "30", *_args(remote)]) == 0
+    out1 = json.loads(capsys.readouterr().out)
+    assert out1["ok"]
+    data1 = out1["data"]
+    rev = data1["rev"]
+    cont = data1["continuation"]
+    assert cont["offset"] == 30
+    assert cont["rev"] == rev
+
+    assert main([
+        "show", "big-item", "--field", "description", "--offset", "30", "--budget", "80", "--rev", rev, *_args(remote)
+    ]) == 0
+    out2 = json.loads(capsys.readouterr().out)
+    assert out2["ok"]
+    assert data1["window"] + out2["data"]["window"] == desc

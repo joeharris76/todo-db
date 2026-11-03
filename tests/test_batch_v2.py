@@ -851,13 +851,15 @@ def test_new_stores_start_below_the_cutover_schema() -> None:
 
 
 def test_batch_capability_names_the_v2_contract() -> None:
-    capability = store.batch_capability("0.14.0")
+    capability = store.batch_capability("0.15.0")
     assert capability == {
         "version": 2, "receipt_schema": "prepared_work_v2", "store_schema_version": 4,
-        "supported_schema_versions": [1, 2, 3, 4], "tool_version": "0.14.0",
+        "supported_schema_versions": [1, 2, 3, 4], "tool_version": "0.15.0",
         "tools": ["advance_batch_head", "recover_batch_owner", "show_batch"],
+        "features": {
+            "integration_worktree_relocation": True,
+        },
     }
-
 
 # --------------------------------------------------------- recovery (pure)
 
@@ -1074,15 +1076,16 @@ class Flow:
             BATCH, GEN, pr_repository="o/r", number=1, node_id="PR_1", head=head or self.rev(), **kwargs,
         )
 
-    def evidence(self, acceptance_for: list[str] | None = None) -> dict[str, Any]:
+    def evidence(self, acceptance_for: list[str] | None = None, worktree: str | None = None) -> dict[str, Any]:
         snap = self.snapshot()
         batch = snap.index["batches"][BATCH]
         head = self.rev()
+        wt = worktree or str(self.repo)
         receipts = {m: snap.details[m]["prepared"] for m in self.members}
-        actual = set(TrackerService._changed_paths(str(self.repo), self.start, head))
+        actual = set(TrackerService._changed_paths(wt, self.start, head))
         evidence: dict[str, Any] = {
             "status": "passed", "project_id": "todo-db", "repository": str(self.repo), "batch_id": BATCH,
-            "tree_worktree": str(self.repo), "tree_revision": head, "integration_branch": "main",
+            "tree_worktree": wt, "tree_revision": head, "integration_branch": "main",
             "integration_head": head, "scope_hash": batch["scope_hash"],
             "member_heads": {m: r["accepted_head"] for m, r in receipts.items()},
             "member_ranges": {m: {"base": r["source_base"], "head": r["accepted_head"]} for m, r in receipts.items()},
@@ -1092,7 +1095,7 @@ class Flow:
         if acceptance_for is not None:
             evidence["current_acceptance"] = {
                 m: {
-                    "status": "passed", "revision": head, "clean": True, "worktree": str(self.repo),
+                    "status": "passed", "revision": head, "clean": True, "worktree": wt,
                     "suite": "bounded", "command": ["pytest", "-q"],
                 }
                 for m in acceptance_for
@@ -1426,6 +1429,178 @@ def test_recover_over_git_audits_members_and_marks_previous_generation_stale(tmp
     assert rescuer.abort_batch(BATCH, "3" * 32)["ok"]
 
 
+def test_recover_over_git_with_relocation_updates_integration_worktree(tmp_path: Path) -> None:
+    flow = Flow(tmp_path, ["a", "b"], SCOPE)
+    prep_a = flow.land_and_prepare("a", {"a/f2": "two\n"})
+    assert prep_a["ok"]
+    head_after_a = flow.rev()
+    receipt_a_before = flow.snapshot().details["a"]["prepared"]
+
+    dest = tmp_path / "dest-repo"
+    _git(flow.repo, "checkout", "--quiet", "--detach")
+    subprocess.run(["git", "-C", str(flow.repo), "worktree", "add", str(dest), "main"], check=True)
+
+    rescuer = flow.service("rescuer")
+    relocated = rescuer.recover_batch_owner(
+        BATCH, "leader", GEN, "3" * 32, "leader dead, relocating",
+        expected_integration_worktree=str(flow.repo),
+        expected_integration_head=head_after_a,
+        integration_worktree=str(dest),
+    )
+    assert relocated["ok"], relocated
+    data = relocated["data"]
+    assert data["owner"] == "rescuer" and data["owner_epoch"] == 1
+    assert data["relocation"]["previous_integration_worktree"] == str(flow.repo)
+    assert data["relocation"]["integration_worktree"] == str(dest)
+
+    batch = flow.batch()
+    assert batch["integration_worktree"] == str(dest)
+    assert batch["owner"] == "rescuer"
+
+    # Prepared receipts unchanged byte-for-byte
+    receipt_a_after = flow.snapshot().details["a"]["prepared"]
+    assert receipt_a_after == receipt_a_before
+
+    # Idempotent retry with the same new generation and same relocation tuple succeeds
+    retry = rescuer.recover_batch_owner(
+        BATCH, "leader", GEN, "3" * 32, "leader dead, relocating",
+        expected_integration_worktree=str(flow.repo),
+        expected_integration_head=head_after_a,
+        integration_worktree=str(dest),
+    )
+    assert retry["ok"] and retry["data"]["idempotent"] is True
+
+    # Rescuer can now land and prepare member b using the new worktree!
+    b_branch = "feat-b"
+    _git(dest, "branch", b_branch, head_after_a)
+    b_worktree = tmp_path / "member-b"
+    subprocess.run(["git", "-C", str(dest), "worktree", "add", str(b_worktree), b_branch], check=True)
+    flow.write(b_worktree, {"b/f2": "b-two\n"})
+    flow.commit(b_worktree, "b work")
+    b_head = subprocess.run(["git", "-C", str(b_worktree), "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
+
+    _git(dest, "merge", "--quiet", "--no-ff", b_head, "-m", "merge b")
+    merge_head = subprocess.run(["git", "-C", str(dest), "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
+
+    took = rescuer.take("b")
+    assert took["ok"]
+    prep_b = rescuer.prepare(
+        "b", took["data"]["claim"]["generation"],
+        batch_id=BATCH, member_id="b",
+        source_worktree=str(b_worktree), source_revision=b_head,
+        source_base=head_after_a, accepted_head=b_head,
+        integration_head=merge_head,
+        scope_hash=store.scope_digest(flow.scope),
+        verification={"status": "passed", "clean": True, "suite": "bounded", "command": ["pytest", "-q"], "revision": b_head},
+    )
+    assert prep_b["ok"], prep_b
+
+
+def test_recover_over_git_with_relocation_negatives(tmp_path: Path) -> None:
+    flow = Flow(tmp_path, ["a"], SCOPE)
+    assert flow.land_and_prepare("a", {"a/f2": "two\n"})["ok"]
+    current_head = flow.rev()
+    dest = tmp_path / "dest-repo"
+    _git(flow.repo, "checkout", "--quiet", "--detach")
+    subprocess.run(["git", "-C", str(flow.repo), "worktree", "add", str(dest), "main"], check=True)
+
+    rescuer = flow.service("rescuer")
+
+    # Incomplete relocation tuple
+    inc = rescuer.recover_batch_owner(
+        BATCH, "leader", GEN, "3" * 32, "reason",
+        expected_integration_worktree=str(flow.repo),
+    )
+    assert not inc["ok"] and inc["code"] == "E_STATE"
+
+    # Wrong expected worktree
+    wrong_wt = rescuer.recover_batch_owner(
+        BATCH, "leader", GEN, "3" * 32, "reason",
+        expected_integration_worktree=str(tmp_path / "wrong"),
+        expected_integration_head=current_head,
+        integration_worktree=str(dest),
+    )
+    assert not wrong_wt["ok"] and wrong_wt["code"] == "E_CONFLICT"
+
+    # Wrong expected head
+    wrong_head = rescuer.recover_batch_owner(
+        BATCH, "leader", GEN, "3" * 32, "reason",
+        expected_integration_worktree=str(flow.repo),
+        expected_integration_head="0" * 40,
+        integration_worktree=str(dest),
+    )
+    assert not wrong_head["ok"] and wrong_head["code"] == "E_CONFLICT"
+
+    # Dirty destination worktree
+    flow.write(dest, {"dirty.txt": "dirty\n"})
+    dirty = rescuer.recover_batch_owner(
+        BATCH, "leader", GEN, "3" * 32, "reason",
+        expected_integration_worktree=str(flow.repo),
+        expected_integration_head=current_head,
+        integration_worktree=str(dest),
+    )
+    assert not dirty["ok"] and dirty["code"] == "E_STATE"
+    (dest / "dirty.txt").unlink()
+
+    # Successful relocation
+    ok_reloc = rescuer.recover_batch_owner(
+        BATCH, "leader", GEN, "3" * 32, "reason",
+        expected_integration_worktree=str(flow.repo),
+        expected_integration_head=current_head,
+        integration_worktree=str(dest),
+    )
+    assert ok_reloc["ok"]
+
+    # Retry mismatch (different dest with same new generation)
+    other_dest = tmp_path / "other-dest"
+    _git(dest, "checkout", "--quiet", "--detach")
+    subprocess.run(["git", "-C", str(flow.repo), "worktree", "add", str(other_dest), "main"], check=True)
+    mismatch = rescuer.recover_batch_owner(
+        BATCH, "leader", GEN, "3" * 32, "reason",
+        expected_integration_worktree=str(flow.repo),
+        expected_integration_head=current_head,
+        integration_worktree=str(other_dest),
+    )
+    assert not mismatch["ok"] and mismatch["code"] == "E_CONFLICT"
+
+
+def test_recover_over_git_with_relocation_active_partial_closeout(tmp_path: Path) -> None:
+    flow = Flow(tmp_path, ["a", "b"], SCOPE)
+    assert flow.land_and_prepare("a", {"a/f2": "two\n"})["ok"]
+    assert flow.land_and_prepare("b", {"b/f1": "three\n"})["ok"]
+    final_head = flow.rev()
+    assert flow.bind(final_head)["ok"]
+
+    # Member a is finished
+    ev_before = flow.evidence(acceptance_for=["a", "b"])
+    a_fin = flow.finish("a", ev_before)
+    assert a_fin["ok"], a_fin
+
+    dest = tmp_path / "dest-repo"
+    _git(flow.repo, "checkout", "--quiet", "--detach")
+    subprocess.run(["git", "-C", str(flow.repo), "worktree", "add", str(dest), "main"], check=True)
+
+    rescuer = flow.service("rescuer")
+    reloc = rescuer.recover_batch_owner(
+        BATCH, "leader", GEN, "3" * 32, "relocate during closeout",
+        expected_integration_worktree=str(flow.repo),
+        expected_integration_head=final_head,
+        integration_worktree=str(dest),
+    )
+    assert reloc["ok"], reloc
+
+    # Old-location evidence fails at new location
+    old_ev = flow.evidence(acceptance_for=["a", "b"])
+    b_took = rescuer.take("b")
+    assert b_took["ok"]
+    old_fail = rescuer.finish("b", b_took["data"]["claim"]["generation"], final_evidence=old_ev)
+    assert not old_fail["ok"] and old_fail["code"] == "E_FINAL_EVIDENCE"
+
+    # Fresh new-location evidence succeeds!
+    new_ev = flow.evidence(acceptance_for=["a", "b"], worktree=str(dest))
+    b_fin = rescuer.finish("b", b_took["data"]["claim"]["generation"], final_evidence=new_ev)
+    assert b_fin["ok"], b_fin
+    assert flow.batch()["lifecycle"] == "completed"
 def test_show_batch_never_serves_owner_generation(tmp_path: Path) -> None:
     flow = Flow(tmp_path, ["a"], SCOPE)
     assert flow.land_and_prepare("a", {"a/f2": "two\n"})["ok"]
