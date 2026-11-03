@@ -998,18 +998,121 @@ class TrackerService:
 
         return self._mutate("advance_batch_head", f"{self.worker} advances {batch_id} ({reason})", apply)
 
+    def _verify_relocation(
+        self,
+        snap: S.Snapshot,
+        batch: dict[str, Any],
+        expected_worktree: str | None,
+        expected_head: str | None,
+        new_worktree: str | None,
+    ) -> str:
+        if (
+            not isinstance(expected_worktree, str)
+            or not isinstance(expected_head, str)
+            or not isinstance(new_worktree, str)
+            or not expected_worktree
+            or not expected_head
+            or not new_worktree
+            or not os.path.isabs(expected_worktree)
+            or not os.path.isabs(new_worktree)
+        ):
+            raise TodoError(
+                "relocation requires all of expected_integration_worktree, expected_integration_head, "
+                "and integration_worktree as absolute paths / full revisions",
+                code=E_STATE,
+                recovery=["pass all three relocation parameters as absolute paths and a full revision"],
+            )
+        try:
+            S._validate_revision(expected_head, "expected_integration_head")
+        except TodoError as exc:
+            raise TodoError(str(exc), code=E_STATE, recovery=["pass a full 40-character hex revision"]) from exc
+
+        if expected_worktree != batch.get("integration_worktree"):
+            raise TodoError(
+                f"expected integration worktree {expected_worktree!r} does not match current registered worktree",
+                code=E_CONFLICT,
+                recovery=["re-read the batch with show_batch"],
+            )
+        if expected_head != batch.get("integration_head"):
+            raise TodoError(
+                f"expected integration head {expected_head!r} does not match current registered head",
+                code=E_CONFLICT,
+                recovery=["re-read the batch with show_batch"],
+            )
+
+        clean_dest = self._validate_source_checkout(
+            new_worktree,
+            expected_head,
+            expected_branch=str(batch["integration_branch"]),
+            expected_repository=str(batch["repository"]),
+        )
+        ancestors = [(batch["start_head"], "batch start_head")]
+        ancestors += [
+            (entry["head"], f"recorded integration head {entry['seq']}")
+            for entry in batch.get("integration_log", [])
+        ]
+        for member in batch.get("members", []):
+            receipt = snap.details.get(member, {}).get("prepared")
+            if isinstance(receipt, dict) and receipt.get("accepted_head"):
+                ancestors.append((receipt["accepted_head"], f"prepared member {member} accepted head"))
+
+        for revision, label in ancestors:
+            try:
+                contained = self._is_ancestor(clean_dest, revision, expected_head)
+            except TodoError as exc:
+                raise TodoError(
+                    f"relocated integration worktree does not contain {label}: {exc}", code=E_STATE,
+                    recovery=["fetch all recorded heads and member branches into the destination worktree and retry"],
+                ) from exc
+            if not contained:
+                raise TodoError(
+                    f"relocated integration worktree does not contain {label}", code=E_STATE,
+                    recovery=["fetch all recorded heads and member branches into the destination worktree and retry"],
+                )
+        return clean_dest
+
     def recover_batch_owner(
         self, batch_id: str, expected_owner: str, expected_owner_generation: str,
         new_owner_generation: str, reason: str,
+        *,
+        expected_integration_worktree: str | None = None,
+        expected_integration_head: str | None = None,
+        integration_worktree: str | None = None,
     ) -> dict[str, Any]:
         if self.session_id is None:
             return err(E_STATE, "recover_batch_owner requires a session-attributed caller")
 
+        relocation_requested = (
+            expected_integration_worktree is not None
+            or expected_integration_head is not None
+            or integration_worktree is not None
+        )
+
         def apply(snap: S.Snapshot, op_id: str) -> dict[str, Any]:
+            batch = snap.index.get("batches", {}).get(batch_id)
+            if (
+                isinstance(batch, dict)
+                and S.batch_schema_of(batch) == S.BATCH_SCHEMA
+                and batch.get("lifecycle", "active") == "active"
+                and relocation_requested
+            ):
+                is_idempotent = (
+                    batch["owner"] == self.worker
+                    and batch["owner_generation"] == new_owner_generation
+                    and bool(batch.get("recoveries"))
+                    and batch["recoveries"][-1].get("previous_owner") == expected_owner
+                )
+                if not is_idempotent:
+                    self._verify_relocation(
+                        snap, batch, expected_integration_worktree, expected_integration_head, integration_worktree,
+                    )
             out = S.op_recover_batch_owner(
                 snap, batch_id, self.worker, expected_owner=expected_owner,
                 expected_owner_generation=expected_owner_generation,
                 new_owner_generation=new_owner_generation, reason=reason,
+                expected_integration_worktree=expected_integration_worktree,
+                expected_integration_head=expected_integration_head,
+                integration_worktree=integration_worktree,
                 session_id=self.session_id, client=self.client_name, op_id=op_id,
             )
             if not out["idempotent"]:

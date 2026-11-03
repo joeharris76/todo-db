@@ -374,7 +374,9 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
         name="recover_batch_owner",
         description=(
             "Take batch ownership after the leader died. Name the exact owner and generation you "
-            "inspected, a new generation you generated and stored, and why the owner cannot resume."
+            "inspected, a new generation you generated and stored, and why the owner cannot resume. "
+            "Pass expected_integration_worktree, expected_integration_head, and integration_worktree "
+            "to relocate the integration checkout."
         ),
     )
     async def recover_batch_owner_tool(
@@ -383,6 +385,9 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
         expected_owner_generation: str,
         new_owner_generation: str,
         reason: str,
+        expected_integration_worktree: str | None = None,
+        expected_integration_head: str | None = None,
+        integration_worktree: str | None = None,
         ctx: Context = None,  # type: ignore[assignment]
     ) -> dict[str, Any]:
         worker = _need_principal(holder, ctx)
@@ -392,8 +397,10 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
         return await asyncio.to_thread(
             svc.recover_batch_owner, batch_id, expected_owner, expected_owner_generation,
             new_owner_generation, reason,
+            expected_integration_worktree=expected_integration_worktree,
+            expected_integration_head=expected_integration_head,
+            integration_worktree=integration_worktree,
         )
-
     @server.tool(
         name="show_batch",
         description="Show a batch registry record, or one paged section (members, receipts, integration_log, ...).",

@@ -701,7 +701,7 @@
   },
   {
     "name": "recover_batch_owner",
-    "description": "Take batch ownership after the leader died. Name the exact owner and generation you inspected, a new generation you generated and stored, and why the owner cannot resume.",
+    "description": "Take batch ownership after the leader died. Name the exact owner and generation you inspected, a new generation you generated and stored, and why the owner cannot resume. Pass expected_integration_worktree, expected_integration_head, and integration_worktree to relocate the integration checkout.",
     "inputSchema": {
       "properties": {
         "batch_id": {
@@ -723,6 +723,42 @@
         "reason": {
           "title": "Reason",
           "type": "string"
+        },
+        "expected_integration_worktree": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expected Integration Worktree"
+        },
+        "expected_integration_head": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expected Integration Head"
+        },
+        "integration_worktree": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Integration Worktree"
         }
       },
       "required": [
