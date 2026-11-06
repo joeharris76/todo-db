@@ -1002,6 +1002,13 @@
       "status": "dropped",
       "title": "Stop TPC-H Q15 and its 15_v* variants returning no row on engines that sum DOUBLE in varying order"
     },
+    "tractable-rename-adr": {
+      "claim": null,
+      "needs": [],
+      "priority": "high",
+      "status": "open",
+      "title": "Record the tractable rename decision in ADR 0013"
+    },
     "update-item-append-mode-and-field-limits": {
       "claim": null,
       "needs": [],
