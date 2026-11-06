@@ -6,7 +6,7 @@
     "Run meaningful success/failure smoke cases for new verification behavior without publishing or mutating authoritative tracker state, then project lint and tests; review docs and workflow against the entire approved proposal before PR closeout.",
     "Publication-dependent examples are explicitly conditional until PyPI verification succeeds; existing GitHub-wheel install remains usable meanwhile. No fabricated index success, forced tags, consumer pin changes, or dependency/toolchain churn."
   ],
-  "context": "Independent repository slice in a serial batch, so account registration and publication need not block implementation. Prior art: existing OIDC publisher and release-gates.md after-tag instructions. Reuse build outputs; avoid alternate deployment systems, package update daemons, or auto-upgrading servers.\n\nTODO review passed against approved proposal: description, observable acceptance, decision gates, guardrails, and needs cover publisher identity, original-tag artifact provenance, wheel/sdist parity, fresh index CLI/MCP smoke, global receipt/upgrade/restart/compatible rollback, publication-completion gate, and pre-cutover client inventory. Chain is publisher -> publication -> global source migration; release-process work is independent. No schema migration, token workaround, or consumer pin migration.",
+  "context": "Independent repository slice in a serial batch, so account registration and publication need not block implementation. Prior art: existing OIDC publisher and release-gates.md after-tag instructions. Reuse build outputs; avoid alternate deployment systems, package update daemons, or auto-upgrading servers.\n\nTODO review passed against approved proposal: description, observable acceptance, decision gates, guardrails, and needs cover publisher identity, original-tag artifact provenance, wheel/sdist parity, fresh index CLI/MCP smoke, global receipt/upgrade/restart/compatible rollback, publication-completion gate, and pre-cutover client inventory. Chain is publisher -> publication -> global source migration; release-process work is independent. No schema migration, token workaround, or consumer pin migration.\n\n2026-11-06: PR https://github.com/joeharris76/todo-db/pull/66 merged (merge commit bc088dc). Keeps #67's affirmative PyPI opt-in but requires a v* tag ref; before upload, pypi-publish requires the rebuilt wheel, sdist and SHA256SUMS to match the GitHub release byte for byte and uploads the release assets; distribution-verify runs with always() on opt-in runs, fails unless build and upload succeeded, checks PyPI bytes, and smoke-installs from PyPI with both entry points and a real MCP initialize/tools-list in an isolated environment. Least-privilege job permissions. Docs cover index install/upgrade, compatible rollback, publisher setup, the opt-in command, that v0.15.0 and older tags are never published to PyPI, and the restarted-or-stopped client inventory before schema cutover. Evidence: actionlint, ruff, 440 tests passed locally after merging main; CI test (3.10) and (3.13) green; isolated smoke against the real 0.15.0 wheel with hostile TODO_DB_STATE_BRANCH and GIT_DIR passed. Independent review: MERGE after two fix rounds. Live PyPI success is not claimed: it is covered by tractable-p3-release-1-0-0.",
   "description": "Close the release-process gap independently of the PyPI account blocker. Extend .github/workflows/publish.yml, README.md, docs/operations/release-gates.md and directly affected install guidance using existing build-once artifacts. Global installs use the package index; versioned GitHub wheels remain an explicit immutable-pin alternative. Decision gate: distribution complete only after PyPI publish, artifact parity, and fresh index-install smoke succeed; no main-branch manual dispatch may publish as a tag. Before future schema cutovers, operator must enumerate affected clients, upgrade/restart or stop each, and retain compatible rollback. Preserve existing pre-tag lifecycle and real-consumer gates and human-only E_SCHEMA recovery; no schema changes in this batch.",
   "links": [
     ".github/workflows/publish.yml",
@@ -47,6 +47,14 @@
       "op": "take",
       "op_id": "eff163583eae4cf988569bc5046a0f75",
       "session_id": "6c2266012d6a485ca4222d80ea07117f"
+    },
+    {
+      "actor": "joe-tractable-rename",
+      "at": "2026-11-06T18:10:22Z",
+      "client": "mcp",
+      "op": "update",
+      "op_id": "187a63af7fc94e6cb3a02e8bc71a16b6",
+      "session_id": "489699d4e2a94575be917ac25722efec"
     }
   ]
 }
