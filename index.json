@@ -1109,10 +1109,15 @@
       "title": "Remove the todo-db tool and its leftovers"
     },
     "tractable-rename-adr": {
-      "claim": null,
+      "claim": {
+        "expires_at": "2026-11-07T18:10:26Z",
+        "generation": "92ed276771314b46845df3807f0c3579",
+        "renewals": 0,
+        "worker": "joe-tractable-rename"
+      },
       "needs": [],
       "priority": "high",
-      "status": "open",
+      "status": "active",
       "title": "Record the tractable rename decision in ADR 0013"
     },
     "update-item-append-mode-and-field-limits": {
