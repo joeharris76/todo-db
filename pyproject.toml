@@ -51,6 +51,7 @@ include = [
     "/tests",
     "/docs",
     "/skills",
+    "/scripts/verify_index_release.py",
     "/README.md",
     "/CHANGELOG.md",
     "/LICENSE",

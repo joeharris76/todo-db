@@ -9,8 +9,7 @@ on:
         type: boolean
         default: false
 permissions:
-  contents: write
-  id-token: write
+  contents: read
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -21,7 +20,7 @@ jobs:
         with: {python-version: "3.12"}
       - name: Validate version matches tag
         run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             TAG="${GITHUB_REF_NAME}"
             PKG_VERSION="$(grep -E '^version = ' pyproject.toml | head -1 | sed -E 's/.*"(.*)".*/\1/')"
             TAG_VERSION="${TAG#v}"
@@ -35,17 +34,19 @@ jobs:
           ls -lh dist/
           WHEEL="$(find dist -maxdepth 1 -name '*.whl' -print -quit)"
           test -n "$WHEEL"
-          uv run --isolated --with "$WHEEL[mcp]" python -c \
+          uv run --isolated --with "${WHEEL}[mcp]" python -c \
             'from importlib.metadata import version; from todo_db import TOOL_VERSION; assert TOOL_VERSION == version("todo-db")'
       - name: Generate checksums
-        run: (cd dist && sha256sum * > SHA256SUMS) && cat dist/SHA256SUMS
+        run: (cd dist && sha256sum -- *.whl *.tar.gz > SHA256SUMS) && cat dist/SHA256SUMS
       - name: Upload dist artifact
         uses: actions/upload-artifact@v4
         with: {name: dist, path: "dist/*", retention-days: 7}
   github-release:
     needs: build
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -55,10 +56,47 @@ jobs:
   pypi-publish:
     needs: build
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' && inputs.publish_pypi == true
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_pypi == true && startsWith(github.ref, 'refs/tags/v')
     environment: {name: pypi, url: https://pypi.org/p/todo-db}
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/download-artifact@v4
         with: {name: dist, path: dist}
+      - name: Require this build to match the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --dir release-assets \
+            --pattern '*.whl' --pattern '*.tar.gz' --pattern SHA256SUMS
+          cmp dist/SHA256SUMS release-assets/SHA256SUMS
+          for artifact in dist/*.whl dist/*.tar.gz; do
+            cmp "$artifact" "release-assets/$(basename "$artifact")"
+          done
+          mkdir publish-dist
+          cp release-assets/*.whl release-assets/*.tar.gz publish-dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
-        with: {packages-dir: dist, verbose: true, print-hash: true}
+        with: {packages-dir: publish-dist, verbose: true, print-hash: true}
+  distribution-verify:
+    needs: [build, pypi-publish]
+    runs-on: ubuntu-latest
+    if: always() && github.event_name == 'workflow_dispatch' && inputs.publish_pypi == true
+    timeout-minutes: 10
+    steps:
+      - name: Require a tag ref and a successful build and PyPI upload
+        env:
+          BUILD_RESULT: ${{ needs.build.result }}
+          PUBLISH_RESULT: ${{ needs.pypi-publish.result }}
+        run: |
+          if [[ "$GITHUB_REF" != refs/tags/v* ]]; then echo "::error::PyPI publication requires a v* tag ref, not $GITHUB_REF"; exit 1; fi
+          if [ "$BUILD_RESULT" != success ] || [ "$PUBLISH_RESULT" != success ]; then
+            echo "::error::build=$BUILD_RESULT pypi-publish=$PUBLISH_RESULT; distribution is not complete"; exit 1
+          fi
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with: {python-version: "3.12"}
+      - uses: actions/download-artifact@v4
+        with: {name: dist, path: dist}
+      - name: Verify PyPI bytes and fresh index CLI/MCP installation
+        run: python scripts/verify_index_release.py "${GITHUB_REF_NAME#v}" dist
