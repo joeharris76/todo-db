@@ -3,7 +3,7 @@
     "ADR 0013 and its index row are merged to main with CI green.",
     "The ADR states the mapping, the kept identifiers with reasons, the no-shim transition rules, and that a schema cutover older clients cannot read is a major version."
   ],
-  "context": "Guardrails (ADR 0013): no state-schema change, data migration, or trailer change; the 1.0.0 release is the rename only; each project switches runtime, config dir, MCP registration, skill mirrors and scripts in one change; the old todo-db tool stays installed until decommission; never create a repository named joeharris76/todo-db; historical records (CHANGELOG entries, earlier ADRs, consumer evidence, exports) are not rewritten.",
+  "context": "Guardrails (ADR 0013): no state-schema change, data migration, or trailer change; the 1.0.0 release is the rename only; each project switches runtime, config dir, MCP registration, skill mirrors and scripts in one change; the old todo-db tool stays installed until decommission; never create a repository named joeharris76/todo-db; historical records (CHANGELOG entries, earlier ADRs, consumer evidence, exports) are not rewritten.\n\n2026-11-06: ADR 0013 merged via https://github.com/joeharris76/todo-db/pull/68 (merge commit b4389b7). It records the name mapping, the identifiers kept on purpose with reasons, no compatibility layer (old tool coexists, per-project switching, fail-closed mismatches), 1.0.0 as a rename-only release, and the 1.x policy that a schema cutover older clients cannot read is a major version. It amends ADR 0006 G10: muse and grok are not supported clients, so their unverified MCP stdio support no longer withholds 1.0.0. CI green on 3.10 and 3.13; independent review MERGE after one fix round.",
   "description": "Phase 0 of the rename to tractable. Merge ADR 0013: name mapping, identifiers kept on purpose, no compatibility layer, 1.0.0 and the 1.x compatibility policy. Decision gate: the owner approved the plan and its decisions (version 1.0.0; clean break with the old tool kept alongside; rename the local folder; move finding drafts to ~/.tractable with a temporary link; switch BenchBox, benchbox-site, Oxbow, bossmode and skill-sync; keep todo-state).",
   "links": [
     "https://github.com/joeharris76/todo-db/pull/68"
@@ -34,6 +34,14 @@
       "op": "take",
       "op_id": "15e403ea8da345bb9c0329e11a0ed3af",
       "session_id": "f8e848d9d1bb47809de713563eca3a38"
+    },
+    {
+      "actor": "joe-tractable-rename",
+      "at": "2026-11-06T18:10:41Z",
+      "client": "mcp",
+      "op": "update",
+      "op_id": "dd99e028fdca44138eb91201fdef17c5",
+      "session_id": "290c839e8658442ba68e47963a691dc8"
     }
   ]
 }
