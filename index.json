@@ -1002,6 +1002,16 @@
       "status": "dropped",
       "title": "Stop TPC-H Q15 and its 15_v* variants returning no row on engines that sum DOUBLE in varying order"
     },
+    "tractable-p1-github-repo-rename": {
+      "claim": null,
+      "needs": [
+        "tractable-rename-adr",
+        "index-distribution-and-schema-cutover-gates"
+      ],
+      "priority": "high",
+      "status": "open",
+      "title": "Rename the GitHub repository and local checkout to tractable"
+    },
     "tractable-rename-adr": {
       "claim": null,
       "needs": [],

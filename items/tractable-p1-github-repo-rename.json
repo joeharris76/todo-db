@@ -1,0 +1,21 @@
+{
+  "acceptance": [
+    "Old clone, API and release-download URLs redirect to joeharris76/tractable; `git ls-remote` succeeds through both URLs.",
+    "The `pypi` environment and branch protections survive the rename.",
+    "The local checkout lives at ~/Developer/tractable; `git worktree list` shows no broken entries.",
+    "Codex starts its tracker server from the installed todo-db-mcp and lists tools.",
+    "Undo documented and still possible: `gh repo rename todo-db`."
+  ],
+  "context": "Guardrails (ADR 0013): no state-schema change, data migration, or trailer change; the 1.0.0 release is the rename only; each project switches runtime, config dir, MCP registration, skill mirrors and scripts in one change; the old todo-db tool stays installed until decommission; never create a repository named joeharris76/todo-db; historical records (CHANGELOG entries, earlier ADRs, consumer evidence, exports) are not rewritten. Existing tracker configs keep the old remote URL until Phase 2; GitHub redirects keep them working.",
+  "description": "Phase 1. Run `gh repo rename tractable` on joeharris76/todo-db; set `origin` to https://github.com/joeharris76/tractable.git in the main checkout and every worktree; remove stale worktrees whose work is merged or abandoned; rename ~/Developer/todo-db to ~/Developer/tractable and run `git worktree repair`. In the same sitting, repoint the Codex registration (~/.codex/config.toml `[mcp_servers.todo-db]`) from `uv run --project ~/Developer/todo-db` to the installed `todo-db-mcp`, so it never points at a missing path; Phase 5 later switches it to tractable-mcp. Decision gate: owner go-ahead for this first externally visible step; no open PR other than ones intended to survive the rename; no batch in progress on this tracker.",
+  "sessions": [
+    {
+      "actor": "joe-tractable-rename",
+      "at": "2026-11-06T17:56:49Z",
+      "client": "mcp",
+      "op": "create",
+      "op_id": "7b9e725f894240828a1673a0748f3c82",
+      "session_id": "8201cbb566f146adaf5e79352fedce51"
+    }
+  ]
+}
