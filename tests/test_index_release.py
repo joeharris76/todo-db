@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import runpy
 from pathlib import Path
 
@@ -25,7 +26,7 @@ def test_smoke_environment_ignores_caller_configuration(tmp_path: Path, monkeypa
         assert key not in env
     assert env["HOME"] == str(tmp_path)
     assert env["XDG_CONFIG_HOME"] == str(tmp_path / ".config")
-    assert env["PATH"] == __import__("os").environ["PATH"]
+    assert env["PATH"] == os.environ["PATH"]
 
 
 @pytest.fixture
