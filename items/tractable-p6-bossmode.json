@@ -1,0 +1,18 @@
+{
+  "acceptance": [
+    "Merged with the repository's required checks.",
+    "A fresh session starts tractable-mcp and reports the bossmode bound store."
+  ],
+  "context": "Guardrails (ADR 0013): no state-schema change, data migration, or trailer change; the 1.0.0 release is the rename only; each project switches runtime, config dir, MCP registration, skill mirrors and scripts in one change; the old todo-db tool stays installed until decommission; never create a repository named joeharris76/todo-db; historical records (CHANGELOG entries, earlier ADRs, consumer evidence, exports) are not rewritten.",
+  "description": "Phase 6. One PR in joeharris76/bossmode: move .todo-db to .tractable, and update any MCP registration, enabled server list and skill mirrors, following the repository's own process.",
+  "sessions": [
+    {
+      "actor": "joe-tractable-rename",
+      "at": "2026-11-06T17:57:04Z",
+      "client": "mcp",
+      "op": "create",
+      "op_id": "e6a2ae322ad64192bf5f4e8c53805276",
+      "session_id": "8201cbb566f146adaf5e79352fedce51"
+    }
+  ]
+}
