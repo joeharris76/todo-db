@@ -1110,9 +1110,9 @@
     },
     "tractable-rename-adr": {
       "claim": {
-        "expires_at": "2026-11-07T18:10:26Z",
-        "generation": "92ed276771314b46845df3807f0c3579",
-        "renewals": 0,
+        "expires_at": "2026-11-07T18:10:38Z",
+        "generation": "fbe5928ccf8f432a86da0d82cf30a951",
+        "renewals": 1,
         "worker": "joe-tractable-rename"
       },
       "needs": [],
