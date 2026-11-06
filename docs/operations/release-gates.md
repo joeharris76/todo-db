@@ -155,6 +155,12 @@ stops before uploading. Find the source of the non-reproducible build and
 release a new version; never move a tag or replace published files. A
 version already on PyPI is checked for parity, never overwritten.
 
+A dispatch runs the workflow file stored at its tag, so this procedure applies
+only to tags created after it was added. Earlier tags, v0.15.0 and older,
+either lack the opt-in input or publish without these checks. They are not
+published to PyPI: never dispatch `publish_pypi=true` on them. The first
+release published to the index is a new tag.
+
 ## Before an irreversible schema cutover
 
 The operator must inventory every client with access to the affected state

@@ -9,9 +9,23 @@ from pathlib import Path
 import pytest
 
 
-verify_artifacts = runpy.run_path(
-    str(Path(__file__).resolve().parents[1] / "scripts" / "verify_index_release.py")
-)["verify_artifacts"]
+_verifier = runpy.run_path(str(Path(__file__).resolve().parents[1] / "scripts" / "verify_index_release.py"))
+verify_artifacts = _verifier["verify_artifacts"]
+isolated_env = _verifier["isolated_env"]
+
+
+def test_smoke_environment_ignores_caller_configuration(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    for key, value in {
+        "TODO_DB_STATE_BRANCH": "wrong", "GIT_CONFIG_COUNT": "1", "UV_INDEX": "https://example.invalid",
+        "PIP_INDEX_URL": "https://example.invalid", "PYTHONPATH": "/elsewhere", "XDG_CONFIG_HOME": "/elsewhere",
+    }.items():
+        monkeypatch.setenv(key, value)
+    env = isolated_env(tmp_path)
+    for key in ("TODO_DB_STATE_BRANCH", "GIT_CONFIG_COUNT", "UV_INDEX", "PIP_INDEX_URL", "PYTHONPATH"):
+        assert key not in env
+    assert env["HOME"] == str(tmp_path)
+    assert env["XDG_CONFIG_HOME"] == str(tmp_path / ".config")
+    assert env["PATH"] == __import__("os").environ["PATH"]
 
 
 @pytest.fixture
