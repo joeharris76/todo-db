@@ -1086,6 +1086,19 @@
       "status": "open",
       "title": "Switch skill-sync to tractable"
     },
+    "tractable-p7-decommission-todo-db": {
+      "claim": null,
+      "needs": [
+        "tractable-p6-benchbox",
+        "tractable-p6-benchbox-site",
+        "tractable-p6-oxbow",
+        "tractable-p6-bossmode",
+        "tractable-p6-skill-sync"
+      ],
+      "priority": "medium",
+      "status": "open",
+      "title": "Remove the todo-db tool and its leftovers"
+    },
     "tractable-rename-adr": {
       "claim": null,
       "needs": [],

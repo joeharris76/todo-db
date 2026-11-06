@@ -1,0 +1,19 @@
+{
+  "acceptance": [
+    "Gate evidence recorded (registration search and pgrep output).",
+    "todo-db and todo-db-mcp are no longer on PATH; tractable still works in every switched project.",
+    "Final search of switched repos and global config matches only the allow-list."
+  ],
+  "context": "Guardrails (ADR 0013): no state-schema change, data migration, or trailer change; the 1.0.0 release is the rename only; each project switches runtime, config dir, MCP registration, skill mirrors and scripts in one change; the old todo-db tool stays installed until decommission; never create a repository named joeharris76/todo-db; historical records (CHANGELOG entries, earlier ADRs, consumer evidence, exports) are not rewritten.",
+  "description": "Phase 7. Decision gate: no current (non-stale) MCP registration or project config names todo-db, and `pgrep -fl todo-db-mcp` finds no process. Then `uv tool uninstall todo-db`, remove the ~/.todo-db link, and delete ~/.cache/todo-db-state. Stale worktrees that still carry old configs are listed for the owner, not edited.",
+  "sessions": [
+    {
+      "actor": "joe-tractable-rename",
+      "at": "2026-11-06T17:57:09Z",
+      "client": "mcp",
+      "op": "create",
+      "op_id": "7d4a2958a40d49bf968ae49bb7693a2b",
+      "session_id": "8201cbb566f146adaf5e79352fedce51"
+    }
+  ]
+}
