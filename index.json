@@ -391,10 +391,10 @@
     },
     "index-distribution-and-schema-cutover-gates": {
       "claim": {
-        "expires_at": "2026-11-03T14:02:44Z",
-        "generation": "c9bef05cc6ce4429bbf4db97168d8f23",
+        "expires_at": "2026-11-07T18:10:10Z",
+        "generation": "fc3d90638ce04a0cb32f10214816098e",
         "renewals": 0,
-        "worker": "mcp:omp-coding-agent:joe@joe-mac-mini.local:cc945f1a9df6845bea34cddd"
+        "worker": "joe-tractable-rename"
       },
       "needs": [],
       "priority": "high",
