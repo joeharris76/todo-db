@@ -226,7 +226,9 @@
     },
     "drop-reason-text-cap-and-secret-scan": {
       "claim": null,
-      "needs": [],
+      "needs": [
+        "session-state-fields-on-tractable"
+      ],
       "priority": "low",
       "status": "open",
       "title": "Bring drop_reason under the agent-text cap and secret scan proposed in PR #47"
