@@ -17,6 +17,7 @@ tracker items, and source comments, so records are moved rather than renumbered.
 | [0010](0010-deferral-verbs.md) | First-class deferral verbs |
 | [0011](0011-git-object-store-cache.md) | Git object store as the local state cache |
 | [0012](0012-batch-v2-integration-loop.md) | Batch v2 integration-branch loop (amends 0006 G2, 0007, 0008) |
+| [0013](0013-rename-to-tractable.md) | Rename to tractable and release as 1.0.0 (amends 0006 G10) |
 
 0001 through 0003 previously lived in `_project/decisions/`. That directory held
 a superseded copy of 0003 alongside the current one in this directory; the
