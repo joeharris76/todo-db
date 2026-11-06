@@ -874,6 +874,15 @@
       "status": "done",
       "title": "Define sessions log shape and validation in the store"
     },
+    "session-state-fields-on-tractable": {
+      "claim": null,
+      "needs": [
+        "tractable-p3-release-1-0-0"
+      ],
+      "priority": "medium",
+      "status": "open",
+      "title": "Re-land structured decisions, blocked reasons and acceptance progress on tractable"
+    },
     "skills-deployment-repair": {
       "claim": null,
       "needs": [],

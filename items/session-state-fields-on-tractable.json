@@ -1,0 +1,22 @@
+{
+  "acceptance": [
+    "New tools and fields are additive (minor version under the ADR 0013 policy); no schema bump.",
+    "Tests cover decisions, open questions blocking finish, blocked reasons, acceptance progress, caps and E_SECRET including drop_reason.",
+    "MCP schema-cost budget updated with measured numbers."
+  ],
+  "context": "Branch feat/session-state-fields kept on origin at f69234f.",
+  "description": "Closed PR #47 added record_decision, blocked_reason, acceptance_met, an 8 KiB agent-text cap, a 16 KiB item cap and E_SECRET scanning. It was closed unmerged because the 1.0.0 release carries only the rename and the branch conflicts with batch v2 in nine files. Re-implement the design on tractable as a minor release, starting from branch feat/session-state-fields, with a renumbered ADR (0011 is taken). Cover drop_reason under the cap and secret scan (see drop-reason-text-cap-and-secret-scan).",
+  "links": [
+    "https://github.com/joeharris76/todo-db/pull/47"
+  ],
+  "sessions": [
+    {
+      "actor": "joe-tractable-rename",
+      "at": "2026-11-06T17:57:11Z",
+      "client": "mcp",
+      "op": "create",
+      "op_id": "5342034431de4424810e525f22a4f1ec",
+      "session_id": "8201cbb566f146adaf5e79352fedce51"
+    }
+  ]
+}
