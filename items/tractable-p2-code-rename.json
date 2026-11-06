@@ -1,0 +1,21 @@
+{
+  "acceptance": [
+    "New tests: state written by todo-db 0.15.0 is validated, listed, taken, finished and reconciled (Todo-Op-Id) by tractable; old and new clients writing one branch read each other's commits.",
+    "ruff, full pytest, actionlint and packaging smoke pass; CI green on 3.10 and 3.13.",
+    "A repository-wide search for todo-db/todo_db/TODO_DB matches only an explicit allow-list: historical CHANGELOG entries, earlier ADRs, ADR 0013, kept trailers and the todo-state branch, and the 0.15.0 compatibility fixture.",
+    "The MCP snapshot diff is reviewed: only product strings change; tool names and input schemas are identical.",
+    "No behaviour change beyond names; no schema or trailer change."
+  ],
+  "context": "Guardrails (ADR 0013): no state-schema change, data migration, or trailer change; the 1.0.0 release is the rename only; each project switches runtime, config dir, MCP registration, skill mirrors and scripts in one change; the old todo-db tool stays installed until decommission; never create a repository named joeharris76/todo-db; historical records (CHANGELOG entries, earlier ADRs, consumer evidence, exports) are not rewritten.",
+  "description": "Phase 2, one PR in joeharris76/tractable. Move src/todo_db to src/tractable and rewrite imports with a syntax-aware tool (including the dynamic import in git_store.py). Apply the ADR 0013 mapping to pyproject metadata, URLs and scripts, uv.lock, install hint, instructions heading, server name, capability key and BATCH_CAPABILITY, resource and prompt names, config dir, TRACTABLE_* variables, cache root, cache refs and sidecar, and commit author. Move this repo's .todo-db/config.json to .tractable/config.json with the new remote URL; update .mcp.json and .claude/settings.local.json. Update CI, publish.yml (pypi.org/p/tractable), audit-monitor.yml, verify_index_release.py, README, current operations docs, and the MCP snapshot. Version 1.0.0; PyPI classifier Production/Stable; CHANGELOG 1.0.0 entry with an upgrade note (config dir, variables, MCP registration, restarts).",
+  "sessions": [
+    {
+      "actor": "joe-tractable-rename",
+      "at": "2026-11-06T17:56:51Z",
+      "client": "mcp",
+      "op": "create",
+      "op_id": "421ca7442f144a1d98394fa622f09a0b",
+      "session_id": "8201cbb566f146adaf5e79352fedce51"
+    }
+  ]
+}

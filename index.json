@@ -1012,6 +1012,15 @@
       "status": "open",
       "title": "Rename the GitHub repository and local checkout to tractable"
     },
+    "tractable-p2-code-rename": {
+      "claim": null,
+      "needs": [
+        "tractable-p1-github-repo-rename"
+      ],
+      "priority": "high",
+      "status": "open",
+      "title": "Rename the code, configuration and docs to tractable 1.0.0"
+    },
     "tractable-rename-adr": {
       "claim": null,
       "needs": [],
