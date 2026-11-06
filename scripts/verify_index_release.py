@@ -62,9 +62,17 @@ def verify_artifacts(dist: Path, version: str, metadata: dict) -> None:
         print(f"Verified {name}: sha256:{digest}")
 
 
+def isolated_env(root: Path) -> dict[str, str]:
+    env = {
+        key: value for key, value in os.environ.items()
+        if not key.startswith(("UV_", "PIP_", "TODO_DB_", "GIT_", "PYTHON", "XDG_"))
+    }
+    env.update(HOME=str(root), XDG_CONFIG_HOME=str(root / ".config"), XDG_CACHE_HOME=str(root / ".cache"))
+    return env
+
+
 def smoke_environment(bin_dir: Path, version: str, root: Path) -> None:
-    env = dict(os.environ)
-    env.pop("PYTHONPATH", None)
+    env = isolated_env(root)
     for name in ("todo-db", "todo-db-mcp"):
         result = subprocess.run(
             [str(bin_dir / name), "--version"], cwd=root, env=env,
@@ -74,7 +82,7 @@ def smoke_environment(bin_dir: Path, version: str, root: Path) -> None:
             raise ValueError(f"unexpected {name} version: {result.stdout!r}")
         print(result.stdout.strip())
     remote = root / "state.git"
-    subprocess.run(["git", "init", "--quiet", "--bare", str(remote)], check=True, timeout=30)
+    subprocess.run(["git", "init", "--quiet", "--bare", str(remote)], env=env, check=True, timeout=30)
     subprocess.run(
         [str(bin_dir / "todo-db"), "bootstrap", "--state-remote", str(remote),
          "--cache-dir", str(root / "cache")],
@@ -97,7 +105,7 @@ def main() -> None:
     verify_artifacts(args.dist, args.version, metadata)
     with tempfile.TemporaryDirectory(prefix="todo-db-index-") as temporary:
         root = Path(temporary)
-        env = {key: value for key, value in os.environ.items() if not key.startswith(("UV_", "PIP_"))}
+        env = isolated_env(root)
         python = root / "venv" / "bin" / "python"
         subprocess.run(
             ["uv", "--no-config", "--no-cache", "venv", "--python", sys.executable, str(python.parent.parent)],

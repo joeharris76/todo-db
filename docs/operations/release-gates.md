@@ -64,25 +64,38 @@ the release.
 
 ## After the tag
 
-A GitHub release alone is not completed distribution. For every release, the
-Publish run must pass `pypi-publish` and `distribution-verify`. The latter compares
-the wheel and sdist on GitHub and PyPI with the original build artifacts, then
-installs `todo-db[mcp]==$VERSION` from PyPI without cache or local configuration
-in a fresh environment. Both entry points must report the release version and
-a real MCP initialize/tools-list exchange must succeed against a scratch remote.
-Missing files, yanked files, differing bytes, install failures, or a failed or
-pending publisher block distribution completion and consumer rollout.
-
-To rerun the index verification locally against the original downloaded build
-artifact directory:
+A tag push builds the distributions and publishes the GitHub release. It does
+not publish to PyPI: that takes an explicit opt-in run on the same tag, after
+the GitHub release exists:
 
 ```sh
-python3 scripts/verify_index_release.py "$VERSION" /path/to/original/dist
+gh workflow run publish.yml --repo joeharris76/todo-db --ref "v$VERSION" -f publish_pypi=true
+```
+
+That run rebuilds the tag and requires the rebuilt wheel, sdist and
+`SHA256SUMS` to be byte-identical to the GitHub release assets before it
+uploads anything, then uploads the release assets themselves, so PyPI
+receives exactly the released bytes. `distribution-verify` then fails unless
+the run is on a `v*` tag and both the build and the upload succeeded, checks
+that the files PyPI serves match, and installs `todo-db[mcp]==$VERSION` from
+PyPI in a fresh environment, without cache, local configuration or inherited
+tracker variables. Both entry points must report the release version and a
+real MCP initialize/tools-list exchange must succeed against a scratch remote.
+
+A GitHub release alone is not completed distribution. Missing, yanked or
+differing files, an install failure, or a skipped or failed upload blocks
+distribution completion and consumer rollout. A tag-push run that is green
+has only published the GitHub release.
+
+To rerun the index verification locally against downloaded release assets:
+
+```sh
+python3 scripts/verify_index_release.py "$VERSION" /path/to/release/assets
 ```
 
 This post-publication check supplements, never replaces, the pre-tag gates.
-Record its run URL and artifact hashes before announcing completed distribution.
-Only after it passes:
+Record the opt-in run's URL and the artifact hashes before announcing
+completed distribution. Only after it passes:
 
 1. **Global tool.** Keep the current receipt and a checksum-verified wheel
    compatible with the active schema for rollback. Replace a URL-pinned or
@@ -130,25 +143,17 @@ configure its active publisher instead. Match these fields to the workflow;
 never claim an unrelated project, add a persistent API token, or remove
 environment protections to bypass an authentication failure.
 
-After registration, re-run only the failed `pypi-publish` job in the original
-tag's Publish run while its `dist` artifact is retained (currently seven days).
-For example, for the existing 0.14.0 release:
+After registration, start the opt-in run on the release tag (above). If its
+`pypi-publish` job fails for a transient reason, rerun the failed jobs of that
+same run with `gh run rerun <run-id> --failed`; a rerun keeps the opt-in. A
+dispatch from a branch such as `main` cannot publish: `pypi-publish` requires
+a `v*` tag ref, and the build checks that the tag matches the package
+version.
 
-```sh
-gh run rerun 41379383917 --failed --repo joeharris76/todo-db
-```
-
-A manual dispatch on `main` does not publish: publishing jobs require a tag
-ref. Tag dispatches must also pass the manifest/tag version check. If the
-artifact has expired, stop before upload: rebuild the original tag separately,
-compare both distribution hashes with the existing GitHub assets, and obtain
-an explicit operator decision if bytes differ. Never move a tag or silently
-upload a different build. An already-published version must be checked for
-parity rather than overwritten.
-
-Older tag runs do not contain `distribution-verify`; run the verifier from
-the current reviewed tooling against the original tag's artifacts and retain
-the result. A green old Publish run alone does not satisfy the new gate.
+If the rebuilt files differ from the GitHub release assets, `pypi-publish`
+stops before uploading. Find the source of the non-reproducible build and
+release a new version; never move a tag or replace published files. A
+version already on PyPI is checked for parity, never overwritten.
 
 ## Before an irreversible schema cutover
 
