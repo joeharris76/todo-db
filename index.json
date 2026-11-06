@@ -787,10 +787,12 @@
     },
     "pypi-trusted-publisher-configuration": {
       "claim": null,
-      "needs": [],
+      "needs": [
+        "tractable-p1-github-repo-rename"
+      ],
       "priority": "high",
       "status": "blocked",
-      "title": "Configure PyPI trusted publisher for publish workflow"
+      "title": "Register the PyPI trusted publisher for tractable"
     },
     "release-0-4-3-and-downstream-upgrade": {
       "claim": null,
