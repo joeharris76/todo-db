@@ -244,7 +244,7 @@ def cmd_show(args: argparse.Namespace) -> int:
             ref=ref, cache_dir=_cache(args), worker="cli",
             session_id=_read_session_id(args), client_name="cli",
         )
-        env = svc.show_item(args.id, field=args.field, offset=args.offset, budget=args.budget)
+        env = svc.show_item(args.id, field=args.field, offset=args.offset, budget=args.budget, rev=args.rev)
     except TodoDBError as exc:
         return _fail(str(exc))
     _emit(env)
@@ -348,6 +348,7 @@ def build_parser() -> argparse.ArgumentParser:
     show.add_argument("--field", default=None)
     show.add_argument("--offset", type=int, default=0)
     show.add_argument("--budget", type=int, default=6000)
+    show.add_argument("--rev", default=None)
     show.set_defaults(func=cmd_show)
 
     batch = sub.add_parser("batch", help="batch registry reads (read-only)")

@@ -413,6 +413,8 @@ def test_startup_schema_cost_is_small(tmp_path: Path) -> None:
             # Batch v2 adds show_batch, advance_batch_head and
             # recover_batch_owner plus the owner/head guidance and the
             # revisable bind_batch_pr arguments (ADR 0012): 4,744 -> 5,614.
-            assert tokens <= 5614, tokens
+            # Guarded checkout relocation adds expected_integration_worktree/head
+            # and integration_worktree to recover_batch_owner: 5,614 -> 5,745.
+            assert tokens <= 5760, tokens
 
     anyio.run(go)

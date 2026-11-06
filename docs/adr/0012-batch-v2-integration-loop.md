@@ -154,7 +154,22 @@ server-issued value could not be re-served). Semantics:
    no generations); every member item gets a `recover` session entry
    (`reason`, `displaced = previous_owner`) under the same operation ID; the
    commit summary reads `<caller> recovers batch <id> from <owner>: <reason>`.
-
+7. **Guarded checkout relocation (additive capability):** `recover_batch_owner`
+   accepts an optional all-or-nothing relocation tuple
+   `expected_integration_worktree`, `expected_integration_head`, and
+   `integration_worktree`. When supplied:
+   - both worktrees must be absolute paths and `expected_integration_head` a full revision;
+   - `expected_integration_worktree` must match the registered `batch["integration_worktree"]`
+     and `expected_integration_head` must match `batch["integration_head"]` (CAS check,
+     refused with `E_CONFLICT`);
+   - destination checkout must be clean, in the registered repository and branch, at the
+     expected head, and contain `start_head`, all integration log heads, and all prepared
+     members' accepted heads;
+   - `batch["integration_worktree"]` is updated to the destination path atomically with
+     the owner rotation; `recoveries` records the relocation tuple;
+   - prepared receipts and historical source paths remain unchanged byte-for-byte;
+   - active partial closeouts may relocate at unchanged integration head/PR without gaining
+     new advance, reprepare, or rebind rights.
 Where the recovering session gets `expected_owner_generation`: from the leader's
 own ledger (the consumer stores the generation it registered with next to the
 integration worktree), or from the state branch files by a human with Git
@@ -513,8 +528,8 @@ dependents, while no content-affecting edit can outlive a stale receipt.
 {"version": 2, "receipt_schema": "prepared_work_v2",
  "store_schema_version": 4, "supported_schema_versions": [1,2,3,4],
  "tool_version": "<package version>",
- "tools": ["advance_batch_head","recover_batch_owner","show_batch"]}
-```
+ "tools": ["advance_batch_head","recover_batch_owner","show_batch"],
+ "features": {"integration_worktree_relocation": true}}
 implemented by wrapping the low-level server's `create_initialization_options` to
 add the `experimental` key; `serverInfo.version` stays the package version. The
 same object is `todo_db.BATCH_CAPABILITY` and the `capability` field of
@@ -606,7 +621,7 @@ SHAs. Success results are the `data` of `{ok:true, data}`; refusals are
 | Tool | New/changed | Arguments | Success result | Refusal codes |
 |---|---|---|---|---|
 | `show_batch` | new | `batch_id`; `field=None`, `offset=0`, `budget=6000`, `rev=None` | summary + `sections` map + `capability` + `rev` (§2.2); with `field`: `{batch_id, field, offset, total, window, rev, continuation?}` (the `show_item` section-window shape; `continuation` is `{field, offset, budget, rev}` while more remains) | `E_STATE` unknown batch, `E_CURSOR_STALE`, `E_OVERSIZED`, `E_OFFLINE` |
-| `recover_batch_owner` | new | `batch_id`, `expected_owner`, `expected_owner_generation`, `new_owner_generation` (caller-generated, 32 hex), `reason` | `{batch_id, owner, owner_epoch, recovered_members, idempotent}` | `E_CONFLICT` owner changed, `E_CLAIM_STALE` wrong generation, `E_STATE` not active / no session / bad reason, `E_SCHEMA` store below 4 |
+| `recover_batch_owner` | new | `batch_id`, `expected_owner`, `expected_owner_generation`, `new_owner_generation` (caller-generated, 32 hex), `reason`; optional relocation tuple `expected_integration_worktree`, `expected_integration_head`, `integration_worktree` | `{batch_id, owner, owner_epoch, recovered_members, idempotent, relocation?}` | `E_CONFLICT` owner changed / CAS mismatch, `E_CLAIM_STALE` wrong generation, `E_STATE` not active / no session / bad reason / invalid relocation checkout, `E_SCHEMA` store below 4 |
 | `advance_batch_head` | new | `batch_id`, `owner_generation`, `expected_head`, `head`, `reason` (`fix`\|`develop-merge`), `changed_files` | `{batch_id, integration_head, seq, reason, changed_files, requires_acceptance, idempotent}` | `E_CLAIM_STALE`, `E_CONFLICT` stale head, `E_BATCH_HEAD` (non-descendant, not a real merge, merge parent not under the registered `develop_ref`, no registered `develop_ref`, non-develop content, fix outside scope), `E_STATE` (files mismatch, member done, inactive), `E_SCHEMA` |
 | `take` | changed | `id` | unchanged ack | adds `E_BATCH_OWNER` (active-batch member, caller not owner) |
 | `takeover` | changed | `id`, `expected_holder`, `reason` | ack without `transferred_batches` | adds `E_BATCH_OWNER`; no ownership transfer |
