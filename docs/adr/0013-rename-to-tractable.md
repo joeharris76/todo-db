@@ -2,6 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-11-06
+- **Amends**: ADR 0006 G10: the condition on claiming 1.0.0
 
 ## Context
 
@@ -38,7 +39,7 @@ Rename the product to `tractable` and release the rename alone as 1.0.0.
 | Project config | `.todo-db/config.json` | `.tractable/config.json` |
 | Environment variables | `TODO_DB_*` | `TRACTABLE_*` |
 | Local cache | `~/.cache/todo-db-state`, `refs/todo-db/*`, `todo-db-id` | `~/.cache/tractable-state`, `refs/tractable/*`, `tractable-id` |
-| Author of new state commits | `todo-db <todo-db@localhost>` | `tractable <tractable@localhost>` |
+| Author and committer of new state commits | `todo-db <todo-db@localhost>` | `tractable <tractable@localhost>` |
 | Review finding drafts | `~/.todo-db/finding-drafts/` | `~/.tractable/finding-drafts/` |
 | Repository and PyPI project | `joeharris76/todo-db`, none | `joeharris76/tractable`, `tractable` |
 
@@ -77,15 +78,24 @@ transition lives outside the code instead:
    project whose registration names a missing server stops at the skill's
    preflight. Neither path writes wrong state.
 4. **The old tool is removed last**, once no registration names `todo-db`
-   and no `todo-db-mcp` process is running.
+   and no `todo-db-mcp` process is running. Its cache,
+   `~/.cache/todo-db-state`, is deleted then: the renamed code never reads
+   it.
 
 ### Version 1.0.0 and compatibility policy
 
 The rename ships as 1.0.0 with no other behaviour change, so any regression
 in it is attributable to the rename. 1.0.0 contains every capability the
-`todo` skill previously gated on a version (0.8.1 takeover, 0.11.0 bound
-store, the 0.14.0 schema), so version floors collapse to "tractable 1.0.0 or
-later".
+`todo` skill previously gated on a version (for example 0.8.0 holds, 0.8.1
+takeover, 0.11.0 bound store, 0.12.0 drop reasons, the 0.14.0 schema and
+`batch show`), so version floors collapse to "tractable 1.0.0 or later".
+
+ADR 0006 G10 withheld 1.0.0 while it was unverified whether the `muse` and
+`grok` harnesses speak MCP stdio. That condition no longer applies. The
+supported clients are those in `docs/operations/mcp-clients.md` plus any
+other stdio MCP client, all of which use the one MCP interface; `muse` and
+`grok` are not supported targets. A harness that cannot launch a stdio MCP
+server is outside the supported set, not a reason to withhold 1.0.0.
 
 From 1.0.0, the public interface under Semantic Versioning is: command names
 and options, MCP tool names, inputs and capability keys, the project config
