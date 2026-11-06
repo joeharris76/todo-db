@@ -1,12 +1,12 @@
 {
   "acceptance": [
-    "uv tool install --force using a package-name requirement and explicit PyPI default index succeeds; receipt contains no todo-db wheel URL or exact-version upper bound and retains mcp extra.",
-    "todo-db and todo-db-mcp on PATH report at least 0.14.0 and agree with installed metadata; uv tool upgrade todo-db resolves the index-based requirement successfully.",
-    "A fresh MCP server initializes, lists tools, and confirms expected store binding without mutating tracker state. Record which existing sessions need restart; do not claim running processes were updated by replacing files.",
-    "Rollback procedure retains a checksum-verified compatible wheel; never downgrade below the active schema's minimum client version or migrate/downgrade state. Human-only E_SCHEMA recovery policy remains unchanged."
+    "uv tool list shows tractable 1.0.0 with a package-name requirement (no wheel URL) and the mcp extra; todo-db still installed.",
+    "tractable --version and tractable-mcp --version report 1.0.0; a fresh tractable-mcp reports the expected bound store.",
+    "skill-sync verify and check pass for the three global targets at the new revision.",
+    "Owner told to restart open sessions; restart is not claimed for running processes."
   ],
-  "context": "Global installation was observed at 0.14.0 before this batch: verify receipt rather than assuming the earlier 0.13.0 installation remains. This task changes distribution source, not schema.\n\nTODO review passed against approved proposal: description, observable acceptance, decision gates, guardrails, and needs cover publisher identity, original-tag artifact provenance, wheel/sdist parity, fresh index CLI/MCP smoke, global receipt/upgrade/restart/compatible rollback, publication-completion gate, and pre-cutover client inventory. Chain is publisher -> publication -> global source migration; release-process work is independent. No schema migration, token workaround, or consumer pin migration.",
-  "description": "Replace the global versioned-wheel requirement with an index-resolved todo-db[mcp]>=0.14.0 requirement only after verified publication. Prior art: ~/.local/share/uv/tools/todo-db/uv-receipt.toml pins a GitHub URL; uv tool upgrade cannot discover newer GitHub assets. Decision gate: retain existing receipt/version and a verified wheel rollback command before replacement. Keep immutable pins for BenchBox and other reproducible consumers; no repo dependency migration. If index is unavailable or hashes differ, leave the working install untouched.",
+  "context": "Global installation was observed at 0.14.0 before this batch: verify receipt rather than assuming the earlier 0.13.0 installation remains. This task changes distribution source, not schema.\n\nTODO review passed against approved proposal: description, observable acceptance, decision gates, guardrails, and needs cover publisher identity, original-tag artifact provenance, wheel/sdist parity, fresh index CLI/MCP smoke, global receipt/upgrade/restart/compatible rollback, publication-completion gate, and pre-cutover client inventory. Chain is publisher -> publication -> global source migration; release-process work is independent. No schema migration, token workaround, or consumer pin migration.\n\n2026-11-06: rewritten as Phase 5 of the rename to tractable (ADR 0013). Earlier scope (todo-db>=0.14.0 from PyPI) is superseded: no todo-db release will be published to PyPI. Guardrails (ADR 0013): no state-schema change, data migration, or trailer change; the 1.0.0 release is the rename only; each project switches runtime, config dir, MCP registration, skill mirrors and scripts in one change; the old todo-db tool stays installed until decommission; never create a repository named joeharris76/todo-db; historical records (CHANGELOG entries, earlier ADRs, consumer evidence, exports) are not rewritten. Undo: uv tool uninstall tractable and restore the saved registrations.",
+  "description": "Phase 5. Install `tractable[mcp]>=1.0.0` from PyPI by package name; keep the todo-db tool installed. Move ~/.todo-db to ~/.tractable and leave a link at ~/.todo-db. Update ~/.gemini/settings.json to tractable-mcp and remove the obsolete TODO_DB_CREDENTIAL_COMMAND; update ~/.codex/config.toml to tractable-mcp. Point the global skill folders at the new catalog revision with skill-sync apply, verify and check. Run `tractable validate` once per project store to fill the new cache. Decision gate: tractable 1.0.0 passed distribution-verify; rollback wheel and current receipt saved.",
   "sessions": [
     {
       "actor": "mcp:omp-coding-agent:joe@joe-mac-mini.local:cc945f1a9df6845bea34cddd",
@@ -23,6 +23,14 @@
       "op": "update",
       "op_id": "d83f2c3350df407f9f2f514ccdc28db9",
       "session_id": "ac6f10803392408b96a0d6760141aede"
+    },
+    {
+      "actor": "joe-tractable-rename",
+      "at": "2026-11-06T17:57:25Z",
+      "client": "mcp",
+      "op": "update",
+      "op_id": "9292dce1bd4d4faeabcd1a107a837bd6",
+      "session_id": "ecf6248d64e74457ab1710f7c32ddfda"
     }
   ]
 }

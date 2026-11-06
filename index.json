@@ -269,11 +269,12 @@
     "global-index-install-and-upgrade": {
       "claim": null,
       "needs": [
-        "pypi-release-0-14-0-verify"
+        "tractable-p3-release-1-0-0",
+        "tractable-p4-skill-catalog"
       ],
       "priority": "high",
       "status": "open",
-      "title": "Move the global tracker installation to the verified package index"
+      "title": "Switch this machine to tractable from PyPI"
     },
     "global-install-and-skill-behind-0-11-0": {
       "claim": null,
