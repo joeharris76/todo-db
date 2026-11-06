@@ -1,0 +1,19 @@
+{
+  "acceptance": [
+    "Release PR body records gate 1 command and final line, gate 2 consumer, command, branch and result, date and operator.",
+    "Publish run green including distribution-verify: GitHub and PyPI wheel and sdist match the build bytes; a fresh cache-free PyPI install runs both commands at 1.0.0 and completes an MCP initialize/tools-list.",
+    "Run URL, tag commit and artifact SHA-256 values recorded on this item."
+  ],
+  "context": "Guardrails (ADR 0013): no state-schema change, data migration, or trailer change; the 1.0.0 release is the rename only; each project switches runtime, config dir, MCP registration, skill mirrors and scripts in one change; the old todo-db tool stays installed until decommission; never create a repository named joeharris76/todo-db; historical records (CHANGELOG entries, earlier ADRs, consumer evidence, exports) are not rewritten.",
+  "description": "Phase 3. Run release gate 1 (scratch lifecycle) and gate 2 (`tractable validate --config <BenchBox .todo-db/config.json>` against BenchBox's real tracker) before the tag; tag v1.0.0; the Publish run must pass build, github-release, pypi-publish and distribution-verify. Decision gate: both pre-tag gates pass; the trusted publisher is registered for project tractable and repository tractable. A failed gate blocks the tag; a broken published release is yanked and fixed forward, never replaced or retagged.",
+  "sessions": [
+    {
+      "actor": "joe-tractable-rename",
+      "at": "2026-11-06T17:56:53Z",
+      "client": "mcp",
+      "op": "create",
+      "op_id": "90d5d52c976a4987bc526cada05754ab",
+      "session_id": "8201cbb566f146adaf5e79352fedce51"
+    }
+  ]
+}

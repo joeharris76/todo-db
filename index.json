@@ -1021,6 +1021,16 @@
       "status": "open",
       "title": "Rename the code, configuration and docs to tractable 1.0.0"
     },
+    "tractable-p3-release-1-0-0": {
+      "claim": null,
+      "needs": [
+        "tractable-p2-code-rename",
+        "pypi-trusted-publisher-configuration"
+      ],
+      "priority": "high",
+      "status": "open",
+      "title": "Release tractable 1.0.0 to GitHub and PyPI"
+    },
     "tractable-rename-adr": {
       "claim": null,
       "needs": [],
