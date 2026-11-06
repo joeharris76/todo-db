@@ -1050,6 +1050,15 @@
       "status": "open",
       "title": "Switch BenchBox to the vendored tractable 1.0.0 runtime"
     },
+    "tractable-p6-benchbox-site": {
+      "claim": null,
+      "needs": [
+        "global-index-install-and-upgrade"
+      ],
+      "priority": "medium-high",
+      "status": "open",
+      "title": "Switch benchbox-site to tractable"
+    },
     "tractable-rename-adr": {
       "claim": null,
       "needs": [],
