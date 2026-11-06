@@ -7,6 +7,7 @@
   ],
   "context": "Part of the approved index distribution batch. Wheel digest observed on GitHub: 63aae9474551d7b975d8173837cb21937d95910eb24b6f3bbcaa338e3721844a. Read live assets again before acting. Old done item publish-todo-db-to-pypi is not evidence of publication.\n\nTODO review passed against approved proposal: description, observable acceptance, decision gates, guardrails, and needs cover publisher identity, original-tag artifact provenance, wheel/sdist parity, fresh index CLI/MCP smoke, global receipt/upgrade/restart/compatible rollback, publication-completion gate, and pre-cutover client inventory. Chain is publisher -> publication -> global source migration; release-process work is independent. No schema migration, token workaround, or consumer pin migration.",
   "description": "Publish the existing 0.14.0 release through its trusted publisher and prove index consumers receive the released bytes. Prior art: tag Publish run 41379383917 and GitHub v0.14.0 assets. Decision gate: registration prerequisite must be done; re-run only the failed publisher using the original unexpired dist artifact. If artifact expired, stop and choose a provenance-preserving tag build and compare every distribution hash before upload; never silently rebuild or retag. If PyPI version already exists, verify hashes and install behavior rather than attempting replacement. No new release version is in scope.",
+  "drop_reason": "Superseded by the rename to tractable (ADR 0013): no todo-db version will be published to PyPI. The first index release is tractable 1.0.0, covered by tractable-p3-release-1-0-0.",
   "links": [
     "https://github.com/joeharris76/todo-db/actions/runs/41379383917",
     "https://github.com/joeharris76/todo-db/releases/tag/v0.14.0"
@@ -27,6 +28,14 @@
       "op": "update",
       "op_id": "7d61f396562e4942b2ba1354cef32ff9",
       "session_id": "ac6f10803392408b96a0d6760141aede"
+    },
+    {
+      "actor": "joe-tractable-rename",
+      "at": "2026-11-06T17:57:33Z",
+      "client": "mcp",
+      "op": "drop",
+      "op_id": "1dcfb134ff464ff5bc27fa79a67ca845",
+      "session_id": "ecf6248d64e74457ab1710f7c32ddfda"
     }
   ]
 }

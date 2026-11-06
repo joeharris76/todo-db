@@ -782,7 +782,7 @@
         "pypi-trusted-publisher-configuration"
       ],
       "priority": "high",
-      "status": "open",
+      "status": "dropped",
       "title": "Publish and verify todo-db 0.14.0 on PyPI"
     },
     "pypi-trusted-publisher-configuration": {
