@@ -390,15 +390,10 @@
       "title": "Give provisioning and rotation a named, one-time procedure the exit-4 message points at"
     },
     "index-distribution-and-schema-cutover-gates": {
-      "claim": {
-        "expires_at": "2026-11-07T18:10:10Z",
-        "generation": "fc3d90638ce04a0cb32f10214816098e",
-        "renewals": 0,
-        "worker": "joe-tractable-rename"
-      },
+      "claim": null,
       "needs": [],
       "priority": "high",
-      "status": "active",
+      "status": "done",
       "title": "Gate distribution on index installs and schema cutovers on upgraded clients"
     },
     "mcp-0-5-0-release": {
