@@ -1031,6 +1031,15 @@
       "status": "open",
       "title": "Release tractable 1.0.0 to GitHub and PyPI"
     },
+    "tractable-p4-skill-catalog": {
+      "claim": null,
+      "needs": [
+        "tractable-p2-code-rename"
+      ],
+      "priority": "high",
+      "status": "open",
+      "title": "Update the todo skill and review protocol in skill-sync-skills for tractable"
+    },
     "tractable-rename-adr": {
       "claim": null,
       "needs": [],
