@@ -46,6 +46,11 @@ Restart MCP servers after upgrading; running processes keep their old version.
 An index requirement lets `uv tool upgrade` discover later releases. A direct
 wheel URL is an immutable pin: upgrading it does not discover GitHub releases.
 
+Rolling back from 1.0 to a 0.x release means switching the project back to the
+still-installed `todo-db` tool (its MCP registration and `.todo-db/` config), not
+reinstalling a pre-1.0 wheel through the tractable URL template: pre-1.0 assets are
+named `todo_db-<version>-py3-none-any.whl` and read only `.todo-db/`.
+
 Until PyPI publication is verified, or when an immutable pin is wanted, use a
 wheel from [GitHub Releases](https://github.com/joeharris76/tractable/releases).
 Choose a release compatible with the state schema and copy its wheel digest

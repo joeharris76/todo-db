@@ -40,6 +40,8 @@ adheres to [Semantic Versioning](https://semver.org/).
   needed, and `todo-db` 0.14.0/0.15.0 and `tractable` can write the same
   branch.
 - Restart running MCP servers: they keep the version they started with.
+- Remove the `todo-db` tool and delete `~/.cache/todo-db-state` only after no MCP
+  registration names `todo-db` and no `todo-db-mcp` process is running.
 
 ## [0.15.0] - 2026-11-02
 

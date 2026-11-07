@@ -116,6 +116,11 @@ completed distribution. Only after it passes:
    compatible version and digest. Never roll a client back below the active
    schema's minimum version or downgrade authoritative state. If index
    verification fails, leave the existing working installation untouched.
+
+   Rolling back from 1.0 to a 0.x release means switching the project back to the
+   still-installed `todo-db` tool (its MCP registration and `.todo-db/` config), not
+   reinstalling a pre-1.0 wheel through the tractable URL template: pre-1.0 assets are
+   named `todo_db-<version>-py3-none-any.whl` and read only `.todo-db/`.
 2. **Vendored consumers.** A repository that vendors the wheel, such as
    BenchBox's `_project/scripts/vendor/`, needs its own upgrade PR.
 3. **Skill text.** When the release changes what agents should do, merge the
