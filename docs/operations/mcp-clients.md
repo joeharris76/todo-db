@@ -32,6 +32,22 @@ Common flags:
 
 Logging goes to **stderr only**; stdout carries JSON-RPC framing.
 
+### Claim slots
+
+A worker holds one live claim outside any batch and one live claim per active
+batch. Leaders of different batches that share one server therefore take and
+prepare their members concurrently, and each batch keeps its own
+`owner_generation`. Agents on one server that work the same batch, or that all
+claim ordinary items, still share one slot and get `E_MULTIPLE_CLAIMS`; give
+them separate servers with distinct actors.
+
+`prepare` takes `verification_path` and `finish` takes `final_evidence_path`:
+an absolute path to a JSON file (at most 1 MiB) holding the object, as an
+alternative to pasting it inline. Pass one or the other. `prepare` requires
+`verification.review.outcome` to be `clear`, `not-reviewed`, or `override`, and
+`verification.command` to be a non-empty argv list of single-line strings whose
+first element is the executable name.
+
 ### Upgrade and restart recovery
 
 Claims made by 0.7.3 or earlier use the legacy fallback

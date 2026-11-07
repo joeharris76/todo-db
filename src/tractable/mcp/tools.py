@@ -19,7 +19,7 @@ from typing import Any
 from mcp.server.fastmcp import Context, FastMCP
 
 from ..errors import E_NO_PRINCIPAL
-from ..service import TrackerService, err
+from ..service import TrackerService, err, resolve_payload
 from .identity import PrincipalHolder, sanitize_client_name
 from .target import ResolvedTarget
 
@@ -281,7 +281,8 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
         name="prepare",
         description=(
             "Record verified batch-member work without completing the task. source_base must be "
-            "the batch start head or a recorded integration head."
+            "the batch start head or a recorded integration head. verification may be passed inline or as "
+            "verification_path, an absolute path to a JSON file holding it."
         ),
     )
     async def prepare_tool(
@@ -295,13 +296,17 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
         accepted_head: str,
         integration_head: str,
         scope_hash: str,
-        verification: dict[str, Any],
+        verification: dict[str, Any] | None = None,
+        verification_path: str | None = None,
         implementation_dependencies: list[str] | None = None,
         ctx: Context = None,  # type: ignore[assignment]
     ) -> dict[str, Any]:
         worker = _need_principal(holder, ctx)
         if not isinstance(worker, str):
             return worker
+        verification, refusal = await asyncio.to_thread(resolve_payload, "verification", verification, verification_path)
+        if refusal is not None:
+            return refusal
         svc = _service(target, worker, holder, ctx)
         return await asyncio.to_thread(
             svc.prepare,
@@ -436,17 +441,27 @@ def register_tools(server: FastMCP, target: ResolvedTarget, holder: PrincipalHol
 
     @server.tool(
         name="finish",
-        description="Close a task. Prepared tasks additionally require current final-tree evidence.",
+        description=(
+            "Close a task. Prepared tasks additionally require current final-tree evidence, "
+            "inline as final_evidence or as final_evidence_path, an absolute path to a JSON file."
+        ),
     )
     async def finish_tool(
         id: str,
         generation: str,
         final_evidence: dict[str, Any] | None = None,
+        final_evidence_path: str | None = None,
         ctx: Context = None,  # type: ignore[assignment]
     ) -> dict[str, Any]:
         worker = _need_principal(holder, ctx)
         if not isinstance(worker, str):
             return worker
+        if final_evidence is not None or final_evidence_path is not None:
+            final_evidence, refusal = await asyncio.to_thread(
+                resolve_payload, "final_evidence", final_evidence, final_evidence_path,
+            )
+            if refusal is not None:
+                return refusal
         svc = _service(target, worker, holder, ctx)
         return await asyncio.to_thread(svc.finish, id, generation, final_evidence)
 

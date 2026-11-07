@@ -48,6 +48,7 @@ def _verification(revision: str) -> dict:
         "clean": True,
         "suite": "bounded-upstream",
         "command": ["uv", "run", "--", "pytest", "tests/test_batch_delivery.py", "-q"],
+        "review": {"outcome": "clear"},
     }
 
 

@@ -105,11 +105,39 @@ def _multiple_claims(worker: str, held: str) -> TodoError:
         code=E_MULTIPLE_CLAIMS,
         recovery=[
             f"finish or release {held!r} with the generation its take returned",
-            "every agent on one tractable-mcp server shares this worker identity, so a claim held by a "
-            "sibling agent blocks this one",
-            "to claim concurrently, run each agent on its own tractable-mcp server with a distinct --actor",
+            "a worker holds one live claim outside any batch and one per active batch, so only a claim in "
+            "the same slot blocks this one",
+            "agents that share one tractable-mcp server and work the same batch (or no batch) still share "
+            "that slot; run each on its own tractable-mcp server with a distinct --actor to claim concurrently",
         ],
     )
+
+
+MAX_PAYLOAD_FILE_BYTES = 1024 * 1024
+
+
+def resolve_payload(label: str, inline: dict[str, Any] | None, path: str | None) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """Return ``(payload, None)`` from the inline object or ``path``, else ``(None, error)``; exactly one source is allowed."""
+
+    if inline is not None and path is not None:
+        return None, err(E_STATE, f"pass {label} or {label}_path, not both")
+    if path is None:
+        if inline is None:
+            return None, err(E_STATE, f"{label} or {label}_path is required")
+        return inline, None
+    if not os.path.isabs(path):
+        return None, err(E_STATE, f"{label}_path must be an absolute path")
+    try:
+        size = os.path.getsize(path)
+        if size > MAX_PAYLOAD_FILE_BYTES:
+            return None, err(E_STATE, f"{label}_path file exceeds {MAX_PAYLOAD_FILE_BYTES} bytes")
+        with open(path, "rb") as handle:
+            loaded = json.loads(handle.read().decode("utf-8"))
+    except (OSError, ValueError) as exc:
+        return None, err(E_STATE, f"cannot read {label}_path as JSON: {exc}")
+    if not isinstance(loaded, dict):
+        return None, err(E_STATE, f"{label}_path must contain a JSON object")
+    return loaded, None
 
 
 def _fits(envelope: dict[str, Any]) -> bool:
@@ -690,11 +718,22 @@ class TrackerService:
             return err(E_OFFLINE, result.error or "remote unreachable", recovery=["retry when the remote is reachable"])
         return err(result.code or E_STATE, result.error or "mutation failed", recovery=result.recovery or None)
 
-    def _held_claim(self, snap: S.Snapshot, now: datetime) -> str | None:
-        for item_id, entry in snap.index["items"].items():
+    @staticmethod
+    def _claim_slot(snap: S.Snapshot, item_id: str) -> str | None:
+        batch_id, _ = S.active_batch_of(snap, item_id)
+        return batch_id
+
+    def _held_claim(self, snap: S.Snapshot, now: datetime, item_id: str) -> str | None:
+        slot = self._claim_slot(snap, item_id)
+        for held_id, entry in snap.index["items"].items():
             claim = entry.get("claim")
-            if claim and claim.get("worker") == self.worker and S.claim_is_live(claim, now):
-                return item_id
+            if (
+                claim
+                and claim.get("worker") == self.worker
+                and S.claim_is_live(claim, now)
+                and self._claim_slot(snap, held_id) == slot
+            ):
+                return held_id
         return None
 
     @staticmethod
@@ -1336,7 +1375,7 @@ class TrackerService:
 
         def apply(snap: S.Snapshot, op_id: str) -> dict[str, Any]:
             now = datetime.now(timezone.utc)
-            held = self._held_claim(snap, now)
+            held = self._held_claim(snap, now, item_id)
             if held is not None and held != item_id:
                 raise _multiple_claims(worker, held)
             self._check_take_readiness(snap, item_id, now)
@@ -1436,7 +1475,7 @@ class TrackerService:
         def apply(snap: S.Snapshot, op_id: str) -> dict[str, Any]:
             nonlocal pre_claim, seen_claim
             now = datetime.now(timezone.utc)
-            held = self._held_claim(snap, now)
+            held = self._held_claim(snap, now, item_id)
             if held is not None and held != item_id:
                 raise _multiple_claims(worker, held)
             if item_id not in snap.index["items"]:
