@@ -12,6 +12,34 @@ adheres to [Semantic Versioning](https://semver.org/).
   plus a fresh index-installed CLI/MCP smoke check. Installation guidance
   distinguishes upgradeable index requirements from immutable wheel pins;
   schema cutovers require an explicit upgraded-or-stopped client inventory.
+- Renamed the product from `todo-db` to `tractable` and set the version to
+  1.0.0 ([ADR 0013](docs/adr/0013-rename-to-tractable.md)). The distribution
+  and import package are `tractable`; the commands are `tractable` and
+  `tractable-mcp`; the MCP server name is `tractable`; the batch capability
+  key is `tractable_batch`; the instructions resource is
+  `tractable://instructions` and the prompt is `tractable/workflow`; project
+  config lives in `.tractable/config.json`; environment variables are
+  `TRACTABLE_*`; the cache root is `~/.cache/tractable-state`; new state
+  commits are authored by `tractable <tractable@localhost>`. The old names are
+  not read as fallbacks. State schema 4, the `todo-state` branch default, the
+  `Todo-*` commit trailers, the `todo(op): summary` subject and every MCP tool
+  name and input schema are unchanged.
+
+### Upgrade from todo-db
+
+- Install `tractable[mcp]`. The `todo-db` tool is a separate distribution and
+  stays installed until you remove it.
+- Rename `.todo-db/` to `.tractable/` in each project.
+- Rename `TODO_DB_*` environment variables to `TRACTABLE_*`.
+- Change the MCP registration server name and command to `tractable` and
+  `tractable-mcp`.
+- Skills that gate on the batch capability use `tractable_batch`.
+- The cache root is new (`~/.cache/tractable-state`), so the first offline
+  start needs one online read to fill it.
+- State, branch and commit trailers are unchanged, so no state migration is
+  needed, and `todo-db` 0.14.0/0.15.0 and `tractable` can write the same
+  branch.
+- Restart running MCP servers: they keep the version they started with.
 
 ## [0.15.0] - 2026-11-02
 

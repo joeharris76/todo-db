@@ -14,12 +14,12 @@ silently.
 
 Both gates below are mandatory for a release whose diff touches any of:
 
-- the publication protocol in `src/todo_db/git_backend.py`, including tip
+- the publication protocol in `src/tractable/git_backend.py`, including tip
   resolution, conflict classification, retries, and reconciliation;
-- the state schema, validation, or claim rules in `src/todo_db/store.py`;
-- the agent surface in `src/todo_db/service.py` or `src/todo_db/mcp/`;
-- the floor CLI in `src/todo_db/cli.py` or migration in
-  `src/todo_db/migrate.py`.
+- the state schema, validation, or claim rules in `src/tractable/store.py`;
+- the agent surface in `src/tractable/service.py` or `src/tractable/mcp/`;
+- the floor CLI in `src/tractable/cli.py` or migration in
+  `src/tractable/migrate.py`.
 
 Releases that touch none of these are not subject to the downstream consumer
 gate. When in doubt, run both; they cost minutes.
@@ -32,8 +32,8 @@ write and an offline read:
 
 ```sh
 git init --bare /tmp/gate-state.git
-todo-db bootstrap --state-remote /tmp/gate-state.git
-todo-db validate --state-remote /tmp/gate-state.git
+tractable bootstrap --state-remote /tmp/gate-state.git
+tractable validate --state-remote /tmp/gate-state.git
 ```
 
 then drive one `take` → `finish` round through the MCP server. A gate that
@@ -46,10 +46,10 @@ Upgrade one real downstream consumer to the release candidate and run one real
 floor-CLI command against its state branch, in a session that was not specially
 prepared for the test.
 
-"One real command" means a surviving `todo-db` floor verb that does real work
-— `todo-db validate`, `todo-db list`, or `todo-db recover --limit 5` — not
+"One real command" means a surviving `tractable` floor verb that does real work
+— `tractable validate`, `tractable list`, or `tractable recover --limit 5` — not
 `--help` and not `--version`. Agent verbs live only on the MCP server
-(`todo-db-mcp`), which is not a release gate — the gate exercises the floor
+(`tractable-mcp`), which is not a release gate — the gate exercises the floor
 CLI a bootstrap or CI step actually runs.
 
 ## Ordering
@@ -69,7 +69,7 @@ not publish to PyPI: that takes an explicit opt-in run on the same tag, after
 the GitHub release exists:
 
 ```sh
-gh workflow run publish.yml --repo joeharris76/todo-db --ref "v$VERSION" -f publish_pypi=true
+gh workflow run publish.yml --repo joeharris76/tractable --ref "v$VERSION" -f publish_pypi=true
 ```
 
 That run rebuilds the tag and requires the rebuilt wheel, sdist and
@@ -77,7 +77,7 @@ That run rebuilds the tag and requires the rebuilt wheel, sdist and
 uploads anything, then uploads the release assets themselves, so PyPI
 receives exactly the released bytes. `distribution-verify` then fails unless
 the run is on a `v*` tag and both the build and the upload succeeded, checks
-that the files PyPI serves match, and installs `todo-db[mcp]==$VERSION` from
+that the files PyPI serves match, and installs `tractable[mcp]==$VERSION` from
 PyPI in a fresh environment, without cache, local configuration or inherited
 tracker variables. Both entry points must report the release version and a
 real MCP initialize/tools-list exchange must succeed against a scratch remote.
@@ -102,14 +102,14 @@ completed distribution. Only after it passes:
    checkout installation once with an index requirement:
 
    ```sh
-   uv tool install --force --default-index https://pypi.org/simple 'todo-db[mcp]>=0.14.0'
-   todo-db --version
-   todo-db-mcp --version
+   uv tool install --force --default-index https://pypi.org/simple 'tractable[mcp]>=1.0.0'
+   tractable --version
+   tractable-mcp --version
    ```
 
-   Later releases use `uv tool upgrade todo-db`. Check that the saved requirement
-   in `$(uv tool dir)/todo-db/uv-receipt.toml` retains the `mcp` extra and no
-   direct `todo-db` URL. A direct wheel URL stays pinned even when newer GitHub
+   Later releases use `uv tool upgrade tractable`. Check that the saved requirement
+   in `$(uv tool dir)/tractable/uv-receipt.toml` retains the `mcp` extra and no
+   direct `tractable` URL. A direct wheel URL stays pinned even when newer GitHub
    releases exist. A checkout install copies the tree at install time.
 
    For rollback, use the immutable-wheel command in the README with the saved
@@ -136,8 +136,8 @@ completed distribution. Only after it passes:
 ## PyPI publisher setup and recovery
 
 The PyPI account owner registers a pending trusted publisher at
-<https://pypi.org/manage/account/publishing/> with project `todo-db`, GitHub
-owner `joeharris76`, repository `todo-db`, workflow filename `publish.yml`,
+<https://pypi.org/manage/account/publishing/> with project `tractable`, GitHub
+owner `joeharris76`, repository `tractable`, workflow filename `publish.yml`,
 and environment `pypi`. If the project already exists, verify ownership and
 configure its active publisher instead. Match these fields to the workflow;
 never claim an unrelated project, add a persistent API token, or remove

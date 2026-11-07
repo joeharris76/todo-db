@@ -2,7 +2,7 @@
 
 ## Supported Versions
 
-`todo-db` supports security fixes on:
+`tractable` supports security fixes on:
 
 | Version | Supported |
 | ------- | --------- |
@@ -13,7 +13,7 @@
 
 Do not open public GitHub issues for suspected security vulnerabilities.
 
-Please report vulnerabilities via [GitHub Private Vulnerability Reporting](https://github.com/joeharris76/todo-db/security/advisories/new) or by email to `security@joeharris.dev`.
+Please report vulnerabilities via [GitHub Private Vulnerability Reporting](https://github.com/joeharris76/tractable/security/advisories/new) or by email to `security@joeharris.dev`.
 
 Please include:
 1. Description of the vulnerability and potential security impact.
@@ -25,7 +25,7 @@ We will acknowledge receipt within 72 hours and provide status updates as triage
 
 ## Security Scope
 
-Security-critical areas in `todo-db` include:
+Security-critical areas in `tractable` include:
 - **State-branch confidentiality**: the state branch shares its repository's
   access and visibility. Never publish credentials, tokens, or connection
   strings to it, and never assume a separate branch is private.
