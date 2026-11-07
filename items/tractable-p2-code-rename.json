@@ -6,7 +6,7 @@
     "The MCP snapshot diff is reviewed: only product strings change; tool names and input schemas are identical.",
     "No behaviour change beyond names; no schema or trailer change."
   ],
-  "context": "Guardrails (ADR 0013): no state-schema change, data migration, or trailer change; the 1.0.0 release is the rename only; each project switches runtime, config dir, MCP registration, skill mirrors and scripts in one change; the old todo-db tool stays installed until decommission; never create a repository named joeharris76/todo-db; historical records (CHANGELOG entries, earlier ADRs, consumer evidence, exports) are not rewritten.",
+  "context": "Guardrails (ADR 0013): no state-schema change, data migration, or trailer change; the 1.0.0 release is the rename only; each project switches runtime, config dir, MCP registration, skill mirrors and scripts in one change; the old todo-db tool stays installed until decommission; never create a repository named joeharris76/todo-db; historical records (CHANGELOG entries, earlier ADRs, consumer evidence, exports) are not rewritten.\n\n2026-11-06: Done. PR https://github.com/joeharris76/tractable/pull/69 merged (merge commit e531cbf). Renamed per ADR 0013: package/import tractable, commands tractable and tractable-mcp, MCP server name, tractable_batch, tractable://instructions and tractable/workflow, .tractable/config.json (remote joeharris76/tractable.git), TRACTABLE_* variables, cache root/refs/id file, new-commit identity tractable <tractable@localhost>, TodoDBError -> TractableError; version 1.0.0, classifier Production/Stable; CI, publish.yml (pypi.org/p/tractable), audit-monitor, verify_index_release; README, operations docs, SECURITY, CHANGELOG with an upgrade-from-todo-db note and rollback guidance. Kept: todo-state, Todo-* trailers, todo(op) subject, schema 4, tool names and input schemas (snapshot diff only in the get_instructions description), skill name todo, historical records. Skill pin advanced to skill-sync-skills cc8adf5 and mirrors regenerated in the same PR, so this repo switched registration, config and skill text together. Evidence: 446 tests passed; ruff and actionlint clean; uv build produced tractable-1.0.0-py3-none-any.whl and tractable-1.0.0.tar.gz; CI green on 3.10 and 3.13. New permanent test reads and extends a state bundle written by the real todo-db 0.15.0 wheel (validate counts, list, take/finish, recovery by Todo-Op-Id after new writes, identities). Throwaway mixed-writer run: 0.15.0 and tractable alternated writes on one remote and read each other's commits; validate from both matched. Independent review: MERGE; optional findings addressed. Known window: until tractable is installed (Phase 5), agents in this repo stop at the skill preflight; the tracker remains reachable with todo-db-mcp --config .tractable/config.json. Untracked local .todo-db/archive in the main checkout left in place.",
   "description": "Phase 2, one PR in joeharris76/tractable. Move src/todo_db to src/tractable and rewrite imports with a syntax-aware tool (including the dynamic import in git_store.py). Apply the ADR 0013 mapping to pyproject metadata, URLs and scripts, uv.lock, install hint, instructions heading, server name, capability key and BATCH_CAPABILITY, resource and prompt names, config dir, TRACTABLE_* variables, cache root, cache refs and sidecar, and commit author. Move this repo's .todo-db/config.json to .tractable/config.json with the new remote URL; update .mcp.json and .claude/settings.local.json. Update CI, publish.yml (pypi.org/p/tractable), audit-monitor.yml, verify_index_release.py, README, current operations docs, and the MCP snapshot. Version 1.0.0; PyPI classifier Production/Stable; CHANGELOG 1.0.0 entry with an upgrade note (config dir, variables, MCP registration, restarts).",
   "sessions": [
     {
@@ -25,6 +25,14 @@
       "op": "take",
       "op_id": "c8e9f0c5f4074e419b795d4eeb29aee0",
       "session_id": "f187904a4af9487facb49df3a561296d"
+    },
+    {
+      "actor": "joe-tractable-rename",
+      "at": "2026-11-07T01:18:11Z",
+      "client": "mcp",
+      "op": "update",
+      "op_id": "58536f07c09e4d859257f0f0a7f56ed4",
+      "session_id": "f635a27c11e9438ba90afd1e17e66a50"
     }
   ]
 }
