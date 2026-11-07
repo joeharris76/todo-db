@@ -1,7 +1,7 @@
 """Stable error types exposed by the tractable public API."""
 
 
-class TodoDBError(Exception):
+class TractableError(Exception):
     """Base class for expected tracker errors."""
 
     def __init__(self, message: str, *, code: str | None = None, recovery: list[str] | None = None) -> None:
@@ -10,7 +10,7 @@ class TodoDBError(Exception):
         self.recovery = list(recovery or [])
 
 
-class TodoError(TodoDBError):
+class TodoError(TractableError):
     """Raised when a TODO lifecycle or validation rule is violated."""
 
 

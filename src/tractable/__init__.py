@@ -20,7 +20,7 @@ from .errors import (
     E_SCHEMA,
     E_STATE,
     E_UNKNOWN,
-    TodoDBError,
+    TractableError,
     TodoError,
 )
 from .git_backend import ReconcileResult, StateRef, bootstrap, history, mutate, new_op_id, read, reconcile
@@ -50,7 +50,7 @@ __all__ = [
     "TOOL_VERSION",
     "ReconcileResult",
     "StateRef",
-    "TodoDBError",
+    "TractableError",
     "TodoError",
     "TrackerService",
     "bootstrap",

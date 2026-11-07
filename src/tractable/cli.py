@@ -18,7 +18,7 @@ from uuid import uuid4
 
 from . import TOOL_VERSION, git_backend
 from . import store as S
-from .errors import TodoDBError
+from .errors import TractableError
 from .migrate import migrate_file
 from .service import TrackerService
 
@@ -43,7 +43,7 @@ def _ref_from(args: argparse.Namespace) -> tuple[git_backend.StateRef, Path | No
             config=args.config,
             repo_root=args.repo_root,
         )
-    except TodoDBError as exc:
+    except TractableError as exc:
         raise exc
 
 
@@ -82,7 +82,7 @@ def _preflight_write_config(args: argparse.Namespace, ref: git_backend.StateRef)
     # A non-directory at the config location (or an unwritable tree) must
     # refuse here, before the branch is created — never strand state.
     if parent.exists() and not parent.is_dir():
-        raise TodoDBError(f"cannot write config: {parent} exists and is not a directory")
+        raise TractableError(f"cannot write config: {parent} exists and is not a directory")
     path = parent / git_backend.CONFIG_FILENAME
     payload = {"state_remote": ref.remote, "state_branch": ref.branch}
     if path.is_file():
@@ -91,7 +91,7 @@ def _preflight_write_config(args: argparse.Namespace, ref: git_backend.StateRef)
         except ValueError:
             existing = None
         if existing != payload:
-            raise TodoDBError(f"refusing to overwrite differing config at {path}")
+            raise TractableError(f"refusing to overwrite differing config at {path}")
         return None
     return path
 
@@ -100,13 +100,13 @@ def cmd_bootstrap(args: argparse.Namespace) -> int:
     try:
         ref, _ = _ref_from(args)
         config_path = _preflight_write_config(args, ref)
-    except TodoDBError as exc:
+    except TractableError as exc:
         # Bootstrap may be the very first command: allow explicit remote
         # without a config file even when discovery finds nothing.
         return _fail(str(exc))
     try:
         sha = git_backend.bootstrap(ref, worker=_worker(args), session=_session_id(args))
-    except TodoDBError as exc:
+    except TractableError as exc:
         return _fail(str(exc))
     if config_path is not None:
         config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -122,7 +122,7 @@ def cmd_validate(args: argparse.Namespace) -> int:
     try:
         ref, _ = _ref_from(args)
         outcome = git_backend.read(ref, _cache(args))
-    except TodoDBError as exc:
+    except TractableError as exc:
         return _fail(str(exc))
     now = datetime.now(timezone.utc)
     by_status: dict[str, int] = {}
@@ -164,7 +164,7 @@ def cmd_migrate(args: argparse.Namespace) -> int:
             session=_session_id(args),
             cache_dir=_cache(args),
         )
-    except TodoDBError as exc:
+    except TractableError as exc:
         return _fail(str(exc))
     _emit(report)
     return EXIT_OK
@@ -173,13 +173,13 @@ def cmd_migrate(args: argparse.Namespace) -> int:
 def cmd_recover(args: argparse.Namespace) -> int:
     try:
         ref, _ = _ref_from(args)
-    except TodoDBError as exc:
+    except TractableError as exc:
         return _fail(str(exc))
     try:
         if args.op_id:
             try:
                 result = git_backend.reconcile(ref, args.op_id, cache_dir=_cache(args))
-            except TodoDBError as exc:
+            except TractableError as exc:
                 return _fail(str(exc))
             if result.state == "applied":
                 _emit({"op_id": args.op_id, "rev": result.sha, "applied": True})
@@ -203,7 +203,7 @@ def cmd_recover(args: argparse.Namespace) -> int:
             return EXIT_OK
         _emit({"history": git_backend.history(ref, limit=args.limit, cache_dir=_cache(args))})
         return EXIT_OK
-    except TodoDBError as exc:
+    except TractableError as exc:
         return _fail(str(exc))
 
 
@@ -216,7 +216,7 @@ def _read_session_id(args: argparse.Namespace) -> str | None:
     """
     try:
         return _session_id(args)
-    except TodoDBError:
+    except TractableError:
         return None
 
 
@@ -231,7 +231,7 @@ def cmd_list(args: argparse.Namespace) -> int:
             status=args.status, priority=args.priority, text=args.text,
             ready_only=args.ready, limit=args.limit, cursor=args.cursor,
         )
-    except TodoDBError as exc:
+    except TractableError as exc:
         return _fail(str(exc))
     _emit(env)
     return EXIT_OK if env.get("ok") else EXIT_ERROR
@@ -245,7 +245,7 @@ def cmd_show(args: argparse.Namespace) -> int:
             session_id=_read_session_id(args), client_name="cli",
         )
         env = svc.show_item(args.id, field=args.field, offset=args.offset, budget=args.budget, rev=args.rev)
-    except TodoDBError as exc:
+    except TractableError as exc:
         return _fail(str(exc))
     _emit(env)
     return EXIT_OK if env.get("ok") else EXIT_ERROR
@@ -258,7 +258,7 @@ def cmd_cache_prune(args: argparse.Namespace) -> int:
     aliases: dict[str, str] = {}
     try:
         ref, _ = _ref_from(args)
-    except TodoDBError:
+    except TractableError:
         ref = None
     if ref is not None:
         # A local remote's store is keyed by its resolved path, so its legacy
@@ -279,7 +279,7 @@ def cmd_batch_show(args: argparse.Namespace) -> int:
             session_id=_read_session_id(args), client_name="cli",
         )
         env = svc.show_batch(args.batch_id, field=args.field, offset=args.offset, budget=args.budget, rev=args.rev)
-    except TodoDBError as exc:
+    except TractableError as exc:
         return _fail(str(exc))
     _emit(env)
     return EXIT_OK if env.get("ok") else EXIT_ERROR
@@ -387,7 +387,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         return args.func(args)
-    except TodoDBError as exc:
+    except TractableError as exc:
         return _fail(str(exc))
 
 

@@ -16,7 +16,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
 from .. import TOOL_VERSION
-from ..errors import E_OFFLINE, TodoDBError, TodoError
+from ..errors import E_OFFLINE, TractableError, TodoError
 from .identity import Identity, PrincipalHolder, resolve_identity
 from .instructions import render_instructions
 from .target import ResolvedTarget, resolve_target
@@ -98,7 +98,7 @@ def startup_check(target: ResolvedTarget) -> None:
     timeout = STARTUP_PROBE_TIMEOUT_S if cached is not None else GIT_TIMEOUT_S
     try:
         tip = ls_remote_tip(target.state_ref, timeout=timeout)
-    except TodoDBError as exc:
+    except TractableError as exc:
         if cached is not None and getattr(exc, "code", None) == E_OFFLINE:
             LOG.warning(
                 "state remote unreachable (%s); starting offline from cached revision %s, "
@@ -186,13 +186,13 @@ def main(argv: list[str] | None = None) -> int:
         startup_check(launch.target)
         LOG.info("startup state check passed (read-only, no bootstrap)")
         server = build_server(launch)
-    except (TodoDBError, TodoError, OSError, ValueError) as exc:
+    except (TractableError, TodoError, OSError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
     try:
         server.run("stdio")
-    except (TodoDBError, OSError, ValueError) as exc:
+    except (TractableError, OSError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     return 0
