@@ -11,10 +11,10 @@ import mcp.types as types
 import pytest
 from mcp.shared.memory import create_connected_server_and_client_session as connect
 
-from todo_db.git_backend import StateRef, bootstrap, redact_remote
-from todo_db.mcp.instructions import INSTRUCTIONS, render_instructions
-from todo_db.mcp.server import build_parser, build_server, resolve_launch_config
-from todo_db.mcp.target import ResolvedTarget
+from tractable.git_backend import StateRef, bootstrap, redact_remote
+from tractable.mcp.instructions import INSTRUCTIONS, render_instructions
+from tractable.mcp.server import build_parser, build_server, resolve_launch_config
+from tractable.mcp.target import ResolvedTarget
 
 TOKEN = "ghp_secret_token_value"
 
@@ -49,9 +49,9 @@ def _target(source: str, remote: str = "https://github.com/BenchBox-dev/BenchBox
     ("source", "config", "expected"),
     [
         ("flag", None, "launch flags"),
-        ("env", None, "environment (TODO_DB_STATE_REMOTE)"),
-        ("config", Path("/work/.todo-db/config.json"), "config file /work/.todo-db/config.json"),
-        ("discovery", Path("/work/.todo-db/config.json"), "discovered config file /work/.todo-db/config.json"),
+        ("env", None, "environment (TRACTABLE_STATE_REMOTE)"),
+        ("config", Path("/work/.tractable/config.json"), "config file /work/.tractable/config.json"),
+        ("discovery", Path("/work/.tractable/config.json"), "discovered config file /work/.tractable/config.json"),
     ],
 )
 def test_render_instructions_names_store_and_resolution(source: str, config: Path | None, expected: str) -> None:
@@ -129,10 +129,10 @@ def test_get_instructions_resource_and_prompt_report_the_store(tmp_path: Path) -
         tool = _result(await session.call_tool("get_instructions", {}))
         assert isinstance(tool, str) and "## Bound store" in tool and "BenchBox-state.git" in tool
 
-        resource = await session.read_resource("todo://instructions")
+        resource = await session.read_resource("tractable://instructions")
         assert "BenchBox-state.git" in resource.contents[0].text
 
-        prompt = await session.get_prompt("todo/workflow")
+        prompt = await session.get_prompt("tractable/workflow")
         assert "BenchBox-state.git" in prompt.messages[0].content.text
 
     _run(tmp_path, scenario)
@@ -150,14 +150,14 @@ def test_expect_store_accepts_a_fragment_ignoring_case(tmp_path: Path) -> None:
 
 def test_expect_store_refuses_another_project_with_a_gate_error(tmp_path: Path) -> None:
     async def scenario(server, session) -> None:
-        outcome = _result(await session.call_tool("get_instructions", {"expect_store": "todo-db"}))
+        outcome = _result(await session.call_tool("get_instructions", {"expect_store": "tractable"}))
 
         assert isinstance(outcome, dict)
         assert outcome["ok"] is False
         assert outcome["code"] == "E_STATE"
         assert outcome["kind"] == "gate"
         assert "BenchBox-state.git" in outcome["error"]
-        assert "'todo-db'" in outcome["error"]
+        assert "'tractable'" in outcome["error"]
         assert outcome["recovery"]
 
     _run(tmp_path, scenario)
@@ -185,22 +185,22 @@ def test_expect_store_must_not_be_blank(tmp_path: Path) -> None:
 
 
 def test_reported_resolution_source_follows_the_real_resolver(tmp_path: Path, monkeypatch) -> None:
-    from todo_db.mcp.target import resolve_target
+    from tractable.mcp.target import resolve_target
 
-    for name in ("TODO_DB_STATE_REMOTE", "TODO_DB_STATE_BRANCH", "TODO_DB_CONFIG"):
+    for name in ("TRACTABLE_STATE_REMOTE", "TRACTABLE_STATE_BRANCH", "TRACTABLE_CONFIG"):
         monkeypatch.delenv(name, raising=False)
-    config = tmp_path / ".todo-db" / "config.json"
+    config = tmp_path / ".tractable" / "config.json"
     config.parent.mkdir()
     config.write_text(json.dumps({"state_remote": "https://example.test/o/r.git", "state_branch": "tracker"}))
 
     flag = resolve_target(state_remote="https://example.test/flag.git", cache_dir=str(tmp_path))
     explicit = resolve_target(config=str(config), cache_dir=str(tmp_path))
     discovered = resolve_target(repo_root=str(tmp_path), cache_dir=str(tmp_path))
-    monkeypatch.setenv("TODO_DB_STATE_REMOTE", "https://example.test/env.git")
+    monkeypatch.setenv("TRACTABLE_STATE_REMOTE", "https://example.test/env.git")
     environment = resolve_target(cache_dir=str(tmp_path))
 
     assert "launch flags" in render_instructions(flag)
     assert f"Resolved from: config file {config.resolve()}" in render_instructions(explicit)
     assert f"Resolved from: discovered config file {config.resolve()}" in render_instructions(discovered)
     assert "Branch: tracker" in render_instructions(discovered)
-    assert "environment (TODO_DB_STATE_REMOTE)" in render_instructions(environment)
+    assert "environment (TRACTABLE_STATE_REMOTE)" in render_instructions(environment)

@@ -9,7 +9,7 @@ from __future__ import annotations
 from .target import ResolvedTarget
 
 INSTRUCTIONS = """\
-# todo-db agent workflow
+# tractable agent workflow
 
 Drive the tracker through MCP tools. Mutations return a compact
 acknowledgement; lists return brief rows (id/title/priority/status).

@@ -3,8 +3,8 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "todo-db"
-version = "0.15.0"
+name = "tractable"
+version = "1.0.0"
 description = "A JSON/Git TODO tracker for coding agents"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -16,9 +16,9 @@ keywords = ["todo", "tracker", "git", "json", "mcp"]
 dependencies = [
     "tomli>=2; python_version < '3.11'",
 ]
-urls = { Homepage = "https://github.com/joeharris76/todo-db", Repository = "https://github.com/joeharris76/todo-db", Issues = "https://github.com/joeharris76/todo-db/issues", Changelog = "https://github.com/joeharris76/todo-db/blob/main/CHANGELOG.md" }
+urls = { Homepage = "https://github.com/joeharris76/tractable", Repository = "https://github.com/joeharris76/tractable", Issues = "https://github.com/joeharris76/tractable/issues", Changelog = "https://github.com/joeharris76/tractable/blob/main/CHANGELOG.md" }
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 5 - Production/Stable",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
@@ -31,11 +31,11 @@ classifiers = [
 ]
 
 [project.scripts]
-todo-db = "todo_db.cli:main"
-todo-db-mcp = "todo_db.mcp.server:main"
+tractable = "tractable.cli:main"
+tractable-mcp = "tractable.mcp.server:main"
 # `todo` alias is opt-in to avoid colliding with an existing `todo` binary on
 # `uv tool install` (the name is generic). Enable it locally with:
-#   ln -s "$(which todo-db)" ~/.local/bin/todo   # or: alias todo=todo-db
+#   ln -s "$(which tractable)" ~/.local/bin/todo   # or: alias todo=tractable
 
 [project.optional-dependencies]
 mcp = [
@@ -43,7 +43,7 @@ mcp = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/todo_db"]
+packages = ["src/tractable"]
 
 [tool.hatch.build.targets.sdist]
 include = [

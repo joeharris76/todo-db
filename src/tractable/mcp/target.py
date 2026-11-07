@@ -1,7 +1,7 @@
 """State target resolution, pinned for the server process lifetime.
 
-Resolution order lives in :func:`todo_db.git_backend.resolve_ref`
-(flag > env > ``.todo-db/config.json`` discovery); this module adds the
+Resolution order lives in :func:`tractable.git_backend.resolve_ref`
+(flag > env > ``.tractable/config.json`` discovery); this module adds the
 state cache directory (one Git object store per state branch). Task state lives outside the code worktree.
 """
 
@@ -26,7 +26,7 @@ class ResolvedTarget:
         if self.source == "flag":
             return "launch flags (--state-remote)"
         if self.source == "env":
-            return "environment (TODO_DB_STATE_REMOTE)"
+            return "environment (TRACTABLE_STATE_REMOTE)"
         label = "config file" if self.source == "config" else "discovered config file"
         return f"{label} {self.config_path}" if self.config_path else label
 
@@ -53,9 +53,9 @@ def resolve_target(
         config=config,
         repo_root=repo_root,
     )
-    if state_remote or os.environ.get("TODO_DB_STATE_REMOTE"):
+    if state_remote or os.environ.get("TRACTABLE_STATE_REMOTE"):
         source = "flag" if state_remote else "env"
-    elif config or os.environ.get("TODO_DB_CONFIG"):
+    elif config or os.environ.get("TRACTABLE_CONFIG"):
         source = "config"
     else:
         source = "discovery"

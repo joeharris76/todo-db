@@ -6,10 +6,10 @@ import json
 import subprocess
 from pathlib import Path
 
-from todo_db import git_backend
-from todo_db.cli import _session_id, main
-from todo_db.git_backend import StateRef
-from todo_db.service import TrackerService
+from tractable import git_backend
+from tractable.cli import _session_id, main
+from tractable.git_backend import StateRef
+from tractable.service import TrackerService
 
 
 def _remote(tmp_path: Path, name: str = "state.git") -> str:
@@ -27,7 +27,7 @@ def test_bootstrap_validate_and_collision(tmp_path: Path, capsys) -> None:
     assert main(["bootstrap", *_args(remote), "--write-config", "--repo-root", str(tmp_path)]) == 0
     out = json.loads(capsys.readouterr().out)
     assert out["branch"] == "todo-state"
-    config = json.loads((tmp_path / ".todo-db" / "config.json").read_text())
+    config = json.loads((tmp_path / ".tractable" / "config.json").read_text())
     assert config["state_remote"] == remote
     assert main(["validate", *_args(remote)]) == 0
     report = json.loads(capsys.readouterr().out)
@@ -40,7 +40,7 @@ def test_bootstrap_config_blocked_before_branch(tmp_path: Path, capsys) -> None:
     remote = _remote(tmp_path)
     root = tmp_path / "proj"
     root.mkdir()
-    (root / ".todo-db").write_text("a regular file, not a directory")
+    (root / ".tractable").write_text("a regular file, not a directory")
     before = git_backend.ls_remote_tip(StateRef(remote=remote, branch="todo-state"))
     assert main(["bootstrap", *_args(remote), "--write-config", "--repo-root", str(root)]) == 2
     capsys.readouterr()
@@ -51,12 +51,12 @@ def test_bootstrap_config_blocked_before_branch(tmp_path: Path, capsys) -> None:
 def test_session_id_prefers_flag_then_environment_then_ephemeral(monkeypatch) -> None:
     from argparse import Namespace
 
-    monkeypatch.delenv("TODO_DB_SESSION", raising=False)
+    monkeypatch.delenv("TRACTABLE_SESSION", raising=False)
     assert _session_id(Namespace(session="flag-session")) == "flag-session"
-    monkeypatch.setenv("TODO_DB_SESSION", "env-session")
+    monkeypatch.setenv("TRACTABLE_SESSION", "env-session")
     assert _session_id(Namespace(session="flag-session")) == "flag-session"
     assert _session_id(Namespace(session=None)) == "env-session"
-    monkeypatch.delenv("TODO_DB_SESSION", raising=False)
+    monkeypatch.delenv("TRACTABLE_SESSION", raising=False)
     first = _session_id(Namespace(session=None))
     second = _session_id(Namespace(session=None))
     assert len(first) == 32 and len(second) == 32 and first != second
@@ -65,14 +65,14 @@ def test_session_id_prefers_flag_then_environment_then_ephemeral(monkeypatch) ->
 def test_forged_session_identity_is_rejected(monkeypatch) -> None:
     from argparse import Namespace
 
-    from todo_db.errors import TodoError
+    from tractable.errors import TodoError
 
     import pytest
 
-    monkeypatch.delenv("TODO_DB_SESSION", raising=False)
+    monkeypatch.delenv("TRACTABLE_SESSION", raising=False)
     with pytest.raises(TodoError):
         _session_id(Namespace(session="bad\nline"))
-    monkeypatch.setenv("TODO_DB_SESSION", "bad\nline")
+    monkeypatch.setenv("TRACTABLE_SESSION", "bad\nline")
     with pytest.raises(TodoError):
         _session_id(Namespace(session=None))
 
@@ -81,7 +81,7 @@ def test_reads_tolerate_broken_session_config(tmp_path: Path, capsys, monkeypatc
     remote = _remote(tmp_path)
     assert main(["bootstrap", *_args(remote)]) == 0
     capsys.readouterr()
-    monkeypatch.setenv("TODO_DB_SESSION", "bad\nline")
+    monkeypatch.setenv("TRACTABLE_SESSION", "bad\nline")
     assert main(["list", *_args(remote)]) == 0
     assert json.loads(capsys.readouterr().out)["ok"]
 
@@ -112,7 +112,7 @@ def test_recover_op_id_and_restore(tmp_path: Path, capsys) -> None:
     capsys.readouterr()
     ref = StateRef(remote=remote, branch="todo-state")
     op_id = git_backend.new_op_id()
-    from todo_db import store as S
+    from tractable import store as S
 
     outcome = git_backend.mutate(
         ref, op="create", summary="seed", worker="w", op_id=op_id,
@@ -232,7 +232,7 @@ def test_cache_prune_reports_and_validate_hints_at_legacy_cache(tmp_path: Path, 
     legacy = git_backend._ns_dir(cache, StateRef(remote=remote, branch="todo-state"))
     (legacy / "revs" / ("a" * 40)).mkdir(parents=True)
     assert main(["validate", *_args(remote), "--cache-dir", str(cache)]) == 0
-    assert "todo-db cache prune" in capsys.readouterr().err
+    assert "tractable cache prune" in capsys.readouterr().err
     assert main(["cache", "prune", "--cache-dir", str(cache), "--dry-run"]) == 0
     assert json.loads(capsys.readouterr().out)["dry_run"] is True
     assert main(["cache", "prune", "--cache-dir", str(cache)]) == 0

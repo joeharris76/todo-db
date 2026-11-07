@@ -10,9 +10,9 @@ import anyio
 import mcp.types as types
 from mcp.shared.memory import create_connected_server_and_client_session as connect
 
-from todo_db.git_backend import StateRef, bootstrap
-from todo_db.mcp.server import build_parser, build_server, resolve_launch_config
-from todo_db.service import TrackerService
+from tractable.git_backend import StateRef, bootstrap
+from tractable.mcp.server import build_parser, build_server, resolve_launch_config
+from tractable.service import TrackerService
 
 FAR = "2099-01-01T00:00:00Z"
 

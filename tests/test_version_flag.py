@@ -8,19 +8,19 @@ import sys
 
 import pytest
 
-from todo_db import TOOL_VERSION
-from todo_db import cli
-from todo_db.mcp import server
+from tractable import TOOL_VERSION
+from tractable import cli
+from tractable.mcp import server
 
 
 @pytest.mark.parametrize(
     ("main", "prog"),
-    [(cli.main, "todo-db"), (server.main, "todo-db-mcp")],
+    [(cli.main, "tractable"), (server.main, "tractable-mcp")],
 )
 def test_version_flag_exits_zero_without_config(main, prog, tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
-    assert not (tmp_path / ".todo-db").exists()
-    for var in ("TODO_DB_STATE_REMOTE", "TODO_DB_STATE_BRANCH", "TODO_DB_CONFIG"):
+    assert not (tmp_path / ".tractable").exists()
+    for var in ("TRACTABLE_STATE_REMOTE", "TRACTABLE_STATE_BRANCH", "TRACTABLE_CONFIG"):
         monkeypatch.delenv(var, raising=False)
     with pytest.raises(SystemExit) as exc:
         main(["--version"])
@@ -28,7 +28,7 @@ def test_version_flag_exits_zero_without_config(main, prog, tmp_path, monkeypatc
     assert capsys.readouterr().out == f"{prog} {TOOL_VERSION}\n"
 
 
-@pytest.mark.parametrize("prog", ["todo-db", "todo-db-mcp"])
+@pytest.mark.parametrize("prog", ["tractable", "tractable-mcp"])
 def test_version_flag_console_script(prog, tmp_path):
     exe = shutil.which(prog, path=str(__import__("pathlib").Path(sys.executable).parent))
     if exe is None:

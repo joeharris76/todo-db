@@ -105,9 +105,9 @@ def _multiple_claims(worker: str, held: str) -> TodoError:
         code=E_MULTIPLE_CLAIMS,
         recovery=[
             f"finish or release {held!r} with the generation its take returned",
-            "every agent on one todo-db-mcp server shares this worker identity, so a claim held by a "
+            "every agent on one tractable-mcp server shares this worker identity, so a claim held by a "
             "sibling agent blocks this one",
-            "to claim concurrently, run each agent on its own todo-db-mcp server with a distinct --actor",
+            "to claim concurrently, run each agent on its own tractable-mcp server with a distinct --actor",
         ],
     )
 

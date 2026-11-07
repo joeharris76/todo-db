@@ -10,7 +10,7 @@ unpacked objects exceed :data:`SLACK_CAP_BYTES`.
 
 Many processes share one store. The design relies only on what Git
 already makes safe for concurrent use: objects are written atomically and
-are immutable, fetches land on a per-call ref under ``refs/todo-db/in/``
+are immutable, fetches land on a per-call ref under ``refs/tractable/in/``
 (no configured remote, so nothing races on remote-tracking refs), and the
 one shared ref, :data:`TIP_REF`, moves only by compare-and-swap. A shared
 ``flock`` guards ordinary use so that a rebuild of a damaged store
@@ -40,9 +40,9 @@ except ImportError:  # pragma: no cover - non-POSIX platforms
     fcntl = None  # type: ignore[assignment]
 
 STORE_DIRNAME = "store.git"
-TIP_REF = "refs/todo-db/tip"
-INCOMING_PREFIX = "refs/todo-db/in/"
-STORE_ID_FILE = "todo-db-id"
+TIP_REF = "refs/tractable/tip"
+INCOMING_PREFIX = "refs/tractable/in/"
+STORE_ID_FILE = "tractable-id"
 LOCK_NAME = "store.lock"
 MAINTENANCE_LOCK_NAME = "maintenance.lock"
 MAINTENANCE_STAMP_NAME = "maintenance.stamp"
@@ -57,13 +57,13 @@ STALE_STAGING_S = 3600
 MIN_GIT_VERSION = (2, 28)
 PRUNE_EXPIRE = "1.hour.ago"
 STALE_INCOMING_S = 3600
-MAINTENANCE_ENV = "TODO_DB_STORE_MAINTENANCE"  # background (default) | inline | off
+MAINTENANCE_ENV = "TRACTABLE_STORE_MAINTENANCE"  # background (default) | inline | off
 
 COMMIT_IDENTITY = {
-    "GIT_AUTHOR_NAME": "todo-db",
-    "GIT_AUTHOR_EMAIL": "todo-db@localhost",
-    "GIT_COMMITTER_NAME": "todo-db",
-    "GIT_COMMITTER_EMAIL": "todo-db@localhost",
+    "GIT_AUTHOR_NAME": "tractable",
+    "GIT_AUTHOR_EMAIL": "tractable@localhost",
+    "GIT_COMMITTER_NAME": "tractable",
+    "GIT_COMMITTER_EMAIL": "tractable@localhost",
 }
 
 # Store-local settings win over the user's global config: no automatic gc
@@ -831,4 +831,4 @@ def _main(argv: list[str]) -> int:
 
 # Detached maintenance runs through -c: `python -m` would re-import this
 # module, which the package has already imported.
-MAINTAIN_ENTRY = "import sys; from todo_db.git_store import _main; sys.exit(_main(sys.argv[1:]))"
+MAINTAIN_ENTRY = "import sys; from tractable.git_store import _main; sys.exit(_main(sys.argv[1:]))"

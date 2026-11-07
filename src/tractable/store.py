@@ -24,14 +24,14 @@ the renewal path stays observable.
 Ownership plus generation checks protect renew, release, and finish from
 stale writers. Claims are cooperative concurrency controls, not
 authentication against a malicious repository writer: every writer must run
-the publication protocol in :mod:`todo_db.git_backend`, and branch
+the publication protocol in :mod:`tractable.git_backend`, and branch
 rewrites/deletion invalidate its assumptions. Clock assumption: writers'
 clocks are roughly synchronized (minutes); the default TTL is 24h so small
 skew is harmless.
 
 This module is pure (no subprocess, no network): it operates on in-memory
 ``(index, details)`` snapshots plus atomic local-directory IO. Git
-publication lives in :mod:`todo_db.git_backend`.
+publication lives in :mod:`tractable.git_backend`.
 """
 
 from __future__ import annotations

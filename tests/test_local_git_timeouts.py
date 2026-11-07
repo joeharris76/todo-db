@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from todo_db import git_backend
-from todo_db.git_backend import StateRef, bootstrap
-from todo_db.git_store import Store
-from todo_db.service import TrackerService
+from tractable import git_backend
+from tractable.git_backend import StateRef, bootstrap
+from tractable.git_store import Store
+from tractable.service import TrackerService
 
 LOCAL_COMMANDS = (
     "cat-file",

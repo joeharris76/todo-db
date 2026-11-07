@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from todo_db import git_backend
-from todo_db import store as S
-from todo_db.errors import TodoError
+from tractable import git_backend
+from tractable import store as S
+from tractable.errors import TodoError
 
 
 def _remote(tmp_path: Path) -> git_backend.StateRef:
@@ -383,7 +383,7 @@ def test_state_operations_never_clone_the_whole_remote(tmp_path: Path, monkeypat
             raise AssertionError(f"state operations must not clone: git {args}")
         if args and args[0] == "fetch":
             # Name the one branch: a bare fetch (or --all) pulls every ref.
-            assert args[-1].startswith(f"+refs/heads/{ref.branch}:refs/todo-db/in/"), args
+            assert args[-1].startswith(f"+refs/heads/{ref.branch}:refs/tractable/in/"), args
             assert "--all" not in args, args
         return real_git(args, cwd, timeout, **kw)
 

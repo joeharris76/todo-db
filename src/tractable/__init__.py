@@ -26,7 +26,7 @@ from .errors import (
 from .git_backend import ReconcileResult, StateRef, bootstrap, history, mutate, new_op_id, read, reconcile
 from .service import TrackerService, count_tokens
 
-TOOL_VERSION = version("todo-db")
+TOOL_VERSION = version("tractable")
 BATCH_CAPABILITY = store.batch_capability(TOOL_VERSION)
 
 __all__ = [

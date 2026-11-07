@@ -85,12 +85,12 @@ FIRST_FETCH_TIMEOUT_S = 300
 OP_ID_TRAILER = "Todo-Op-Id"
 SESSION_TRAILER = "Todo-Session"
 
-CONFIG_DIRNAME = ".todo-db"
+CONFIG_DIRNAME = ".tractable"
 CONFIG_FILENAME = "config.json"
 
 
 def load_state_config(path: str | Path) -> dict[str, Any]:
-    """Load a ``.todo-db/config.json`` carrying ``state_remote``/``state_branch``."""
+    """Load a ``.tractable/config.json`` carrying ``state_remote``/``state_branch``."""
     import json as _json
 
     path = Path(path)
@@ -144,14 +144,14 @@ def resolve_ref(
     """
     import os as _os
 
-    remote = remote or _os.environ.get("TODO_DB_STATE_REMOTE")
-    branch = branch or _os.environ.get("TODO_DB_STATE_BRANCH")
-    config_ref = config or _os.environ.get("TODO_DB_CONFIG")
+    remote = remote or _os.environ.get("TRACTABLE_STATE_REMOTE")
+    branch = branch or _os.environ.get("TRACTABLE_STATE_BRANCH")
+    config_ref = config or _os.environ.get("TRACTABLE_CONFIG")
     config_path: Path | None = None
     if config_ref:
         config_path = Path(config_ref).expanduser().resolve()
         if not config_path.is_file():
-            raise TodoError(f"--config/TODO_DB_CONFIG points to a missing file: {config_path}")
+            raise TodoError(f"--config/TRACTABLE_CONFIG points to a missing file: {config_path}")
         payload = load_state_config(config_path)
         remote = remote or payload.get("state_remote")
         branch = branch or payload.get("state_branch")
@@ -166,8 +166,8 @@ def resolve_ref(
             (Path(repo_root).expanduser() if repo_root else Path.cwd()) / CONFIG_DIRNAME / CONFIG_FILENAME
         )
         raise TodoError(
-            "no state remote: pass --state-remote, set TODO_DB_STATE_REMOTE, "
-            f"or add state_remote to {hint} (scaffold one with `todo-db bootstrap --write-config`)"
+            "no state remote: pass --state-remote, set TRACTABLE_STATE_REMOTE, "
+            f"or add state_remote to {hint} (scaffold one with `tractable bootstrap --write-config`)"
         )
     return StateRef(remote=remote, branch=branch or STATE_BRANCH_FALLBACK), config_path
 
@@ -313,13 +313,13 @@ def _ns_dir(cache_dir: str | Path, ref: StateRef) -> Path:
 
 
 def default_cache_dir() -> Path:
-    """``TODO_DB_CACHE_DIR``, else ``~/.cache/todo-db-state``."""
+    """``TRACTABLE_CACHE_DIR``, else ``~/.cache/tractable-state``."""
     import os as _os
 
-    override = _os.environ.get("TODO_DB_CACHE_DIR")
+    override = _os.environ.get("TRACTABLE_CACHE_DIR")
     if override:
         return Path(override).expanduser()
-    return Path.home() / ".cache" / "todo-db-state"
+    return Path.home() / ".cache" / "tractable-state"
 
 
 def _remote_location(ref: StateRef) -> str:
@@ -447,7 +447,7 @@ def _commit_message(op: str, summary: str, op_id: str, worker: str, session: str
     if session:
         # Trailer values are single lines by construction: the service
         # validates session IDs before they reach this point, and the
-        # CLI validates its --session/TODO_DB_SESSION the same way.
+        # CLI validates its --session/TRACTABLE_SESSION the same way.
         safe = " ".join(str(session).split())
         body += f"{SESSION_TRAILER}: {safe}\n"
     return f"{subject}\n\n{body}"
@@ -724,7 +724,7 @@ def _offline_cached(store: Store, ref: StateRef, cache_dir: str | Path) -> ReadO
     except StoreError:
         pass
     # Caches written before the object store keep revs/<last> until
-    # `todo-db cache prune` removes them; serve that until the store has a
+    # `tractable cache prune` removes them; serve that until the store has a
     # tip, re-reading the pointer once in case it moved mid-read.
     legacy = _ns_dir(cache_dir, ref)
     for attempt in (1, 2):
@@ -902,8 +902,8 @@ def bootstrap(ref: StateRef, *, worker: str = "bootstrap", session: str | None =
     tmp = Path(tempfile.mkdtemp(prefix="todo-bootstrap-"))
     try:
         _git_ok(["init", "-b", "main"], tmp)
-        _git(["config", "user.name", "todo-db"], tmp)
-        _git(["config", "user.email", "todo-db@localhost"], tmp)
+        _git(["config", "user.name", "tractable"], tmp)
+        _git(["config", "user.email", "tractable@localhost"], tmp)
         _save(tmp, Snapshot(index=empty_index(), details={}))
         _git_ok(["add", "--", INDEX_NAME, ITEMS_NAME], tmp)
         _git_ok(

@@ -10,12 +10,12 @@ import anyio
 import mcp.types as types
 from mcp.shared.memory import create_connected_server_and_client_session as connect
 
-from todo_db import count_tokens
-from todo_db import store
-from todo_db.git_backend import StateRef, bootstrap
-from todo_db.mcp.instructions import INSTRUCTIONS
-from todo_db.mcp.server import build_parser, build_server, resolve_launch_config
-from todo_db.service import MAX_BYTES
+from tractable import count_tokens
+from tractable import store
+from tractable.git_backend import StateRef, bootstrap
+from tractable.mcp.instructions import INSTRUCTIONS
+from tractable.mcp.server import build_parser, build_server, resolve_launch_config
+from tractable.service import MAX_BYTES
 
 
 def _launch(tmp_path: Path, actor: str | None = "w1", session: str | None = None):
@@ -103,7 +103,7 @@ def test_registered_batch_contract_is_public_over_mcp(tmp_path: Path) -> None:
         server = build_server(_launch(tmp_path))
         async with connect(server, client_info=types.Implementation(name="w1", version="0")) as session:
             registered = _payload(await session.call_tool("register_batch", {
-                "batch_id": "batch-1", "project_id": "todo-db", "repository": str(repo),
+                "batch_id": "batch-1", "project_id": "tractable", "repository": str(repo),
                 "owner_generation": "1" * 32, "integration_branch": "main",
                 "integration_worktree": str(repo), "start_head": revision,
                 "members": ["a"], "scope": scope, "scope_hash": store.scope_digest(scope),
@@ -137,7 +137,7 @@ def test_public_mcp_prepared_delivery_and_finish(tmp_path: Path) -> None:
         server = build_server(_launch(tmp_path))
         async with connect(server, client_info=types.Implementation(name="w1", version="0")) as session:
             registered = _payload(await session.call_tool("register_batch", {
-                "batch_id": "delivery", "project_id": "todo-db", "repository": str(repo),
+                "batch_id": "delivery", "project_id": "tractable", "repository": str(repo),
                 "owner_generation": "1" * 32, "integration_branch": "main",
                 "integration_worktree": str(repo), "start_head": base, "members": ["a"],
                 "scope": scope, "scope_hash": store.scope_digest(scope),
@@ -192,7 +192,7 @@ def test_public_mcp_prepared_delivery_and_finish(tmp_path: Path) -> None:
             }))["ok"]
             malformed = _payload(await session.call_tool("finish", {
                 "id": "a", "generation": generation, "final_evidence": {
-                    "status": "passed", "batch_id": "delivery", "project_id": "todo-db",
+                    "status": "passed", "batch_id": "delivery", "project_id": "tractable",
                     "repository": str(repo), "tree_worktree": str(repo), "tree_revision": ahead,
                     "integration_branch": "main", "integration_head": ahead,
                     "scope_hash": store.scope_digest(scope), "suite": "combined", "clean": True,
@@ -201,7 +201,7 @@ def test_public_mcp_prepared_delivery_and_finish(tmp_path: Path) -> None:
             assert not malformed["ok"] and malformed["code"] == "E_FINAL_EVIDENCE"
             finished = _payload(await session.call_tool("finish", {
                 "id": "a", "generation": generation, "final_evidence": {
-                    "status": "passed", "batch_id": "delivery", "project_id": "todo-db",
+                    "status": "passed", "batch_id": "delivery", "project_id": "tractable",
                     "repository": str(repo), "tree_worktree": str(repo), "tree_revision": ahead,
                     "integration_branch": "main", "integration_head": ahead,
                     "scope_hash": store.scope_digest(scope), "member_heads": {"a": ahead},

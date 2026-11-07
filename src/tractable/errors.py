@@ -1,4 +1,4 @@
-"""Stable error types exposed by the todo-db public API."""
+"""Stable error types exposed by the tractable public API."""
 
 
 class TodoDBError(Exception):

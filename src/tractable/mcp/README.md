@@ -1,4 +1,4 @@
-# `todo_db.mcp` — the MCP stdio server
+# `tractable.mcp` — the MCP stdio server
 
 This package is the agent interface for the tracker (ADR 0007). It builds the
 server, resolves the state branch target, pins the worker identity, and
@@ -9,12 +9,12 @@ registers eighteen task tools plus `get_instructions` over shared service operat
 | File | Purpose |
 | --- | --- |
 | `__init__.py` | Package doc and a `main` shim. |
-| `__main__.py` | `python -m todo_db.mcp` → `server.main()`. |
+| `__main__.py` | `python -m tractable.mcp` → `server.main()`. |
 | `server.py` | Launch args, stderr logging, `LaunchConfig`, `build_server`, lifespan, `startup_check`, `main`. |
 | `target.py` | State target resolution (flag > env > upward discovery), pinned for the process lifetime. |
-| `identity.py` | Worker identity (`--actor` → `TODO_DB_ACTOR` → instance-scoped MCP fallback) and the per-process session id. |
+| `identity.py` | Worker identity (`--actor` → `TRACTABLE_ACTOR` → instance-scoped MCP fallback) and the per-process session id. |
 | `tools.py` | The eighteen task tools: `list_items`, `show_item`, `create_item`, `register_batch`, `update_item`, `take`, `takeover`, `release`, `prepare`, `bind_batch_pr`, `abort_batch`, `finish`, `renew`, `drop`, `list_deferrals`, `defer`, `promote_deferral`, `dismiss_deferral`. |
-| `resources.py` | `todo://instructions` resource, `get_instructions` tool, and `todo/workflow` prompt — all the same text. |
+| `resources.py` | `tractable://instructions` resource, `get_instructions` tool, and `tractable/workflow` prompt — all the same text. |
 | `instructions.py` | The workflow protocol text. |
 
 ## Tools
@@ -27,7 +27,7 @@ The first `register_batch` call that upgrades a state branch to schema 4 needs
 `confirm_schema3_cutover=true` (ADR 0012). Set it only after stopping or
 upgrading every older process with access to that branch and releasing other
 workers' claims; older clients refuse a schema-4 store with `E_SCHEMA`.
-`initialize` advertises `capabilities.experimental.todo_db_batch` (version 2,
+`initialize` advertises `capabilities.experimental.tractable_batch` (version 2,
 receipt schema `prepared_work_v2`) so consumers can refuse a runtime without
 batch v2.
 

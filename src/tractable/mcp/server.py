@@ -21,11 +21,11 @@ from .identity import Identity, PrincipalHolder, resolve_identity
 from .instructions import render_instructions
 from .target import ResolvedTarget, resolve_target
 
-LOG = logging.getLogger("todo_db.mcp")
+LOG = logging.getLogger("tractable.mcp")
 
 STARTUP_PROBE_TIMEOUT_S = 10
 
-_INSTALL_HINT = "the mcp extra is required: install todo-db with the [mcp] extra"
+_INSTALL_HINT = "the mcp extra is required: install tractable with the [mcp] extra"
 _LOG_LEVELS = ("debug", "info", "warning", "error")
 
 
@@ -38,16 +38,16 @@ class LaunchConfig:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="todo-db-mcp",
+        prog="tractable-mcp",
         description="MCP stdio server for the JSON/Git TODO tracker: the agent interface.",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {TOOL_VERSION}")
-    parser.add_argument("--config", help="path to a .todo-db/config.json (overrides discovery)")
+    parser.add_argument("--config", help="path to a .tractable/config.json (overrides discovery)")
     parser.add_argument("--state-remote", help="Git URL or path of the state remote")
     parser.add_argument("--state-branch", help="state branch (default: todo-state)")
-    parser.add_argument("--cache-dir", help="local state cache (default: ~/.cache/todo-db-state)")
+    parser.add_argument("--cache-dir", help="local state cache (default: ~/.cache/tractable-state)")
     parser.add_argument("--repo-root", help="project root for config discovery (default: cwd)")
-    parser.add_argument("--actor", help="explicit worker identity (else TODO_DB_ACTOR, else derived at initialize)")
+    parser.add_argument("--actor", help="explicit worker identity (else TRACTABLE_ACTOR, else derived at initialize)")
     parser.add_argument(
         "--session",
         help="fallback-identity restart key (default: per-process uuid4 hex)",
@@ -59,7 +59,7 @@ def build_parser() -> argparse.ArgumentParser:
 def configure_logging(level: str) -> None:
     """Structured logging to stderr only -- stdout carries JSON-RPC framing."""
 
-    root = logging.getLogger("todo_db")
+    root = logging.getLogger("tractable")
     for handler in list(root.handlers):
         root.removeHandler(handler)
     handler = logging.StreamHandler(stream=sys.stderr)
@@ -110,7 +110,7 @@ def startup_check(target: ResolvedTarget) -> None:
     if tip is None:
         raise TodoError(
             f"state branch {target.state_ref.branch!r} does not exist on "
-            f"{target.state_ref.display_remote!r}; run `todo-db bootstrap` first",
+            f"{target.state_ref.display_remote!r}; run `tractable bootstrap` first",
             code="E_STATE",
         )
 
@@ -120,7 +120,7 @@ async def _lifespan(server: "FastMCP", launch: LaunchConfig, principal: Principa
     ident = launch.identity
     LOG.info("session id: %s", ident.session_id)
     if principal.pending:
-        LOG.info("principal: pending (no --actor/TODO_DB_ACTOR; derived at initialize)")
+        LOG.info("principal: pending (no --actor/TRACTABLE_ACTOR; derived at initialize)")
     else:
         LOG.info("principal: %s", principal.principal)
     LOG.info("target: %s", launch.target.describe())
@@ -145,7 +145,7 @@ def build_server(launch: LaunchConfig) -> "FastMCP":  # noqa: F821
             yield ctx
 
     server = FastMCP(
-        name="todo-db",
+        name="tractable",
         instructions=render_instructions(launch.target, launch.identity.actor),
         lifespan=lifespan,
     )
@@ -162,7 +162,7 @@ def build_server(launch: LaunchConfig) -> "FastMCP":  # noqa: F821
         from .. import BATCH_CAPABILITY
 
         experimental = dict(kwargs.pop("experimental_capabilities", None) or {})
-        experimental["todo_db_batch"] = BATCH_CAPABILITY
+        experimental["tractable_batch"] = BATCH_CAPABILITY
         return original_options(*args, experimental_capabilities=experimental, **kwargs)
 
     server._mcp_server.create_initialization_options = initialization_options
