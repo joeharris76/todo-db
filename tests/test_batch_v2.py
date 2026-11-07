@@ -26,7 +26,7 @@ def h(label: str) -> str:
 def _verification(revision: str) -> dict[str, Any]:
     return {
         "status": "passed", "revision": revision, "clean": True,
-        "suite": "bounded", "command": ["pytest", "-q"],
+        "suite": "bounded", "command": ["pytest", "-q"], "review": {"outcome": "clear"},
     }
 
 
@@ -1491,7 +1491,10 @@ def test_recover_over_git_with_relocation_updates_integration_worktree(tmp_path:
         source_base=head_after_a, accepted_head=b_head,
         integration_head=merge_head,
         scope_hash=store.scope_digest(flow.scope),
-        verification={"status": "passed", "clean": True, "suite": "bounded", "command": ["pytest", "-q"], "revision": b_head},
+        verification={
+            "status": "passed", "clean": True, "suite": "bounded", "command": ["pytest", "-q"],
+            "revision": b_head, "review": {"outcome": "clear"},
+        },
     )
     assert prep_b["ok"], prep_b
 

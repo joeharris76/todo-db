@@ -345,7 +345,7 @@
   },
   {
     "name": "finish",
-    "description": "Close a task. Prepared tasks additionally require current final-tree evidence.",
+    "description": "Close a task. Prepared tasks additionally require current final-tree evidence, inline as final_evidence or as final_evidence_path, an absolute path to a JSON file.",
     "inputSchema": {
       "properties": {
         "id": {
@@ -368,6 +368,18 @@
           ],
           "default": null,
           "title": "Final Evidence"
+        },
+        "final_evidence_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Final Evidence Path"
         }
       },
       "required": [
@@ -557,7 +569,7 @@
   },
   {
     "name": "prepare",
-    "description": "Record verified batch-member work without completing the task. source_base must be the batch start head or a recorded integration head.",
+    "description": "Record verified batch-member work without completing the task. source_base must be the batch start head or a recorded integration head. verification may be passed inline or as verification_path, an absolute path to a JSON file holding it.",
     "inputSchema": {
       "properties": {
         "id": {
@@ -601,9 +613,29 @@
           "type": "string"
         },
         "verification": {
-          "additionalProperties": true,
-          "title": "Verification",
-          "type": "object"
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Verification"
+        },
+        "verification_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Verification Path"
         },
         "implementation_dependencies": {
           "anyOf": [
@@ -631,8 +663,7 @@
         "source_base",
         "accepted_head",
         "integration_head",
-        "scope_hash",
-        "verification"
+        "scope_hash"
       ],
       "title": "prepare_toolArguments",
       "type": "object"

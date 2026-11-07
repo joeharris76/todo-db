@@ -1625,6 +1625,11 @@ def op_update(
             raise TodoError("context_append must not be empty", code=E_STATE)
     # An empty string clears the hold, as it clears the other detail fields.
     hold = normalize_not_before(not_before, now) if not_before else None
+    context_only_request = all(
+        value is None
+        for value in (title, priority, description, needs, acceptance, links, status, batch, not_before)
+    )
+    batch_settled = False
     existing_batch = snapshot.details[item_id].get("batch")
     if batch is not None and isinstance(existing_batch, dict) and batch != existing_batch:
         raise TodoError(
@@ -1635,7 +1640,12 @@ def op_update(
     if isinstance(existing_batch, dict):
         batch_record = snapshot.index.get("batches", {}).get(existing_batch.get("batch_id"))
         if isinstance(batch_record, dict) and batch_record.get("lifecycle", "active") != "active":
-            raise TodoError(f"batch {existing_batch['batch_id']!r} is no longer active", code=E_STATE)
+            if not context_only_request:
+                raise TodoError(
+                    f"batch {existing_batch['batch_id']!r} is no longer active", code=E_STATE,
+                    recovery=["only context and context_append may be edited after the batch is no longer active"],
+                )
+            batch_settled = True
     entry = items[item_id]
     previous = json.loads(json.dumps(entry))
     previous_details = json.loads(json.dumps(snapshot.details))
@@ -1715,7 +1725,7 @@ def op_update(
     try:
         context_only = set(changed) <= {"context"}
         closeout = _closeout_started(snapshot, item_id)
-        if changed and "prepared" in detail and entry["status"] == "done":
+        if changed and "prepared" in detail and entry["status"] == "done" and not batch_settled:
             raise TodoError(
                 f"cannot edit completed prepared batch member {item_id!r}",
                 code=E_STATE,
@@ -2472,6 +2482,45 @@ def op_release(
     return {"id": item_id, "status": entry["status"]}
 
 
+REVIEW_OUTCOMES = ("clear", "not-reviewed", "override")
+_CONTROL_CHARS_RE = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _validate_prepare_verification(item_id: str, verification: Any, revision: str) -> dict[str, Any]:
+    if not isinstance(verification, dict):
+        raise TodoError(f"prepare for {item_id!r} requires a verification object", code=E_STATE)
+    if verification.get("status") != "passed":
+        raise TodoError(f"prepare for {item_id!r} requires passed verification", code=E_STATE)
+    if verification.get("revision") != revision:
+        raise TodoError(f"prepare for {item_id!r} verification does not match source_revision", code=E_STATE)
+    if verification.get("clean") is not True:
+        raise TodoError(f"prepare for {item_id!r} requires a clean source checkout", code=E_STATE)
+    suite = verification.get("suite")
+    if not isinstance(suite, str) or not suite.strip():
+        raise TodoError(f"prepare for {item_id!r} requires a bounded verification suite", code=E_STATE)
+    command = verification.get("command")
+    if (
+        not isinstance(command, list)
+        or not command
+        or any(not isinstance(part, str) or not part.strip() or _CONTROL_CHARS_RE.search(part) for part in command)
+        or any(character.isspace() for character in command[0])
+    ):
+        raise TodoError(
+            f"prepare for {item_id!r} requires a verification command that is a non-empty argv list of "
+            "single-line strings starting with an executable name",
+            code=E_STATE,
+            recovery=["pass the complete argv list the verification ran, one string per argument"],
+        )
+    review = verification.get("review")
+    if not isinstance(review, dict) or review.get("outcome") not in REVIEW_OUTCOMES:
+        raise TodoError(
+            f"prepare for {item_id!r} requires verification.review.outcome to be one of {', '.join(REVIEW_OUTCOMES)}",
+            code=E_STATE,
+            recovery=["run the review for the exact accepted head and pass its outcome in verification.review"],
+        )
+    return verification
+
+
 def op_prepare(
     snapshot: Snapshot,
     item_id: str,
@@ -2521,6 +2570,7 @@ def op_prepare(
         raise TodoError("prepared accepted head must identify the exact source revision", code=E_STATE)
     if not isinstance(scope_hash, str) or not SCOPE_HASH_RE.fullmatch(scope_hash):
         raise TodoError("scope_hash must be a full SHA-256 digest", code=E_STATE)
+    verification = _validate_prepare_verification(item_id, verification, source_revision)
     changed_files = sorted(set(changed_files))
     deps = list(implementation_dependencies)
     if len(set(deps)) != len(deps) or any(dep not in entry.get("needs", []) for dep in deps):

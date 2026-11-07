@@ -95,8 +95,10 @@ revision.
 - `E_OPEN_DEFERRALS` -- open deferrals block finish. Promote or dismiss
   the named ids, then retry.
 - `E_MULTIPLE_CLAIMS` -- you already hold a claim. Finish or release it.
-  Every agent on one server shares that one claim slot; for concurrent
-  agents run one server per agent with a distinct --actor.
+  A worker holds one claim outside any batch and one per active batch, so
+  leaders of different batches on one server do not block each other.
+  Agents on one server that work the same batch (or no batch) share that
+  slot; run one server per agent with a distinct --actor to claim concurrently.
 - `E_CLAIM_STALE` -- wrong generation or another holder. Show and retry.
 - `E_BATCH_OWNER` -- only the batch owner claims its members. Ask the named
   owner, or recover the batch if it is dead.

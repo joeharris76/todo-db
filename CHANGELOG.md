@@ -6,6 +6,29 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `prepare` accepts `verification_path` and `finish` accepts
+  `final_evidence_path`, absolute paths to JSON files, so large mapped-test
+  payloads need not be pasted inline.
+
+### Changed
+
+- A worker holds one live claim outside any batch and one per active batch, so
+  leaders of different batches on one server no longer block each other with
+  `E_MULTIPLE_CLAIMS`. Agents working the same batch still share its slot.
+- `prepare` refuses a receipt whose `verification.review.outcome` is not
+  `clear`, `not-reviewed`, or `override`, or whose `verification.command` is
+  not a non-empty argv list of single-line strings starting with an executable
+  name. `verification` is now optional in the tool schema when
+  `verification_path` is given.
+
+### Fixed
+
+- `update_item` accepts `context` and `context_append` on members of a batch
+  that is no longer active, including done members with receipts; other edits
+  are still refused.
+
 ## [1.0.0] - 2026-11-06
 
 ### Changed

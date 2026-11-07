@@ -180,6 +180,7 @@ def test_public_mcp_prepared_delivery_and_finish(tmp_path: Path) -> None:
                 "scope_hash": store.scope_digest(scope), "verification": {
                     "status": "passed", "revision": ahead, "clean": True, "suite": "bounded",
                     "command": ["uv", "run", "--", "pytest", "tests/test_batch_delivery.py", "-q"],
+                    "review": {"outcome": "clear"},
                 },
             }))
             assert prepared["ok"] and prepared["data"]["status"] == "open", prepared
@@ -415,6 +416,8 @@ def test_startup_schema_cost_is_small(tmp_path: Path) -> None:
             # revisable bind_batch_pr arguments (ADR 0012): 4,744 -> 5,614.
             # Guarded checkout relocation adds expected_integration_worktree/head
             # and integration_worktree to recover_batch_owner: 5,614 -> 5,745.
-            assert tokens <= 5760, tokens
+            # The per-batch claim guidance and the verification_path and
+            # final_evidence_path arguments: 5,745 -> 5,907.
+            assert tokens <= 5920, tokens
 
     anyio.run(go)
