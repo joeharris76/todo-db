@@ -1022,17 +1022,12 @@
       "title": "Rename the GitHub repository and local checkout to tractable"
     },
     "tractable-p2-code-rename": {
-      "claim": {
-        "expires_at": "2026-11-08T00:49:53Z",
-        "generation": "19666064d3144c9b9b6f943905942a40",
-        "renewals": 0,
-        "worker": "joe-tractable-rename"
-      },
+      "claim": null,
       "needs": [
         "tractable-p1-github-repo-rename"
       ],
       "priority": "high",
-      "status": "active",
+      "status": "done",
       "title": "Rename the code, configuration and docs to tractable 1.0.0"
     },
     "tractable-p3-release-1-0-0": {
