@@ -4,7 +4,7 @@
     "A search of skills/ for todo-db, todo_db, TODO_DB and ~/.todo-db returns nothing outside an explicit \"formerly todo-db\" note.",
     "The skill still states the fail-closed preflight and the human-only E_SCHEMA rule unchanged."
   ],
-  "context": "Guardrails (ADR 0013): no state-schema change, data migration, or trailer change; the 1.0.0 release is the rename only; each project switches runtime, config dir, MCP registration, skill mirrors and scripts in one change; the old todo-db tool stays installed until decommission; never create a repository named joeharris76/todo-db; historical records (CHANGELOG entries, earlier ADRs, consumer evidence, exports) are not rewritten.",
+  "context": "Guardrails (ADR 0013): no state-schema change, data migration, or trailer change; the 1.0.0 release is the rename only; each project switches runtime, config dir, MCP registration, skill mirrors and scripts in one change; the old todo-db tool stays installed until decommission; never create a repository named joeharris76/todo-db; historical records (CHANGELOG entries, earlier ADRs, consumer evidence, exports) are not rewritten.\n\n2026-11-06: Done. https://github.com/joeharris76/skill-sync-skills/pull/108 squash-merged as cc8adf5. todo skill (SKILL.md 4.0.0 and references) and shared-review-protocol teach tractable: server tractable, commands, .tractable/config.json, TRACTABLE_* variables, tractable_batch, ~/.tractable/finding-drafts/<project-id>/ (SKILL.md and skill.yaml allow-list together), install via uv tool install --default-index https://pypi.org/simple tractable[mcp]>=1.0.0, MCP registration examples matching docs/operations/mcp-clients.md. Version floors collapsed to tractable 1.0.0 or later; fail-closed preflight, expect_store gate, human-only E_SCHEMA and serial fallback kept. tractable added to FORBIDDEN_TRACKER_NAMES. Evidence: python3 -m unittest discover -s tests: 30 tests OK (1 skipped); CI Template gate green; independent review FIX FIRST on registration examples, fixed in 076e02d. Owner's uncommitted edits in the primary clone untouched.",
   "description": "Phase 4, one PR in joeharris76/skill-sync-skills. Rewrite skills/todo (SKILL.md and references): server name tractable, commands, .tractable/config.json, TRACTABLE_* variables, tractable_batch, and collapse version floors to \"tractable 1.0.0 or later (formerly todo-db)\". In shared-review-protocol, change SKILL.md and the skill.yaml portability allow-list to ~/.tractable/finding-drafts/<project-id>/. Add tractable to FORBIDDEN_TRACKER_NAMES. Keep the skill name todo. Do not touch the owner's uncommitted edits in the primary clone; work in a worktree.",
   "sessions": [
     {
@@ -23,6 +23,14 @@
       "op": "take",
       "op_id": "f218b14c3dc34a51b31ce85d0e417e4f",
       "session_id": "f635a27c11e9438ba90afd1e17e66a50"
+    },
+    {
+      "actor": "joe-tractable-rename",
+      "at": "2026-11-07T01:18:17Z",
+      "client": "mcp",
+      "op": "update",
+      "op_id": "e2882fc706554421854ae650d9fd3ec9",
+      "session_id": "7e38d604558b4b64ba6f45347d9ca313"
     }
   ]
 }
