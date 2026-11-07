@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-06
+
 ### Changed
 
 - Release distribution now requires matching build, GitHub, and PyPI artifacts
