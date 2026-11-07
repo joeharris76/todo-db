@@ -4,7 +4,7 @@
     "In a fresh worktree from develop, the project MCP server reports serverInfo tractable 1.0.0, advertises tractable_batch, and `tractable validate` succeeds against BenchBox's tracker.",
     "Search of tracked BenchBox files for functional todo-db identifiers matches only historical records and the _project/todo-db-export directory name."
   ],
-  "context": "Guardrails (ADR 0013): no state-schema change, data migration, or trailer change; the 1.0.0 release is the rename only; each project switches runtime, config dir, MCP registration, skill mirrors and scripts in one change; the old todo-db tool stays installed until decommission; never create a repository named joeharris76/todo-db; historical records (CHANGELOG entries, earlier ADRs, consumer evidence, exports) are not rewritten. Stale BenchBox worktrees keep their old vendored runtime and config and are not edited.",
+  "context": "Guardrails (ADR 0013): no state-schema change, data migration, or trailer change; the 1.0.0 release is the rename only; each project switches runtime, config dir, MCP registration, skill mirrors and scripts in one change; the old todo-db tool stays installed until decommission; never create a repository named joeharris76/todo-db; historical records (CHANGELOG entries, earlier ADRs, consumer evidence, exports) are not rewritten. Stale BenchBox worktrees keep their old vendored runtime and config and are not edited.\n\n2026-11-07: BenchBox switched. Rule PR https://github.com/BenchBox-dev/benchbox/pull/4009 (merged 2343497) lets the comment-policy ratchet accept exactly one declared wheel rename todo-db -> tractable (same vendor dir and provenance; every other wheel verification unchanged), approved by the owner. Switch PR https://github.com/BenchBox-dev/benchbox/pull/4013 squash-merged as a97efb2 after benchbox-oracle SHIP on head 3c0827e and green core: vendored tractable-1.0.0 wheel (sha256 b90c68cd...b8b8, matches the release; rebuilt twice from v1.0.0 identically), pyproject/uv.lock, contract check, .tractable/config.json, .mcp.json and enabledMcpjsonServers, batch_integration and pr_landing (tractable command, tractable_batch), batch-loop support and delivery tests, todo-state-validate workflow, ci.yml clone URL, comment-policy entry, review-capture anchor, AGENTS.md and docs/agent, skill pin cc8adf5 with regenerated mirrors, and batch-rollout-evidence.json updated in place for 1.0.0. Evidence: smoke against the real tracker: serverInfo tractable 1.0.0, tractable_batch v2 schema 4, 22 tools, bound store BenchBox-dev/BenchBox, validate 4,186 items; targeted unit tests 1524 passed; t2 delivery test 4 passed; slow batch-loop e2e 6 passed; comment-policy-check strict 0 violations. Oracle finding D1 (a local claim about a pre-existing urlopen-patching test) was fixed for real: the test now serves SHA256SUMS from a file URL; an earlier owner WITHDRAW adjudication comment did not apply because the finding was never escalated. Follow-up: remove the one-time rename allowance from scripts/check_comment_cleanup_scope.py now that the todo-db wheel is gone from develop.",
   "description": "Phase 6, one BenchBox PR under its full process (worktree, preflight, benchbox-oracle SHIP, arm). Vendor tractable-1.0.0 and update _project/scripts pyproject and uv.lock, todo_state_contract_check.py and its tests; move .todo-db to .tractable and update .gitignore, .mcp.json and enabledMcpjsonServers; update batch_integration.py and pr_landing.py (command and capability key), batch_loop_support.py (commands, capability, strip TRACTABLE* variables), test_batch_skill_delivery.py (server name, metadata, lock, hashes, catalog pin and mirror hashes), the heavy-process sentinel, todo-state-validate.yml and its test, the clone URL in ci.yml, agent_instruction_audit.py and docs/agent/review-protocol.md, AGENTS.md and docs/agent rules, skill-sync.conf pin and mirrors. Add a new rollout-evidence record rather than editing the old one; add a changelog fragment. Decision gate: no registered batch in progress on BenchBox's tracker at merge; the comment-policy external-exclusion change uses the documented trusted-base exemption or owner adjudication, never a weakened ratchet.",
   "sessions": [
     {
@@ -14,6 +14,14 @@
       "op": "create",
       "op_id": "8fa90383b22a455099fc2b1c85c16bdf",
       "session_id": "8201cbb566f146adaf5e79352fedce51"
+    },
+    {
+      "actor": "joe-tractable-rename",
+      "at": "2026-11-07T15:19:27Z",
+      "client": "mcp",
+      "op": "update",
+      "op_id": "8f137119146c47f69a79250c0f26b1d6",
+      "session_id": "a51d9cd9b7e24820ac1a53e27febfd05"
     }
   ]
 }
