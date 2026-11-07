@@ -1041,17 +1041,12 @@
       "title": "Release tractable 1.0.0 to GitHub and PyPI"
     },
     "tractable-p4-skill-catalog": {
-      "claim": {
-        "expires_at": "2026-11-08T01:18:15Z",
-        "generation": "77bcbe5400ae4508b1530e74cb2f0a6a",
-        "renewals": 0,
-        "worker": "joe-tractable-rename"
-      },
+      "claim": null,
       "needs": [
         "tractable-p2-code-rename"
       ],
       "priority": "high",
-      "status": "active",
+      "status": "done",
       "title": "Update the todo skill and review protocol in skill-sync-skills for tractable"
     },
     "tractable-p6-benchbox": {
