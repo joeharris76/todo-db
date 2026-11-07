@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from todo_db import git_backend
-from todo_db.errors import TodoError
-from todo_db.migrate import migrate_export, migrate_file
+from tractable import git_backend
+from tractable.errors import TodoError
+from tractable.migrate import migrate_export, migrate_file
 
 
 def _export(**overrides) -> dict:
@@ -20,7 +20,7 @@ def _export(**overrides) -> dict:
         "tables": {
             "items": [
                 {
-                    "id": "alpha", "title": "Alpha", "worktree": "todo-db",
+                    "id": "alpha", "title": "Alpha", "worktree": "tractable",
                     "priority": "high", "state": "planning", "blocked_reason": None,
                     "category": "feature", "description": "Do alpha",
                     "approach": "Carefully", "claimed_by": None, "claimed_at": None,
@@ -30,7 +30,7 @@ def _export(**overrides) -> dict:
                     "completed_at": None, "completed_pr": None,
                 },
                 {
-                    "id": "beta", "title": "Beta", "worktree": "todo-db",
+                    "id": "beta", "title": "Beta", "worktree": "tractable",
                     "priority": "weird", "state": "active", "blocked_reason": "waiting",
                     "category": "feature", "description": "Do beta",
                     "approach": None, "claimed_by": None, "claimed_at": None,

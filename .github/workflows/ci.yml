@@ -28,9 +28,9 @@ jobs:
       - name: CLI smoke (bootstrap/validate/list on a scratch state branch)
         run: |
           git init --quiet --bare /tmp/ci-state.git
-          uv run todo-db bootstrap --state-remote /tmp/ci-state.git --state-branch todo-state
-          uv run todo-db validate --state-remote /tmp/ci-state.git --state-branch todo-state
-          uv run todo-db list --state-remote /tmp/ci-state.git --state-branch todo-state
+          uv run tractable bootstrap --state-remote /tmp/ci-state.git --state-branch todo-state
+          uv run tractable validate --state-remote /tmp/ci-state.git --state-branch todo-state
+          uv run tractable list --state-remote /tmp/ci-state.git --state-branch todo-state
 
       # Integrity gate: proves the committed skill mirrors under
       # .claude/.codex/.gemini are exactly what skill-sync wrote, checked

@@ -5,8 +5,8 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from todo_db import git_backend
-from todo_db.service import TrackerService
+from tractable import git_backend
+from tractable.service import TrackerService
 
 
 def _svc(tmp_path: Path, worker: str = "w1", name: str = "defer.git") -> TrackerService:

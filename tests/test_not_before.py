@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from todo_db import git_backend, store
-from todo_db.errors import TodoError
-from todo_db.service import TrackerService
+from tractable import git_backend, store
+from tractable.errors import TodoError
+from tractable.service import TrackerService
 
 NOW = datetime(2026, 9, 23, 12, 0, 0, tzinfo=timezone.utc)
 HOLD = "2026-09-24T12:00:00Z"

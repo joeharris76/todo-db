@@ -275,6 +275,6 @@ def migrate_file(
     report["rollback"] = (
         f"migration landed as {outcome.sha}; before adoption, roll back with "
         f"`git push <remote> --delete {ref.branch}` and re-bootstrap; after adoption, "
-        "restore a prior revision with `todo-db recover --restore-rev <sha>` (append-only)."
+        "restore a prior revision with `tractable recover --restore-rev <sha>` (append-only)."
     )
     return report

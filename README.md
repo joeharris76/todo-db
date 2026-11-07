@@ -1,15 +1,17 @@
-# todo-db
+# tractable
 
 JSON/Git TODO tracking for coding agents.
 
-`todo-db` keeps a project's work items as canonical JSON (`index.json`
+Renamed from `todo-db` at 1.0.0; see [ADR 0013](docs/adr/0013-rename-to-tractable.md).
+
+`tractable` keeps a project's work items as canonical JSON (`index.json`
 plus `items/<id>.json`) published on a dedicated Git state branch, and
 exposes them to coding agents through a small MCP server. Claims are
 cooperative and one-winner, so several agents can work the same tracker
 without racing. Git history supplies ordinary change history.
 
-- **Agents** drive the tracker through the MCP server, `todo-db-mcp`.
-- **People and CI** use the `todo-db` CLI for bootstrap, validation,
+- **Agents** drive the tracker through the MCP server, `tractable-mcp`.
+- **People and CI** use the `tractable` CLI for bootstrap, validation,
   migration, and recovery. It deliberately has no planning verbs (see
   [ADR 0007](docs/adr/0007-json-git-tracker.md)).
 
@@ -31,10 +33,10 @@ For global tools, use the package index **after the selected release has passed
 the [distribution gate](docs/operations/release-gates.md#after-the-tag)**:
 
 ```sh
-uv tool install --default-index https://pypi.org/simple 'todo-db[mcp]>=0.14.0'
-uv tool upgrade todo-db
-todo-db --version
-todo-db-mcp --version
+uv tool install --default-index https://pypi.org/simple 'tractable[mcp]>=1.0.0'
+uv tool upgrade tractable
+tractable --version
+tractable-mcp --version
 ```
 
 To replace an existing GitHub-wheel or local-checkout installation, use the
@@ -44,30 +46,35 @@ Restart MCP servers after upgrading; running processes keep their old version.
 An index requirement lets `uv tool upgrade` discover later releases. A direct
 wheel URL is an immutable pin: upgrading it does not discover GitHub releases.
 
+Rolling back from 1.0 to a 0.x release means switching the project back to the
+still-installed `todo-db` tool (its MCP registration and `.todo-db/` config), not
+reinstalling a pre-1.0 wheel through the tractable URL template: pre-1.0 assets are
+named `todo_db-<version>-py3-none-any.whl` and read only `.todo-db/`.
+
 Until PyPI publication is verified, or when an immutable pin is wanted, use a
-wheel from [GitHub Releases](https://github.com/joeharris76/todo-db/releases).
+wheel from [GitHub Releases](https://github.com/joeharris76/tractable/releases).
 Choose a release compatible with the state schema and copy its wheel digest
 from `SHA256SUMS`:
 
 ```sh
-VERSION=0.14.0
+VERSION=1.0.0
 SHA256='<wheel digest from the selected release SHA256SUMS>'
 uv tool install --force \
-  "todo-db[mcp] @ https://github.com/joeharris76/todo-db/releases/download/v$VERSION/todo_db-$VERSION-py3-none-any.whl#sha256=$SHA256"
+  "tractable[mcp] @ https://github.com/joeharris76/tractable/releases/download/v$VERSION/tractable-$VERSION-py3-none-any.whl#sha256=$SHA256"
 ```
 
 From source:
 
 ```sh
-git clone https://github.com/joeharris76/todo-db.git
-cd todo-db && uv sync --extra mcp
+git clone https://github.com/joeharris76/tractable.git
+cd tractable && uv sync --extra mcp
 ```
 
 Optional extras:
 
 | Extra | Adds | Needed for |
 | --- | --- | --- |
-| `mcp` | `mcp` SDK | the agent interface (`todo-db-mcp`) |
+| `mcp` | `mcp` SDK | the agent interface (`tractable-mcp`) |
 
 ## Quickstart
 
@@ -75,11 +82,11 @@ Create the state branch and point the project at it. A human runs, from
 anywhere with Git access to the remote:
 
 ```sh
-todo-db bootstrap --state-remote <git-url-or-path> --write-config
-todo-db validate
+tractable bootstrap --state-remote <git-url-or-path> --write-config
+tractable validate
 ```
 
-`--write-config` writes `.todo-db/config.json` (state remote + branch)
+`--write-config` writes `.tractable/config.json` (state remote + branch)
 in the repo root. **Commit this**; it is the point of the scaffold.
 Bootstrap refuses to overwrite an existing state branch.
 
@@ -170,16 +177,16 @@ that resolves wins:
 
 1. explicit flags (`--state-remote`, `--state-branch`, `--cache-dir`)
 2. environment variables
-3. the discovered `.todo-db/config.json` (walk up from the working
+3. the discovered `.tractable/config.json` (walk up from the working
    directory, like git)
 
 | Variable | Purpose |
 | --- | --- |
-| `TODO_DB_STATE_REMOTE` | State remote (Git URL or path). |
-| `TODO_DB_STATE_BRANCH` | State branch (default `todo-state`). |
-| `TODO_DB_CACHE_DIR` | Local state cache: one Git object store per state branch (default `~/.cache/todo-db-state`). |
-| `TODO_DB_CONFIG` | Path to a config file; overrides discovery. |
-| `TODO_DB_ACTOR` | Worker identity for CLI mutations and the MCP default. |
+| `TRACTABLE_STATE_REMOTE` | State remote (Git URL or path). |
+| `TRACTABLE_STATE_BRANCH` | State branch (default `todo-state`). |
+| `TRACTABLE_CACHE_DIR` | Local state cache: one Git object store per state branch (default `~/.cache/tractable-state`). |
+| `TRACTABLE_CONFIG` | Path to a config file; overrides discovery. |
+| `TRACTABLE_ACTOR` | Worker identity for CLI mutations and the MCP default. |
 
 There is no default remote: resolving without one from some source is a
 hard error. The state branch shares its repository's access and
@@ -190,7 +197,7 @@ The MCP server resolves its store once, at launch, from the working directory
 it was started in unless flags or environment variables decide it, so a
 server started in the wrong directory writes to the wrong tracker. Its
 instructions (the `initialize` handshake, `get_instructions`, the
-`todo://instructions` resource and the `todo/workflow` prompt) therefore
+`tractable://instructions` resource and the `tractable/workflow` prompt) therefore
 begin with a "Bound store" section: the state remote without credentials,
 the branch, how the target was resolved, and the worker identity. Pass the
 project's repository name as `expect_store` to `get_instructions` on the
@@ -210,7 +217,7 @@ first call; a store that does not contain it is refused with a `gate`-kind
   the change; an undetermined outcome is reported as unknown/retryable.
 - Offline reads may serve a cached revision marked stale. Offline
   mutations fail rather than succeeding locally.
-- `todo-db-mcp` starts offline from a cached revision when the state remote
+- `tractable-mcp` starts offline from a cached revision when the state remote
   is unreachable (probing it for at most 10 seconds) and logs a warning;
   `show_item`, `list_items` and `list_deferrals` then report `stale` with
   `cached_rev`. With no cached revision for the state branch it fails at
@@ -219,7 +226,7 @@ first call; a store that does not contain it is refused with a `gate`-kind
   incrementally and repacked in the background, so it grows by about the
   packed size of each commit rather than a full snapshot per revision
   ([ADR 0011](docs/adr/0011-git-object-store-cache.md)). After upgrading
-  from 0.9.x, run `todo-db cache prune` once to remove the old snapshot
+  from 0.9.x, run `tractable cache prune` once to remove the old snapshot
   folders.
 - Bootstrap refuses to overwrite an existing branch. History stays
   append-only; restores land as new commits.
@@ -235,8 +242,8 @@ release, then migrate:
 # With todo-db 0.6.x still installed:
 todo-db export --output legacy-export.json   # old command
 # With 0.7.0, onto a freshly bootstrapped branch:
-todo-db migrate --from-export legacy-export.json --dry-run
-todo-db migrate --from-export legacy-export.json --backup-dir ./migration-backup
+tractable migrate --from-export legacy-export.json --dry-run
+tractable migrate --from-export legacy-export.json --backup-dir ./migration-backup
 ```
 
 Migration preserves IDs, priorities, statuses, dependencies,

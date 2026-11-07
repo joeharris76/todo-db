@@ -1,5 +1,5 @@
 name: Bug report
-description: Report a reproducible defect in todo-db or todo-db-mcp
+description: Report a reproducible defect in tractable or tractable-mcp
 title: "bug: "
 labels: ["bug"]
 body:
@@ -16,7 +16,7 @@ body:
       label: Reproduction Steps
       description: Minimal reproduction steps or command sequence.
       placeholder: |
-        1. Run `todo-db bootstrap --state-remote <scratch-bare-repo>`
+        1. Run `tractable bootstrap --state-remote <scratch-bare-repo>`
         2. Execute ...
         3. Observe error ...
     validations:
@@ -30,7 +30,7 @@ body:
   - type: input
     id: version
     attributes:
-      label: todo-db version
+      label: tractable version
       placeholder: 0.8.0
     validations:
       required: true

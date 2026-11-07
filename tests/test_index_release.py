@@ -17,12 +17,12 @@ isolated_env = _verifier["isolated_env"]
 
 def test_smoke_environment_ignores_caller_configuration(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     for key, value in {
-        "TODO_DB_STATE_BRANCH": "wrong", "GIT_CONFIG_COUNT": "1", "UV_INDEX": "https://example.invalid",
+        "TRACTABLE_STATE_BRANCH": "wrong", "GIT_CONFIG_COUNT": "1", "UV_INDEX": "https://example.invalid",
         "PIP_INDEX_URL": "https://example.invalid", "PYTHONPATH": "/elsewhere", "XDG_CONFIG_HOME": "/elsewhere",
     }.items():
         monkeypatch.setenv(key, value)
     env = isolated_env(tmp_path)
-    for key in ("TODO_DB_STATE_BRANCH", "GIT_CONFIG_COUNT", "UV_INDEX", "PIP_INDEX_URL", "PYTHONPATH"):
+    for key in ("TRACTABLE_STATE_BRANCH", "GIT_CONFIG_COUNT", "UV_INDEX", "PIP_INDEX_URL", "PYTHONPATH"):
         assert key not in env
     assert env["HOME"] == str(tmp_path)
     assert env["XDG_CONFIG_HOME"] == str(tmp_path / ".config")
@@ -36,7 +36,7 @@ def release(tmp_path: Path) -> tuple[Path, dict]:
     index = tmp_path / "index"
     index.mkdir()
     urls = []
-    for filename in ("todo_db-0.14.0-py3-none-any.whl", "todo_db-0.14.0.tar.gz"):
+    for filename in ("tractable-0.14.0-py3-none-any.whl", "tractable-0.14.0.tar.gz"):
         content = filename.encode("utf-8")
         (dist / filename).write_bytes(content)
         published = index / filename

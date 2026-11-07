@@ -2,7 +2,7 @@
 
 ADR 0006 G5 / plan §8.3:
 
-- The principal (``claimed_by``) comes from ``--actor`` -> ``TODO_DB_ACTOR`` ->
+- The principal (``claimed_by``) comes from ``--actor`` -> ``TRACTABLE_ACTOR`` ->
   an instance-scoped value derived from the MCP ``initialize`` client name,
   local user/host, and server session. It is **never** ``default_actor()``.
 - The session id is a per-process ``uuid4().hex`` unless ``--session`` overrides
@@ -105,7 +105,7 @@ class PrincipalHolder:
     ``LaunchConfig`` / :class:`Identity` are frozen, so the actor derived from the
     first ``initialize`` handshake needs somewhere to live. Created at
     ``build_server`` time and captured by the tool closures; the first tool call
-    pins the principal if ``--actor`` / ``TODO_DB_ACTOR`` left it unset.
+    pins the principal if ``--actor`` / ``TRACTABLE_ACTOR`` left it unset.
     """
 
     def __init__(self, identity: Identity) -> None:
@@ -130,7 +130,7 @@ class PrincipalHolder:
 def resolve_identity(actor: str | None, session: str | None) -> Identity:
     """Build the launch-time identity. Does not touch ``default_actor()``."""
 
-    resolved_actor = actor or os.environ.get("TODO_DB_ACTOR") or None
+    resolved_actor = actor or os.environ.get("TRACTABLE_ACTOR") or None
     supplied_session = (session or "").strip()
     if len(supplied_session) > _MAX_SESSION_LEN or any(ord(char) < 32 for char in supplied_session):
         raise ValueError(f"session id must be one line of at most {_MAX_SESSION_LEN} characters")

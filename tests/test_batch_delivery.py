@@ -9,9 +9,9 @@ from pathlib import Path
 
 import pytest
 
-from todo_db import git_backend, store
-from todo_db.errors import TodoError
-from todo_db.service import TrackerService
+from tractable import git_backend, store
+from tractable.errors import TodoError
+from tractable.service import TrackerService
 
 
 def _snap() -> store.Snapshot:
@@ -54,7 +54,7 @@ def _verification(revision: str) -> dict:
 def _register(snap: store.Snapshot, revision: str, members: list[str], scope: dict[str, list[str]] | None = None) -> None:
     scope = scope or {member: [f"{member}/**"] for member in members}
     store.op_register_batch(
-        snap, batch_id="batch-1", project_id="todo-db", repository="repo",
+        snap, batch_id="batch-1", project_id="tractable", repository="repo",
         owner="worker", owner_generation="1" * 32, integration_branch="main",
         integration_worktree="/tmp/integration", start_head=revision,
         members=members, scope=scope, scope_hash=store.scope_digest(scope),
@@ -65,7 +65,7 @@ def _register(snap: store.Snapshot, revision: str, members: list[str], scope: di
 def _final_evidence(snap: store.Snapshot, revision: str, members: list[str]) -> dict:
     head = _bound_head(snap)
     return {
-        "status": "passed", "project_id": "todo-db", "repository": "repo",
+        "status": "passed", "project_id": "tractable", "repository": "repo",
         "batch_id": "batch-1", "tree_worktree": "/tmp/integration", "tree_revision": head,
         "integration_branch": "main", "integration_head": head,
         "scope_hash": snap.index["batches"]["batch-1"]["scope_hash"],
@@ -166,7 +166,7 @@ def test_prepare_without_batch_metadata_returns_todo_error() -> None:
 def test_malformed_final_evidence_returns_todo_error() -> None:
     with pytest.raises(TodoError) as exc:
         store._validate_final_evidence("a", {
-            "status": "passed", "project_id": "todo-db", "repository": "repo",
+            "status": "passed", "project_id": "tractable", "repository": "repo",
             "batch_id": "batch-1", "tree_worktree": "/tmp/integration",
             "tree_revision": "a" * 40, "integration_branch": "main",
             "integration_head": "a" * 40, "scope_hash": "0" * 64,
@@ -365,7 +365,7 @@ def test_service_takeover_by_non_owner_is_reserved_and_never_transfers_ownership
     def seed(snap) -> dict:
         scope = {"m": ["m/**"]}
         store.op_register_batch(
-            snap, batch_id="batch-1", project_id="todo-db", repository="repo",
+            snap, batch_id="batch-1", project_id="tractable", repository="repo",
             owner="victim", owner_generation="2" * 32, integration_branch="main",
             integration_worktree="/tmp/integration", start_head=revision,
             members=["m"], scope=scope, scope_hash=store.scope_digest(scope),
@@ -494,7 +494,7 @@ def test_register_failure_restores_legacy_schema_version() -> None:
     snap.index["schema_version"] = 1
     with pytest.raises(TodoError):
         store.op_register_batch(
-            snap, batch_id="batch-1", project_id="todo-db", repository="repo", owner="worker",
+            snap, batch_id="batch-1", project_id="tractable", repository="repo", owner="worker",
             owner_generation="1" * 32, integration_branch="main", integration_worktree="/tmp/integration",
             start_head="f" * 40, members=["a"], scope={"a": []}, scope_hash="0" * 64,
             delivery_boundary="final-pr", terminal_outcome="merged",
@@ -638,7 +638,7 @@ def test_active_batch_membership_is_unique_and_immutable() -> None:
     assert exc.value.code == "E_STATE"
     with pytest.raises(TodoError) as exc:
         store.op_register_batch(
-            snap, batch_id="batch-2", project_id="todo-db", repository="repo", owner="worker",
+            snap, batch_id="batch-2", project_id="tractable", repository="repo", owner="worker",
             owner_generation="2" * 32, integration_branch="main", integration_worktree="/tmp/integration",
             start_head=revision, members=["a"], scope={"a": ["a/**"]},
             scope_hash=store.scope_digest({"a": ["a/**"]}), delivery_boundary="final-pr",
@@ -653,7 +653,7 @@ def test_schema_three_cutover_requires_explicit_confirmation() -> None:
     revision = "c" * 40
     with pytest.raises(TodoError) as exc:
         store.op_register_batch(
-            snap, batch_id="batch-1", project_id="todo-db", repository="repo", owner="worker",
+            snap, batch_id="batch-1", project_id="tractable", repository="repo", owner="worker",
             owner_generation="1" * 32, integration_branch="main", integration_worktree="/tmp/integration",
             start_head=revision, members=["a"], scope={"a": ["a/**"]},
             scope_hash=store.scope_digest({"a": ["a/**"]}), delivery_boundary="final-pr",
@@ -662,7 +662,7 @@ def test_schema_three_cutover_requires_explicit_confirmation() -> None:
     assert exc.value.code == "E_STATE"
     assert snap.index["schema_version"] == 1
     store.op_register_batch(
-        snap, batch_id="batch-1", project_id="todo-db", repository="repo", owner="worker",
+        snap, batch_id="batch-1", project_id="tractable", repository="repo", owner="worker",
         owner_generation="1" * 32, integration_branch="main", integration_worktree="/tmp/integration",
         start_head=revision, members=["a"], scope={"a": ["a/**"]},
         scope_hash=store.scope_digest({"a": ["a/**"]}), delivery_boundary="final-pr",
@@ -673,14 +673,14 @@ def test_schema_three_cutover_requires_explicit_confirmation() -> None:
 
 def test_real_git_scope_and_repository_identity_checks(tmp_path: Path) -> None:
     source, base = _git_checkout(tmp_path)
-    subprocess.run(["git", "-C", str(source), "remote", "add", "origin", "https://example.invalid/todo-db.git"], check=True)
+    subprocess.run(["git", "-C", str(source), "remote", "add", "origin", "https://example.invalid/tractable.git"], check=True)
     (source / "a").mkdir()
     (source / "a" / "ok.txt").write_text("ok\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(source), "add", "a/ok.txt"], check=True)
     subprocess.run(["git", "-C", str(source), "commit", "--quiet", "-m", "member"], check=True)
     head = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
     assert TrackerService._validate_source_checkout(
-        str(source), head, expected_repository="https://example.invalid/todo-db.git"
+        str(source), head, expected_repository="https://example.invalid/tractable.git"
     ) == str(source.resolve())
     with pytest.raises(TodoError):
         TrackerService._validate_source_checkout(str(source), head, expected_repository="https://example.invalid/other.git")

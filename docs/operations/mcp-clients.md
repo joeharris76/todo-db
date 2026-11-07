@@ -1,11 +1,11 @@
-# MCP client registration for `todo-db`
+# MCP client registration for `tractable`
 
-`todo-db` ships one MCP server, `todo-db-mcp`, installed with the `mcp` extra.
+`tractable` ships one MCP server, `tractable-mcp`, installed with the `mcp` extra.
 One server instance is one worker identity against one state branch. It speaks
 **stdio**; there is no HTTP transport.
 
 ```
-todo-db-mcp [--repo-root <path>] [--config <path>]
+tractable-mcp [--repo-root <path>] [--config <path>]
             [--state-remote <url-or-path>] [--state-branch <name>]
             [--cache-dir <path>] [--actor <worker>]
             [--session <id>] [--log-level {debug,info,warning,error}]
@@ -13,12 +13,12 @@ todo-db-mcp [--repo-root <path>] [--config <path>]
 
 Common flags:
 
-- `--repo-root` — project root for `.todo-db/config.json` discovery. Omit it
+- `--repo-root` — project root for `.tractable/config.json` discovery. Omit it
   when the client launches the server from the project root.
 - `--state-remote` / `--state-branch` — the authoritative state branch.
-  Flags beat `TODO_DB_STATE_REMOTE` / `TODO_DB_STATE_BRANCH`, which beat the
+  Flags beat `TRACTABLE_STATE_REMOTE` / `TRACTABLE_STATE_BRANCH`, which beat the
   discovered config.
-- `--actor` — stable worker identity. It overrides `TODO_DB_ACTOR`; either form
+- `--actor` — stable worker identity. It overrides `TRACTABLE_ACTOR`; either form
   supports ordinary restart/re-adoption. Give concurrent logical workers
   different actors, and never run one actor in two servers at the same time.
 - With no actor, the server derives an instance-scoped identity from
@@ -28,7 +28,7 @@ Common flags:
   value with the same client name and user/host deliberately recreates a
   fallback identity for restart recovery. Do not put one shared value in a
   global registration: concurrent servers would then be the same worker.
-- `--cache-dir` — local state cache, one Git object store per state branch (default `~/.cache/todo-db-state`).
+- `--cache-dir` — local state cache, one Git object store per state branch (default `~/.cache/tractable-state`).
 
 Logging goes to **stderr only**; stdout carries JSON-RPC framing.
 
@@ -57,8 +57,8 @@ Code — only `${VAR}` and `${VAR:-default}` for environment variables.
 ```json
 {
   "mcpServers": {
-    "todo-db": {
-      "command": "todo-db-mcp",
+    "tractable": {
+      "command": "tractable-mcp",
       "args": [],
       "env": {}
     }
@@ -66,20 +66,20 @@ Code — only `${VAR}` and `${VAR:-default}` for environment variables.
 }
 ```
 
-Claude Code surfaces MCP **prompts** as slash commands (`/todo/workflow`). The
-`todo://instructions` resource and the `get_instructions` tool are the portable
+Claude Code surfaces MCP **prompts** as slash commands (`/tractable/workflow`). The
+`tractable://instructions` resource and the `get_instructions` tool are the portable
 fallbacks for clients that do not.
 
 ## Codex
 
 File: `~/.codex/config.toml`, which is user-global. A single
-`[mcp_servers.todo-db]` entry cannot carry a per-project `--repo-root`, so
+`[mcp_servers.tractable]` entry cannot carry a per-project `--repo-root`, so
 Codex resolves the project from its own working directory through the same
-upward `.todo-db/config.json` discovery the CLI uses.
+upward `.tractable/config.json` discovery the CLI uses.
 
 ```toml
-[mcp_servers.todo-db]
-command = "todo-db-mcp"
+[mcp_servers.tractable]
+command = "tractable-mcp"
 args = []
 ```
 
@@ -92,8 +92,8 @@ File: `.cursor/mcp.json`, or Cursor's global MCP settings. Both use an
 ```json
 {
   "mcpServers": {
-    "todo-db": {
-      "command": "todo-db-mcp",
+    "tractable": {
+      "command": "tractable-mcp",
       "args": ["--repo-root", "${workspaceFolder}"]
     }
   }
@@ -107,8 +107,8 @@ File: `~/.codeium/windsurf/mcp_config.json`, or the Windsurf UI.
 ```json
 {
   "mcpServers": {
-    "todo-db": {
-      "command": "todo-db-mcp",
+    "tractable": {
+      "command": "tractable-mcp",
       "args": ["--repo-root", "${workspaceFolder}"]
     }
   }
@@ -123,8 +123,8 @@ MCP servers).
 ```json
 {
   "context_servers": {
-    "todo-db": {
-      "command": "todo-db-mcp",
+    "tractable": {
+      "command": "tractable-mcp",
       "args": ["--repo-root", "${workspaceFolder}"]
     }
   }
@@ -140,8 +140,8 @@ your version's schema.
 {
   "mcpServers": [
     {
-      "name": "todo-db",
-      "command": "todo-db-mcp",
+      "name": "tractable",
+      "command": "tractable-mcp",
       "args": ["--repo-root", "${workspaceFolder}"]
     }
   ]
@@ -152,7 +152,7 @@ your version's schema.
 
 Nothing above is client-specific beyond the file location and the surrounding
 key names. Any client that launches a stdio MCP server works: point it at the
-`todo-db-mcp` command with no arguments, from the project root.
+`tractable-mcp` command with no arguments, from the project root.
 
 A client that does not speak MCP cannot drive the tracker. The floor CLI covers
 bootstrap, validation, migration, and human recovery, but it deliberately has no
@@ -163,7 +163,7 @@ planning or lifecycle verbs — those live only on the MCP surface (ADR 0007).
 Confirm the state branch resolves, using the floor CLI:
 
 ```sh
-todo-db validate
+tractable validate
 ```
 
 Then drive the workflow through the client:

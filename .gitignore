@@ -1,9 +1,9 @@
-# databases stay local; .todo-db/config.json and .todo-db/.gitignore are tracked
-.todo-db/*.sqlite*
-.todo-db/*replica.db*
-.todo-db/*.lock
-.todo-db/archive/
-.todo-db/export/
+# databases stay local; .tractable/config.json and .tractable/.gitignore are tracked
+.tractable/*.sqlite*
+.tractable/*replica.db*
+.tractable/*.lock
+.tractable/archive/
+.tractable/export/
 .todo-batch/
 .venv/
 __pycache__/

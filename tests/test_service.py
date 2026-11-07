@@ -8,10 +8,10 @@ from pathlib import Path
 
 import pytest
 
-from todo_db import git_backend
-from todo_db import store as S
-from todo_db.errors import TodoError
-from todo_db.service import MAX_BYTES, TrackerService, count_tokens
+from tractable import git_backend
+from tractable import store as S
+from tractable.errors import TodoError
+from tractable.service import MAX_BYTES, TrackerService, count_tokens
 
 
 def _svc(tmp_path: Path, worker: str = "w1", name: str = "s.git") -> TrackerService:
@@ -27,7 +27,7 @@ def _size(env: dict) -> int:
 
 
 def test_service_carries_session_context_and_rejects_forgeries(tmp_path: Path) -> None:
-    from todo_db.errors import TodoError
+    from tractable.errors import TodoError
 
     remote = tmp_path / "sctx.git"
     subprocess.run(["git", "init", "--quiet", "--bare", str(remote)], check=True)
@@ -126,7 +126,7 @@ def test_drop_records_session_entry(tmp_path: Path) -> None:
 
 
 def test_large_session_log_pages_within_cap(tmp_path: Path) -> None:
-    from todo_db import store as S
+    from tractable import store as S
 
     svc, ref = _session_svc(tmp_path)
     assert svc.create_item("big", "Big history")["ok"]
@@ -358,8 +358,8 @@ def test_empty_ready_queue_reports_gate(tmp_path: Path) -> None:
 
 
 def test_update_retry_conflicts_on_touched_fields(tmp_path: Path, monkeypatch) -> None:
-    from todo_db import store as S
-    from todo_db.errors import TodoError
+    from tractable import store as S
+    from tractable.errors import TodoError
 
     svc = _svc(tmp_path)
     assert svc.create_item("t", "v1")["ok"]
@@ -419,7 +419,7 @@ def test_take_with_huge_needs_keeps_generation(tmp_path: Path) -> None:
 
 
 def test_boundary_take_never_strands_generation(tmp_path: Path, monkeypatch) -> None:
-    import todo_db.service as svcmod
+    import tractable.service as svcmod
 
     svc = _svc(tmp_path)
     assert svc.create_item("edge", "Edge task", description="D" * 5000)["ok"]
@@ -614,7 +614,7 @@ def test_drop_retry_after_competing_push_stores_reason_once(tmp_path: Path, monk
 
 
 def test_show_item_returns_drop_reason_including_slim_fallback(tmp_path: Path, monkeypatch) -> None:
-    import todo_db.service as svcmod
+    import tractable.service as svcmod
 
     svc = _svc(tmp_path)
     assert svc.create_item("d1", "Droppable", description="D" * 5000)["ok"]

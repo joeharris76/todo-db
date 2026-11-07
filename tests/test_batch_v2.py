@@ -11,9 +11,9 @@ from typing import Any
 
 import pytest
 
-from todo_db import git_backend, store
-from todo_db.errors import TodoError
-from todo_db.service import TrackerService
+from tractable import git_backend, store
+from tractable.errors import TodoError
+from tractable.service import TrackerService
 
 GEN = "1" * 32
 BATCH = "b1"
@@ -49,7 +49,7 @@ def _pure(
     snap = store.Snapshot(index=store.empty_index(), details={})
     scope = scope or {member: [f"{member}/**", "shared/**"] for member in members}
     store.op_register_batch(
-        snap, batch_id=BATCH, project_id="todo-db", repository="repo", owner=owner,
+        snap, batch_id=BATCH, project_id="tractable", repository="repo", owner=owner,
         owner_generation=GEN, integration_branch="main", integration_worktree="/tmp/integration",
         start_head=h("start"), members=members, scope=scope, scope_hash=store.scope_digest(scope),
         delivery_boundary="final-pr", terminal_outcome="merged", develop_ref=develop_ref,
@@ -103,7 +103,7 @@ def _final(snap: store.Snapshot, members: list[str], acceptance: dict[str, Any] 
     head = _head(snap)
     receipts = {m: snap.details[m]["prepared"] for m in members}
     evidence = {
-        "status": "passed", "project_id": "todo-db", "repository": "repo", "batch_id": BATCH,
+        "status": "passed", "project_id": "tractable", "repository": "repo", "batch_id": BATCH,
         "tree_worktree": "/tmp/integration", "tree_revision": head, "integration_branch": "main",
         "integration_head": head, "scope_hash": snap.index["batches"][BATCH]["scope_hash"],
         "member_heads": {m: r["accepted_head"] for m, r in receipts.items()},
@@ -989,7 +989,7 @@ class Flow:
         self.scope = scope
         self.leader = self.service("leader")
         registered = self.leader.register_batch(
-            batch_id=BATCH, project_id="todo-db", repository=str(self.repo), owner_generation=GEN,
+            batch_id=BATCH, project_id="tractable", repository=str(self.repo), owner_generation=GEN,
             integration_branch="main", integration_worktree=str(self.repo), start_head=self.start,
             members=members, scope=scope, scope_hash=store.scope_digest(scope),
             delivery_boundary="final-pr", terminal_outcome="merged",
@@ -1084,7 +1084,7 @@ class Flow:
         receipts = {m: snap.details[m]["prepared"] for m in self.members}
         actual = set(TrackerService._changed_paths(wt, self.start, head))
         evidence: dict[str, Any] = {
-            "status": "passed", "project_id": "todo-db", "repository": str(self.repo), "batch_id": BATCH,
+            "status": "passed", "project_id": "tractable", "repository": str(self.repo), "batch_id": BATCH,
             "tree_worktree": wt, "tree_revision": head, "integration_branch": "main",
             "integration_head": head, "scope_hash": batch["scope_hash"],
             "member_heads": {m: r["accepted_head"] for m, r in receipts.items()},
@@ -1680,7 +1680,7 @@ def test_cli_batch_show_matches_tool_and_never_writes(tmp_path: Path) -> None:
     assert flow.land_and_prepare("a", {"a/f2": "two\n"})["ok"]
     tip = flow.tip()
     command = [
-        sys.executable, "-m", "todo_db.cli", "batch", "show", BATCH,
+        sys.executable, "-m", "tractable.cli", "batch", "show", BATCH,
         "--state-remote", str(flow.ref.remote), "--state-branch", "todo-state",
         "--cache-dir", str(tmp_path / "cache-cli"),
     ]

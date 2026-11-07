@@ -12,10 +12,10 @@ from pathlib import Path
 
 import pytest
 
-from todo_db import git_backend
-from todo_db import git_store
-from todo_db import store as S
-from todo_db.errors import TodoError
+from tractable import git_backend
+from tractable import git_store
+from tractable import store as S
+from tractable.errors import TodoError
 
 WORDS = (
     "state branch item claim worker session needs ready blocked open done review "
@@ -144,8 +144,8 @@ def _porcelain_commit(tmp_path: Path, url: Path, apply, message: str) -> tuple[s
     """The pre-store write path: checkout, rewrite every file, git add, git commit -m."""
     work = tmp_path / "porcelain"
     subprocess.run(["git", "init", "--quiet", "-b", "main", str(work)], check=True)
-    _git(work, "config", "user.name", "todo-db")
-    _git(work, "config", "user.email", "todo-db@localhost")
+    _git(work, "config", "user.name", "tractable")
+    _git(work, "config", "user.email", "tractable@localhost")
     _git(work, "fetch", "--quiet", str(url), "todo-state")
     _git(work, "checkout", "--quiet", "--detach", "FETCH_HEAD")
     snap = S.load_snapshot(work)
@@ -411,7 +411,7 @@ def test_inherited_git_environment_and_global_hooks_are_ignored(tmp_path: Path, 
     author = subprocess.run(["git", "-C", ref.remote, "log", "-1", "--format=%an <%ae>", "todo-state"],
                             env={k: v for k, v in os.environ.items() if not k.startswith("GIT_")},
                             capture_output=True, text=True, check=True).stdout.strip()
-    assert author == "todo-db <todo-db@localhost>"
+    assert author == "tractable <tractable@localhost>"
 
 
 def test_local_relative_remotes_get_their_own_store(tmp_path: Path, monkeypatch) -> None:
@@ -429,7 +429,7 @@ def test_local_relative_remotes_get_their_own_store(tmp_path: Path, monkeypatch)
 WORKER = textwrap.dedent("""
     import json, sys
     from pathlib import Path
-    from todo_db import git_backend, store as S
+    from tractable import git_backend, store as S
     remote, cache, name, count = sys.argv[1], Path(sys.argv[2]), sys.argv[3], int(sys.argv[4])
     ref = git_backend.StateRef(remote=remote, branch="todo-state")
     errors, created = [], []
@@ -459,7 +459,7 @@ WORKER = textwrap.dedent("""
 MAINTAINER = textwrap.dedent("""
     import sys, time
     from pathlib import Path
-    from todo_db import git_store
+    from tractable import git_store
     ns, stop = Path(sys.argv[1]), Path(sys.argv[2])
     runs = 0
     while not stop.exists():
@@ -477,7 +477,7 @@ def test_concurrent_processes_share_one_store_safely(tmp_path: Path) -> None:
     git_backend.read(ref, cache)
     store = git_backend._store(ref, cache)
     stop = tmp_path / "stop"
-    env = {**os.environ, "TODO_DB_STORE_MAINTENANCE": "off"}
+    env = {**os.environ, "TRACTABLE_STORE_MAINTENANCE": "off"}
     maintainer = subprocess.Popen([sys.executable, "-c", MAINTAINER, str(store.ns), str(stop)],
                                   stdout=subprocess.PIPE, text=True, env=env)
     workers = [
@@ -503,7 +503,7 @@ def test_concurrent_processes_share_one_store_safely(tmp_path: Path) -> None:
     assert sorted(line for line in creates if line.startswith("todo(create)")) == sorted(
         f"todo(create): {item}" for item in expected)
     assert store.tip() == git_backend.ls_remote_tip(ref)
-    assert not list((store.git_dir / "refs" / "todo-db" / "in").glob("*"))
+    assert not list((store.git_dir / "refs" / "tractable" / "in").glob("*"))
     subprocess.run(["rm", "-rf", ref.remote], check=True)
     offline = git_backend.read(ref, cache)
     assert offline.stale is True and offline.rev == ro.rev
@@ -648,7 +648,7 @@ def test_cache_prune_skips_busy_namespaces_and_fresh_staging(tmp_path: Path) -> 
 
 
 def test_cache_prune_clears_a_local_remotes_legacy_namespace(tmp_path: Path, monkeypatch, capsys) -> None:
-    from todo_db.cli import main
+    from tractable.cli import main
 
     ref = _remote(tmp_path)
     git_backend.bootstrap(ref)

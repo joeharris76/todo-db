@@ -1,4 +1,4 @@
-"""``python -m todo_db.mcp`` -> ``server.main()``."""
+"""``python -m tractable.mcp`` -> ``server.main()``."""
 
 from __future__ import annotations
 

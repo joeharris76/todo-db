@@ -9,11 +9,11 @@ from pathlib import Path
 
 import pytest
 
-from todo_db import git_backend
-from todo_db.errors import TodoError
-from todo_db.mcp import server as mcp_server
-from todo_db.mcp.target import ResolvedTarget
-from todo_db.service import SECTION_BUDGET, TrackerService
+from tractable import git_backend
+from tractable.errors import TodoError
+from tractable.mcp import server as mcp_server
+from tractable.mcp.target import ResolvedTarget
+from tractable.service import SECTION_BUDGET, TrackerService
 
 from test_mcp_stdio import _call_tool, _initialize, _make_state, _spawn_server
 
@@ -46,7 +46,7 @@ def test_startup_succeeds_offline_with_cache_and_serves_stale(tmp_path: Path, ca
     _populate(svc)
     cached = svc.list_items()["data"]["rev"]
     _away(remote)
-    with caplog.at_level(logging.WARNING, logger="todo_db.mcp"):
+    with caplog.at_level(logging.WARNING, logger="tractable.mcp"):
         mcp_server.startup_check(target)
     assert cached in caplog.text
 
@@ -137,7 +137,7 @@ def test_missing_branch_fails_with_bootstrap_hint(tmp_path: Path, cached: bool) 
     if cached:
         _populate(svc)
     subprocess.run(["git", "-C", str(remote), "branch", "-D", "todo-state"], check=True, capture_output=True)
-    with pytest.raises(TodoError, match="run `todo-db bootstrap` first") as info:
+    with pytest.raises(TodoError, match="run `tractable bootstrap` first") as info:
         mcp_server.startup_check(target)
     assert info.value.code == "E_STATE"
 

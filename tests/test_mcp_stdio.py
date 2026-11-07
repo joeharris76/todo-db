@@ -38,7 +38,7 @@ def _make_state(root: Path) -> str:
     remote = root / "state.git"
     subprocess.run(["git", "init", "--quiet", "--bare", str(remote)], check=True)
     subprocess.run(
-        [sys.executable, "-m", "todo_db.cli", "bootstrap",
+        [sys.executable, "-m", "tractable.cli", "bootstrap",
          "--state-remote", str(remote), "--state-branch", "todo-state"],
         capture_output=True, text=True, check=True,
         cwd=Path(__file__).resolve().parents[1],
@@ -57,8 +57,8 @@ def _spawn_server(
 
     env = dict(os.environ)
     env["PYTHONUNBUFFERED"] = "1"
-    env["TODO_DB_CACHE_DIR"] = str(cache)
-    argv = [sys.executable, "-m", "todo_db.mcp", "--state-remote", remote]
+    env["TRACTABLE_CACHE_DIR"] = str(cache)
+    argv = [sys.executable, "-m", "tractable.mcp", "--state-remote", remote]
     if actor is not None:
         argv += ["--actor", actor]
     if session is not None:
@@ -115,10 +115,10 @@ def test_stdio_smoke_initialize_and_tools_list(tmp_path: Path):
             req_id=1,
         )
         assert "result" in resp, f"initialize failed: {resp}"
-        from todo_db import TOOL_VERSION
+        from tractable import TOOL_VERSION
 
-        assert TOOL_VERSION == version("todo-db")
-        assert resp["result"]["serverInfo"] == {"name": "todo-db", "version": TOOL_VERSION}
+        assert TOOL_VERSION == version("tractable")
+        assert resp["result"]["serverInfo"] == {"name": "tractable", "version": TOOL_VERSION}
         proc.stdin.write(json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}) + "\n")
         proc.stdin.flush()
         resp2 = _rpc(proc, "tools/list", {}, req_id=2)
@@ -145,9 +145,9 @@ def test_initialize_advertises_batch_v2_capability(tmp_path: Path):
             {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "test-stdio", "version": "0"}},
             req_id=1,
         )
-        from todo_db import BATCH_CAPABILITY, TOOL_VERSION
+        from tractable import BATCH_CAPABILITY, TOOL_VERSION
 
-        advertised = resp["result"]["capabilities"]["experimental"]["todo_db_batch"]
+        advertised = resp["result"]["capabilities"]["experimental"]["tractable_batch"]
         assert advertised == BATCH_CAPABILITY
         assert advertised["version"] == 2
         assert advertised["receipt_schema"] == "prepared_work_v2"
@@ -241,7 +241,7 @@ def test_tool_schema_freeze():
     import anyio
     import mcp.types as types
     from mcp.shared.memory import create_connected_server_and_client_session as connect
-    from todo_db.mcp.server import build_parser, build_server, resolve_launch_config
+    from tractable.mcp.server import build_parser, build_server, resolve_launch_config
 
     tmp = Path(tempfile.mkdtemp())
     remote = tmp / "state.git"
@@ -272,7 +272,7 @@ def test_tool_schema_freeze():
 
 
 def test_no_print_to_stdout_in_mcp_package():
-    pkg = Path("src/todo_db/mcp")
+    pkg = Path("src/tractable/mcp")
     offenders = []
     for path in pkg.glob("*.py"):
         for lineno, line in enumerate(path.read_text().splitlines(), 1):

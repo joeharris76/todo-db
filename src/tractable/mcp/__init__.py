@@ -1,4 +1,4 @@
-"""FastMCP stdio server for the todo-db tracker: the agent interface (ADR 0007).
+"""FastMCP stdio server for the tractable tracker: the agent interface (ADR 0007).
 
 This package builds the server and registers the tracker tools. It resolves the
 state branch target, verifies it read-only at startup (never bootstraps),
@@ -12,7 +12,7 @@ __all__ = ["main"]
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Entry point shim so ``todo_db.mcp:main`` works; see ``server.main``."""
+    """Entry point shim so ``tractable.mcp:main`` works; see ``server.main``."""
 
     from .server import main as _main
 

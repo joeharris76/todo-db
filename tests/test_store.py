@@ -7,8 +7,8 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from todo_db import store
-from todo_db.errors import TodoError
+from tractable import store
+from tractable.errors import TodoError
 
 
 def _snap() -> store.Snapshot:

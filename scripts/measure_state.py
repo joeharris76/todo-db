@@ -22,11 +22,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from todo_db import count_tokens, git_backend  # noqa: E402
-from todo_db import store as S  # noqa: E402
-from todo_db.git_backend import StateRef  # noqa: E402
-from todo_db.mcp.instructions import INSTRUCTIONS  # noqa: E402
-from todo_db.service import TrackerService  # noqa: E402
+from tractable import count_tokens, git_backend  # noqa: E402
+from tractable import store as S  # noqa: E402
+from tractable.git_backend import StateRef  # noqa: E402
+from tractable.mcp.instructions import INSTRUCTIONS  # noqa: E402
+from tractable.service import TrackerService  # noqa: E402
 
 
 def _snapshots_tools_schema_bytes() -> int:

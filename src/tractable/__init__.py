@@ -20,13 +20,13 @@ from .errors import (
     E_SCHEMA,
     E_STATE,
     E_UNKNOWN,
-    TodoDBError,
+    TractableError,
     TodoError,
 )
 from .git_backend import ReconcileResult, StateRef, bootstrap, history, mutate, new_op_id, read, reconcile
 from .service import TrackerService, count_tokens
 
-TOOL_VERSION = version("todo-db")
+TOOL_VERSION = version("tractable")
 BATCH_CAPABILITY = store.batch_capability(TOOL_VERSION)
 
 __all__ = [
@@ -50,7 +50,7 @@ __all__ = [
     "TOOL_VERSION",
     "ReconcileResult",
     "StateRef",
-    "TodoDBError",
+    "TractableError",
     "TodoError",
     "TrackerService",
     "bootstrap",

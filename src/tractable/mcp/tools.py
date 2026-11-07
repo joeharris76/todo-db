@@ -5,7 +5,7 @@
 ``advance_batch_head`` / ``recover_batch_owner`` / ``show_batch`` /
 ``abort_batch`` / ``release`` / ``finish`` / ``renew`` /
 ``list_deferrals`` / ``defer`` / ``promote_deferral`` /
-``dismiss_deferral`` are backed by :mod:`todo_db.service`, the same
+``dismiss_deferral`` are backed by :mod:`tractable.service`, the same
 operations the human/CI CLI uses. Blocking Git work runs via
 ``asyncio.to_thread``; there is no shared mutable connection to guard.
 """
@@ -23,7 +23,7 @@ from ..service import TrackerService, err
 from .identity import PrincipalHolder, sanitize_client_name
 from .target import ResolvedTarget
 
-LOG = logging.getLogger("todo_db.mcp")
+LOG = logging.getLogger("tractable.mcp")
 
 
 def _principal(holder: PrincipalHolder, ctx: Context | None) -> str | None:

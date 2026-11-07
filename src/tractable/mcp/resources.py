@@ -1,13 +1,13 @@
 """The instructions surface: a resource, a portable fallback tool, and a prompt.
 
 All three return the same workflow text, rendered by
-:func:`todo_db.mcp.instructions.render_instructions` with a section naming the bound store.
+:func:`tractable.mcp.instructions.render_instructions` with a section naming the bound store.
 Clients differ in what they support, so the text is offered three ways:
 
-- ``todo://instructions`` resource   -- the portable path.
+- ``tractable://instructions`` resource   -- the portable path.
 - ``get_instructions`` tool          -- the portable fallback for clients that
   do not surface resources or prompts (and the only tool this foundation ships).
-- ``todo/workflow`` prompt           -- additive; Claude Code surfaces it as a
+- ``tractable/workflow`` prompt           -- additive; Claude Code surfaces it as a
   slash command, other clients ignore it.
 
 ``get_instructions`` doubles as the first-tool-call seam that pins the principal
@@ -27,8 +27,8 @@ from .identity import PrincipalHolder
 from .instructions import render_instructions
 from .target import ResolvedTarget
 
-_RESOURCE_URI = "todo://instructions"
-LOG = logging.getLogger("todo_db.mcp")
+_RESOURCE_URI = "tractable://instructions"
+LOG = logging.getLogger("tractable.mcp")
 
 
 def _client_info(ctx: Context | None):
@@ -57,7 +57,7 @@ def _check_expected_store(target: ResolvedTarget, expected: str) -> dict[str, An
         f"bound store {actual} does not match expected {expected.strip()!r}",
         recovery=[
             "do not write to this tracker",
-            "restart todo-db-mcp with the project's --config, or launch it from the project directory",
+            "restart tractable-mcp with the project's --config, or launch it from the project directory",
         ],
         kind="gate",
     )
@@ -78,9 +78,9 @@ def register_instructions(
 
     @server.resource(
         _RESOURCE_URI,
-        name="todo-instructions",
-        title="todo-db agent workflow",
-        description="The autonomous-agent workflow protocol for the todo-db tracker.",
+        name="tractable-instructions",
+        title="tractable agent workflow",
+        description="The autonomous-agent workflow protocol for the tractable tracker.",
         mime_type="text/markdown",
     )
     def _instructions_resource() -> str:
@@ -89,10 +89,10 @@ def register_instructions(
     @server.tool(
         name="get_instructions",
         description=(
-            "Return the todo-db autonomous-agent workflow protocol as Markdown, including the "
+            "Return the tractable autonomous-agent workflow protocol as Markdown, including the "
             "bound state store. Pass expect_store, a fragment of the repository name the work "
             "belongs to, to refuse a tracker for another project. Portable fallback for the "
-            "todo://instructions resource and the todo/workflow prompt."
+            "tractable://instructions resource and the tractable/workflow prompt."
         ),
     )
     def get_instructions(
@@ -106,9 +106,9 @@ def register_instructions(
         return _render()
 
     @server.prompt(
-        name="todo/workflow",
-        title="todo-db agent workflow",
-        description="The autonomous-agent workflow protocol for the todo-db tracker.",
+        name="tractable/workflow",
+        title="tractable agent workflow",
+        description="The autonomous-agent workflow protocol for the tractable tracker.",
     )
     def _workflow_prompt() -> str:
         return _render()
