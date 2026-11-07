@@ -4,7 +4,7 @@
     "todo-db and todo-db-mcp are no longer on PATH; tractable still works in every switched project.",
     "Final search of switched repos and global config matches only the allow-list."
   ],
-  "context": "Guardrails (ADR 0013): no state-schema change, data migration, or trailer change; the 1.0.0 release is the rename only; each project switches runtime, config dir, MCP registration, skill mirrors and scripts in one change; the old todo-db tool stays installed until decommission; never create a repository named joeharris76/todo-db; historical records (CHANGELOG entries, earlier ADRs, consumer evidence, exports) are not rewritten.\n\nAlso remove the temporary symlink ~/Developer/todo-db -> tractable created in Phase 1, after no live session uses the old path, and delete the obsolete [projects.\"/Users/joe/Developer/todo-db\"] trust entry in ~/.codex/config.toml.",
+  "context": "Guardrails (ADR 0013): no state-schema change, data migration, or trailer change; the 1.0.0 release is the rename only; each project switches runtime, config dir, MCP registration, skill mirrors and scripts in one change; the old todo-db tool stays installed until decommission; never create a repository named joeharris76/todo-db; historical records (CHANGELOG entries, earlier ADRs, consumer evidence, exports) are not rewritten.\n\nAlso remove the temporary symlink ~/Developer/todo-db -> tractable created in Phase 1, after no live session uses the old path, and delete the obsolete [projects.\"/Users/joe/Developer/todo-db\"] trust entry in ~/.codex/config.toml.\n\nAlso: open a BenchBox PR removing the one-time todo-db -> tractable rename allowance (DECLARED_WHEEL_RENAME) from scripts/check_comment_cleanup_scope.py and its docs/tests, since develop no longer pins a todo-db wheel.",
   "description": "Phase 7. Decision gate: no current (non-stale) MCP registration or project config names todo-db, and `pgrep -fl todo-db-mcp` finds no process. Then `uv tool uninstall todo-db`, remove the ~/.todo-db link, and delete ~/.cache/todo-db-state. Stale worktrees that still carry old configs are listed for the owner, not edited.",
   "sessions": [
     {
@@ -22,6 +22,14 @@
       "op": "update",
       "op_id": "69abb8ef8c784cc380e4b949f2b26727",
       "session_id": "feb608d2aaa94861abc6698a61a687c1"
+    },
+    {
+      "actor": "joe-tractable-rename",
+      "at": "2026-11-07T15:19:29Z",
+      "client": "mcp",
+      "op": "update",
+      "op_id": "1633376c59ed413185e0f98930f6851b",
+      "session_id": "a51d9cd9b7e24820ac1a53e27febfd05"
     }
   ]
 }
