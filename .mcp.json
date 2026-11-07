@@ -1,7 +1,7 @@
 {
   "mcpServers": {
-    "todo-db": {
-      "command": "todo-db-mcp",
+    "tractable": {
+      "command": "tractable-mcp",
       "args": [],
       "env": {}
     }

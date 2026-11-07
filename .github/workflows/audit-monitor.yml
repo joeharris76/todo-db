@@ -33,19 +33,19 @@ jobs:
 
       - name: Run State Validation
         env:
-          TODO_DB_STATE_REMOTE: ${{ secrets.TODO_DB_STATE_REMOTE }}
-          TODO_DB_STATE_BRANCH: ${{ secrets.TODO_DB_STATE_BRANCH }}
+          TRACTABLE_STATE_REMOTE: ${{ secrets.TRACTABLE_STATE_REMOTE }}
+          TRACTABLE_STATE_BRANCH: ${{ secrets.TRACTABLE_STATE_BRANCH }}
           TARGET_INPUT: ${{ github.event.inputs.state_remote }}
         run: |
-          TARGET="${TARGET_INPUT:-${TODO_DB_STATE_REMOTE}}"
+          TARGET="${TARGET_INPUT:-${TRACTABLE_STATE_REMOTE}}"
           if [ -z "$TARGET" ]; then
-            echo "::warning::No state remote specified and TODO_DB_STATE_REMOTE secret is not configured; skipping state monitor."
+            echo "::warning::No state remote specified and TRACTABLE_STATE_REMOTE secret is not configured; skipping state monitor."
             exit 0
           fi
           echo "Validating state branch: $TARGET"
-          uv run todo-db validate --state-remote "$TARGET" > /tmp/state-validation.json
+          uv run tractable validate --state-remote "$TARGET" > /tmp/state-validation.json
           cat /tmp/state-validation.json
-          uv run todo-db recover --state-remote "$TARGET" --limit 5
+          uv run tractable recover --state-remote "$TARGET" --limit 5
 
       - name: Upload State Validation Summary
         if: success() && hashFiles('/tmp/state-validation.json') != ''
